@@ -205,6 +205,12 @@ export function SearchPage() {
               description="레어도 1~4 방어구도 후보에 넣어요."
             />
             <Toggle
+              checked={cond.excludeHr100}
+              onChange={(excludeHr100) => patch({ excludeHr100 })}
+              label="HR 100 장비 제외"
+              description="★9·★10 퀘스트 등 HR 100 이상에서만 얻는 방어구(이그졸스γ·다하딜라γ·슈바르카γ·고그·오메가 의상 등)는 빼고, 자동 호석은 HR 100 전에 만들 수 있는 등급까지만 써요. 방어구 초월도 HR 100부터 할 수 있어요."
+            />
+            <Toggle
               checked={cond.transcend}
               onChange={(transcend) => patch({ transcend })}
               label="방어구 초월 적용"
@@ -241,7 +247,8 @@ export function SearchPage() {
             <p className="text-sm text-muted">
               원하는 스킬 {request.required.length}개 · 비선호 {request.excludedSkills.length}개
               {request.excludedSkills.length > 0 && ` (${cond.excludeMode === 'exclude' ? '제외' : '아래에 표시'})`} · 호석
-              후보 {request.talismans.length}개{!request.useDecorations && ' · 장식주 없이'}
+              후보 {request.talismans.length}개{cond.excludeHr100 && ' · HR 100 장비 제외'}
+              {!request.useDecorations && ' · 장식주 없이'}
             </p>
           </div>
           {running && (

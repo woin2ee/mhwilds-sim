@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { hr100ArmorIds, isHr100Talisman } from '../../core/hunterRank'
 import type { CustomTalisman } from '../../core/types'
 import { loadTestDb, skillIdByName } from '../../test/testDb'
 import { DEFAULT_CONDITIONS, buildRequest, normalizeConditions, requestKey, type SearchConditions } from './conditions'
@@ -31,6 +32,29 @@ describe('검색 조건 → SearchRequest', () => {
     expect(withDecorations.useDecorations).toBe(true)
     expect(without.useDecorations).toBe(false)
     expect(requestKey(without)).not.toBe(requestKey(withDecorations))
+  })
+
+  it('HR 100 장비 제외는 그 방어구 id 를 excludedArmorIds 로 넘기고, 바꾸면 요청 키가 달라진다', () => {
+    const off = buildRequest(db, cond({}), [])
+    const on = buildRequest(db, cond({ excludeHr100: true }), [])
+    expect(off.excludedArmorIds).toEqual([])
+    expect(on.excludedArmorIds).toEqual(hr100ArmorIds(db))
+    expect(on.excludedArmorIds.length).toBeGreaterThan(0)
+    expect(requestKey(on)).not.toBe(requestKey(off))
+  })
+
+  it('HR 100 장비 제외면 자동 호석은 계열마다 HR 100 전에 만들 수 있는 가장 높은 등급 (예: 통격의 호석Ⅲ → Ⅱ)', () => {
+    const fixedOf = (excludeHr100: boolean) =>
+      buildRequest(db, cond({ talismanMode: 'auto', excludeHr100 }), []).talismans.flatMap((t) =>
+        t.ref.type === 'fixed' ? [db.talismans.get(t.ref.id)!] : [],
+      )
+    const off = fixedOf(false)
+    const on = fixedOf(true)
+    expect(on).toHaveLength(off.length)
+    expect(on.some(isHr100Talisman)).toBe(false)
+    expect(off.map((t) => t.name.ko)).toContain('통격의 호석Ⅲ')
+    expect(on.map((t) => t.name.ko)).not.toContain('통격의 호석Ⅲ')
+    expect(on.map((t) => t.name.ko)).toContain('통격의 호석Ⅱ')
   })
 
   it('자동 호석 = 제작 호석 최고 등급 + 내 호석 (슬롯 포함)', () => {

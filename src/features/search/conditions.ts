@@ -1,9 +1,10 @@
 // 스킬 검색 조건 (localStorage 저장 형식)과 SearchRequest 변환
 import { resolveTalisman, resolveWeapon } from '../../core/equipment'
+import { hr100ArmorIds, isHr100Talisman } from '../../core/hunterRank'
 import type { ExcludeMode, SearchRequest, SearchSort, SearchTalisman } from '../../core/search/types'
 import type { CustomTalisman, TalismanRef, WeaponChoice } from '../../core/types'
 import type { GameDb } from '../../data/db'
-import { WEAPON_KINDS, type SkillPoint, type SlotLevel, type WeaponKind } from '../../data/types'
+import { WEAPON_KINDS, type FixedTalisman, type SkillPoint, type SlotLevel, type WeaponKind } from '../../data/types'
 
 export type WeaponMode = 'none' | 'db' | 'custom'
 export type TalismanMode = 'auto' | 'custom-only' | 'fixed' | 'none'
@@ -26,6 +27,8 @@ export interface SearchConditions {
   talismanMode: TalismanMode
   fixedTalisman: TalismanRef | null
   includeLowRank: boolean
+  /** HR 100 이상에서만 얻는 방어구를 빼고, 자동 호석은 HR 100 전에 만들 수 있는 등급까지만 (core/hunterRank.ts) */
+  excludeHr100: boolean
   transcend: boolean
   useDecorations: boolean
   sort: SearchSort
@@ -43,6 +46,7 @@ export const DEFAULT_CONDITIONS: SearchConditions = {
   talismanMode: 'auto',
   fixedTalisman: null,
   includeLowRank: false,
+  excludeHr100: false,
   transcend: false,
   useDecorations: true,
   sort: 'slots',
@@ -74,6 +78,18 @@ export function weaponChoiceOf(cond: SearchConditions): WeaponChoice | null {
   return null
 }
 
+/** 계열마다 가장 높은 등급의 제작 호석. HR 100 장비를 빼면 HR 100 전에 만들 수 있는 가장 높은 등급 */
+function topFixedTalismans(db: GameDb, excludeHr100: boolean): FixedTalisman[] {
+  if (!excludeHr100) return db.data.talismans.filter((t) => t.isMaxRank)
+  const best = new Map<number, FixedTalisman>()
+  for (const t of db.data.talismans) {
+    if (isHr100Talisman(t)) continue
+    const prev = best.get(t.charmId)
+    if (!prev || t.level > prev.level) best.set(t.charmId, t)
+  }
+  return db.data.talismans.filter((t) => best.get(t.charmId) === t)
+}
+
 /** 호석 모드에 따른 후보 호석 */
 export function talismanRefsOf(
   db: GameDb,
@@ -84,7 +100,7 @@ export function talismanRefsOf(
   switch (cond.talismanMode) {
     case 'auto':
       return [
-        ...db.data.talismans.filter((t) => t.isMaxRank).map((t): TalismanRef => ({ type: 'fixed', id: t.id })),
+        ...topFixedTalismans(db, cond.excludeHr100).map((t): TalismanRef => ({ type: 'fixed', id: t.id })),
         ...custom,
       ]
     case 'custom-only':
@@ -124,7 +140,7 @@ export function buildRequest(
     includeLowRank: cond.includeLowRank,
     transcend: cond.transcend,
     useDecorations: cond.useDecorations,
-    excludedArmorIds: [],
+    excludedArmorIds: cond.excludeHr100 ? hr100ArmorIds(db) : [],
     sort: cond.sort,
     limit: RESULT_LIMIT,
   }
