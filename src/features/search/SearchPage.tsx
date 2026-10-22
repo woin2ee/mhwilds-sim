@@ -241,7 +241,9 @@ export function SearchPage() {
             </div>
           )}
           {request.required.length === 0 && (
-            <p className="mt-2 text-xs text-muted">원하는 스킬을 하나 이상 추가하면 검색할 수 있어요.</p>
+            <p className="mt-2 text-xs text-muted">
+              원하는 스킬을 하나 이상 {cond.required.some((r) => r.off) ? '켜면' : '추가하면'} 검색할 수 있어요.
+            </p>
           )}
           {weaponSkillWithoutWeapon && (
             <p className="mt-2 text-xs text-warn">

@@ -4,7 +4,9 @@ import { SkillSelect } from '../../components/SkillSelect'
 import { Badge, Button, LevelSelect } from '../../components/ui'
 import { nameOf } from '../../data/db'
 import type { Skill, SkillKind, SkillPoint } from '../../data/types'
+import { cx } from '../../lib/cx'
 import { useDb } from '../../state/context'
+import type { RequiredSkill } from './conditions'
 import { bonusRankLabel } from './format'
 
 const KIND_BADGE: Partial<Record<SkillKind, string>> = { weapon: '무기', set: '시리즈', group: '그룹' }
@@ -29,20 +31,20 @@ function BonusLevelSelect({ skill, value, onChange }: { skill: Skill; value: num
   )
 }
 
-/** 원하는 스킬 + 레벨 목록 */
+/** 원하는 스킬 + 레벨 목록. 체크를 끈 스킬은 지우지 않고 검색에서만 뺀다 */
 export function RequiredSkills({
   required,
   excluded,
   onChange,
 }: {
-  required: SkillPoint[]
+  required: RequiredSkill[]
   excluded: number[]
-  onChange: (next: SkillPoint[]) => void
+  onChange: (next: RequiredSkill[]) => void
 }) {
   const db = useDb()
   const hiddenIds = useMemo(() => [...required.map((r) => r.skillId), ...excluded], [required, excluded])
-  const update = (skillId: number, level: number) =>
-    onChange(required.map((r) => (r.skillId === skillId ? { skillId, level } : r)))
+  const update = (skillId: number, change: Partial<RequiredSkill>) =>
+    onChange(required.map((r) => (r.skillId === skillId ? { ...r, ...change } : r)))
 
   return (
     <div className="space-y-2">
@@ -55,17 +57,32 @@ export function RequiredSkills({
             if (!skill) return null
             return (
               <li key={r.skillId} className="flex items-center gap-2">
-                <span className="flex min-w-0 flex-1 items-center gap-1.5 text-sm" title={skill.description}>
+                {/* self-stretch: 줄 높이(터치 기기 40px)만큼 누르는 영역을 넓힌다 */}
+                <label
+                  className={cx(
+                    'flex min-w-0 flex-1 cursor-pointer items-center gap-2 self-stretch text-sm',
+                    r.off && 'text-muted',
+                  )}
+                  title={skill.description}
+                >
+                  <input
+                    type="checkbox"
+                    className="size-4 shrink-0 accent-[var(--accent)] pointer-coarse:size-5"
+                    checked={!r.off}
+                    onChange={(e) => update(r.skillId, { off: !e.target.checked })}
+                    aria-label={`${nameOf(skill.name)} 검색에 포함`}
+                    title="검색에 포함 (끄면 목록에 둔 채 검색에서만 빠져요)"
+                  />
                   <span className="truncate">{nameOf(skill.name)}</span>
                   {KIND_BADGE[skill.kind] && <Badge>{KIND_BADGE[skill.kind]}</Badge>}
-                </span>
+                </label>
                 {isBonus(skill) ? (
-                  <BonusLevelSelect skill={skill} value={r.level} onChange={(level) => update(r.skillId, level)} />
+                  <BonusLevelSelect skill={skill} value={r.level} onChange={(level) => update(r.skillId, { level })} />
                 ) : (
                   <LevelSelect
                     value={r.level}
                     max={skill.maxLevel}
-                    onChange={(level) => update(r.skillId, level)}
+                    onChange={(level) => update(r.skillId, { level })}
                     ariaLabel={`${nameOf(skill.name)} 레벨`}
                   />
                 )}

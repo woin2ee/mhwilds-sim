@@ -64,4 +64,14 @@ describe('검색 조건 → SearchRequest', () => {
     expect(request.excludedSkills).toEqual([])
     expect(requestKey({ ...request, sort: 'defense' })).toBe(requestKey({ ...request, sort: 'slots' }))
   })
+
+  it('꺼 둔 원하는 스킬은 요청에서 빠지고, 다시 켜면 처음 요청과 같은 키', () => {
+    const attack = skillIdByName(db, '공격')
+    const crit = skillIdByName(db, '간파')
+    const request = (off?: boolean) =>
+      buildRequest(db, cond({ required: [{ skillId: attack, level: 3, off }, { skillId: crit, level: 2 }] }), [])
+    expect(request(true).required).toEqual([{ skillId: crit, level: 2 }])
+    expect(requestKey(request(true))).not.toBe(requestKey(request()))
+    expect(requestKey(request(false))).toBe(requestKey(request()))
+  })
 })

@@ -8,8 +8,13 @@ import { WEAPON_KINDS, type SkillPoint, type SlotLevel, type WeaponKind } from '
 export type WeaponMode = 'none' | 'db' | 'custom'
 export type TalismanMode = 'auto' | 'custom-only' | 'fixed' | 'none'
 
+/** 원하는 스킬. off 면 목록에는 남겨 두고 검색 요청에서만 뺀다 (예전 저장값엔 없음 = 켜짐) */
+export interface RequiredSkill extends SkillPoint {
+  off?: boolean
+}
+
 export interface SearchConditions {
-  required: SkillPoint[]
+  required: RequiredSkill[]
   excluded: number[]
   excludeMode: ExcludeMode
   weaponMode: WeaponMode
@@ -102,7 +107,10 @@ export function buildRequest(
     if (resolved) talismans.push({ ref, skills: resolved.skills, slots: resolved.slots })
   }
   return {
-    required: cond.required.filter((r) => db.skills.has(r.skillId) && r.level > 0),
+    // off 를 떼어 내야 껐다 다시 켠 요청이 처음 요청과 같은 키가 된다
+    required: cond.required
+      .filter((r) => !r.off && db.skills.has(r.skillId) && r.level > 0)
+      .map(({ skillId, level }) => ({ skillId, level })),
     excludedSkills: cond.excluded.filter((id) => db.skills.has(id)),
     excludeMode: cond.excludeMode,
     weapon: {
