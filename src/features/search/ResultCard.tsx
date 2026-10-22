@@ -21,6 +21,15 @@ import { bonusRankLabel, formatCount } from './format'
 type Variant = Partial<Record<ArmorKind, number>> & { talismanIndex?: number }
 type Expandable = ArmorKind | 'talisman'
 
+/** 결과 카드에서 비선호 스킬을 바로 넣고 빼는 데 쓰는 지금 검색 조건 (결과를 만든 요청과 다를 수 있다) */
+export interface ExcludeControl {
+  /** 지금 조건의 비선호 스킬 */
+  excluded: readonly number[]
+  /** 지금 조건의 원하는 스킬 (꺼 둔 것 포함). 비선호로 넣을 수 없다 */
+  required: readonly SkillPoint[]
+  onChange: (excluded: number[]) => void
+}
+
 interface ChipInfo {
   skillId: number
   name: string
@@ -184,25 +193,73 @@ function AlternativeList({
   )
 }
 
+/** 추가 스킬 칩을 누르면 칩 목록 아래에 뜨는 비선호 스킬 넣기/빼기 */
+function UnwantedAction({
+  skillId,
+  name,
+  request,
+  exclude,
+}: {
+  skillId: number
+  name: string
+  request: SearchRequest
+  exclude: ExcludeControl
+}) {
+  const required = exclude.required.some((r) => r.skillId === skillId)
+  const excluded = exclude.excluded.includes(skillId)
+  // 검색할 때부터 비선호였는데 회색이면 무기 자체에 붙은 스킬이다 (unwantedSkillsOf)
+  const searched = request.excludedSkills.includes(skillId)
+  let message = '이 스킬이 붙은 조합을 원하지 않으면 비선호 스킬에 넣으세요.'
+  if (required) message = '원하는 스킬 목록에 있어 비선호로 넣을 수 없어요.'
+  else if (excluded && searched) message = '비선호 스킬이지만 무기 자체에 붙은 스킬은 비선호로 세지 않아요.'
+  else if (excluded) message = '비선호 스킬에 넣었어요. 다시 검색하면 반영돼요.'
+  const add = () => exclude.onChange([...exclude.excluded, skillId])
+  const remove = () => exclude.onChange(exclude.excluded.filter((id) => id !== skillId))
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-md border border-line bg-surface-2 px-2.5 py-1.5 text-xs">
+      <p className="min-w-0 flex-1">
+        <span className="font-medium">{name}</span>
+        <span className="text-muted"> · {message}</span>
+      </p>
+      {!required &&
+        (excluded ? (
+          <Button size="sm" variant="ghost" onClick={remove}>
+            {searched ? '비선호에서 빼기' : '되돌리기'}
+          </Button>
+        ) : (
+          <Button size="sm" variant="danger" onClick={add}>
+            비선호 스킬에 추가
+          </Button>
+        ))}
+    </div>
+  )
+}
+
 export function ResultCard({
   item,
   request,
   index,
   deprioritized = false,
+  exclude,
 }: {
   item: SearchResultItem
   request: SearchRequest
   index: number
   deprioritized?: boolean
+  exclude: ExcludeControl
 }) {
   const { db, customTalismans, openInManual } = useAppState()
   const [variant, setVariant] = useState<Variant>({})
   const [open, setOpen] = useState<Expandable | null>(null)
   const [saving, setSaving] = useState(false)
+  /** 비선호 넣기/빼기를 연 추가 스킬 칩 */
+  const [picked, setPicked] = useState<number | null>(null)
 
   const build = useMemo(() => resultToBuild(db, item, request, variant), [db, item, request, variant])
   const summary = useMemo(() => computeBuild(db, build, customTalismans), [db, build, customTalismans])
   const chips = useMemo(() => skillChips(db, summary, request), [db, summary, request])
+  // 대체 방어구로 바꿔 그 스킬이 없어지면 닫힌 것으로 본다
+  const pickedChip = chips.find((c) => c.skillId === picked && c.tone === 'extra')
   const unwanted = useMemo(() => unwantedSources(summary, request.excludedSkills), [summary, request.excludedSkills])
   const unwantedText = (key: EquipKey) => {
     const points = unwanted.byEquip.get(key)
@@ -357,18 +414,30 @@ export function ResultCard({
         </div>
       )}
 
-      <div className="flex flex-wrap gap-1">
-        {chips.map((chip) => (
-          <SkillChip
-            key={chip.skillId}
-            name={chip.name}
-            level={chip.level}
-            maxLevel={chip.maxLevel}
-            tone={chip.tone}
-            title={chip.title}
-          />
-        ))}
+      <div className="flex flex-wrap gap-1 pointer-coarse:gap-1.5">
+        {chips.map((chip) => {
+          // 추가 스킬(회색)은 눌러서 비선호 스킬에 넣고 뺀다. 넣은 칩은 다시 검색할 때까지 빨강으로 둔다
+          const extra = chip.tone === 'extra'
+          const pending =
+            extra && exclude.excluded.includes(chip.skillId) && !request.excludedSkills.includes(chip.skillId)
+          return (
+            <SkillChip
+              key={chip.skillId}
+              name={chip.name}
+              level={chip.level}
+              maxLevel={chip.maxLevel}
+              tone={pending ? 'unwanted' : chip.tone}
+              title={extra ? '눌러서 비선호 스킬에 넣거나 빼기' : chip.title}
+              onClick={extra ? () => setPicked((id) => (id === chip.skillId ? null : chip.skillId)) : undefined}
+              expanded={extra ? picked === chip.skillId : undefined}
+            />
+          )
+        })}
       </div>
+
+      {pickedChip && (
+        <UnwantedAction skillId={pickedChip.skillId} name={pickedChip.name} request={request} exclude={exclude} />
+      )}
 
       {saving && (
         <SaveBuildDialog

@@ -23,6 +23,8 @@ export function SkillChip({
   tone = 'neutral',
   title,
   onRemove,
+  onClick,
+  expanded,
   children,
 }: {
   name: string
@@ -31,18 +33,23 @@ export function SkillChip({
   tone?: SkillTone
   title?: string
   onRemove?: () => void
+  /** 주면 칩 전체가 버튼이 된다. 버튼 안에 버튼을 둘 수 없으므로 onRemove 와 함께 쓰지 않는다 */
+  onClick?: () => void
+  /** onClick 으로 여닫는 내용이 열려 있는지 (aria-expanded) */
+  expanded?: boolean
   children?: ReactNode
 }) {
-  return (
-    <span
-      title={title}
-      className={cx(
-        'inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-xs whitespace-nowrap',
-        // 지울 수 있는 칩은 터치 기기에서 누르기 쉽게 키운다 (칩 사이 간격은 쓰는 쪽에서 pointer-coarse:gap-2)
-        onRemove && 'pointer-coarse:py-1 pointer-coarse:text-sm',
-        TONE[tone],
-      )}
-    >
+  const className = cx(
+    'inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-xs whitespace-nowrap',
+    // 지울 수 있는 칩은 터치 기기에서 누르기 쉽게 키운다 (칩 사이 간격은 쓰는 쪽에서 pointer-coarse:gap-2)
+    onRemove && 'pointer-coarse:py-1 pointer-coarse:text-sm',
+    // 누르는 칩은 누르지 않는 칩과 나란히 놓이므로 글자 크기는 그대로 두고 높이만 키운다. 열려 있으면 테두리를 진하게
+    onClick &&
+      'cursor-pointer hover:border-current aria-expanded:border-current aria-expanded:ring-1 aria-expanded:ring-current pointer-coarse:py-1.5',
+    TONE[tone],
+  )
+  const content = (
+    <>
       <span>{name}</span>
       {level !== undefined && (
         <span className="font-semibold tabular-nums">
@@ -51,6 +58,18 @@ export function SkillChip({
         </span>
       )}
       {children}
+    </>
+  )
+  if (onClick) {
+    return (
+      <button type="button" title={title} aria-expanded={expanded} onClick={onClick} className={className}>
+        {content}
+      </button>
+    )
+  }
+  return (
+    <span title={title} className={className}>
+      {content}
       {onRemove && (
         <button
           type="button"

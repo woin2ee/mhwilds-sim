@@ -296,6 +296,7 @@ export function SearchPage() {
               request={result.request}
               response={result.response}
               onSortChange={onSortChange}
+              exclude={{ excluded: cond.excluded, required: cond.required, onChange: (excluded) => patch({ excluded }) }}
             />
           </div>
         ) : (

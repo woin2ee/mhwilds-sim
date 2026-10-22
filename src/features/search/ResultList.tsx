@@ -3,7 +3,7 @@ import { Button, EmptyState, Segmented } from '../../components/ui'
 import type { SearchRequest, SearchResponse, SearchResultItem, SearchSort } from '../../core/search/types'
 import { useDb } from '../../state/context'
 import { formatCount } from './format'
-import { ResultCard } from './ResultCard'
+import { ResultCard, type ExcludeControl } from './ResultCard'
 
 const PAGE_SIZE = 30
 const SORT_OPTIONS: { value: SearchSort; label: string }[] = [
@@ -18,17 +18,26 @@ function formatElapsed(ms: number): string {
 function PagedCards({
   items,
   request,
+  exclude,
   deprioritized = false,
 }: {
   items: SearchResultItem[]
   request: SearchRequest
+  exclude: ExcludeControl
   deprioritized?: boolean
 }) {
   const [shown, setShown] = useState(PAGE_SIZE)
   return (
     <div className="space-y-2.5">
       {items.slice(0, shown).map((item, i) => (
-        <ResultCard key={item.id} item={item} request={request} index={i + 1} deprioritized={deprioritized} />
+        <ResultCard
+          key={item.id}
+          item={item}
+          request={request}
+          index={i + 1}
+          deprioritized={deprioritized}
+          exclude={exclude}
+        />
       ))}
       {items.length > shown && (
         <Button className="w-full" onClick={() => setShown((n) => n + PAGE_SIZE)}>
@@ -60,10 +69,13 @@ export function ResultList({
   request,
   response,
   onSortChange,
+  exclude,
 }: {
   request: SearchRequest
   response: SearchResponse
   onSortChange: (sort: SearchSort) => void
+  /** 추가 스킬 칩에서 비선호 스킬을 넣고 뺄 때 쓰는 지금 검색 조건 */
+  exclude: ExcludeControl
 }) {
   const db = useDb()
   const { preferred, deprioritized } = response
@@ -114,7 +126,7 @@ export function ResultList({
       )}
 
       {preferred.length > 0 ? (
-        <PagedCards items={preferred} request={request} />
+        <PagedCards items={preferred} request={request} exclude={exclude} />
       ) : (
         <p className="rounded-md border border-line bg-surface px-3 py-2 text-sm text-muted">
           비선호 스킬 없이 조건을 만족하는 조합은 없어요. 아래 비선호 결과를 확인하세요.
@@ -137,7 +149,7 @@ export function ResultList({
             </span>
             <span className="text-muted">{showDeprioritized ? '접기 ▴' : '펼치기 ▾'}</span>
           </button>
-          {showDeprioritized && <PagedCards items={deprioritized} request={request} deprioritized />}
+          {showDeprioritized && <PagedCards items={deprioritized} request={request} exclude={exclude} deprioritized />}
         </section>
       )}
     </div>
