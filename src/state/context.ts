@@ -1,8 +1,9 @@
 import { createContext, useContext, type Dispatch, type SetStateAction } from 'react'
+import type { SavedBuild } from '../core/savedBuilds'
 import type { BuildState, CustomTalisman } from '../core/types'
 import type { GameDb } from '../data/db'
 
-export type TabId = 'manual' | 'search' | 'talismans'
+export type TabId = 'manual' | 'search' | 'saved' | 'talismans'
 
 export interface AppStateValue {
   db: GameDb
@@ -12,10 +13,16 @@ export interface AppStateValue {
   /** 수동 세팅 탭의 현재 빌드 */
   manualBuild: BuildState
   setManualBuild: Dispatch<SetStateAction<BuildState>>
+  /** 내 세팅 (브라우저 저장) */
+  savedBuilds: SavedBuild[]
+  setSavedBuilds: Dispatch<SetStateAction<SavedBuild[]>>
+  /** 수동 세팅에 불러온 내 세팅 id (덮어쓰기 저장용). 직접 만들었거나 검색 결과에서 왔으면 null */
+  manualSourceId: string | null
+  setManualSourceId: (id: string | null) => void
   tab: TabId
   setTab: (tab: TabId) => void
-  /** 빌드를 수동 세팅 탭에서 연다 (검색 결과 → 수동 세팅) */
-  openInManual: (build: BuildState) => void
+  /** 빌드를 수동 세팅 탭에서 연다. 내 세팅에서 불러온 경우 sourceId 를 넘긴다. */
+  openInManual: (build: BuildState, sourceId?: string | null) => void
 }
 
 export const AppStateContext = createContext<AppStateValue | null>(null)

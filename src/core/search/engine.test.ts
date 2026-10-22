@@ -281,6 +281,7 @@ describe('일반화된 경로 (합성 데이터)', () => {
   const names = (ko: string) => ({ ko, en: ko, ja: ko })
   const skill = (id: number, kind: Skill['kind'], maxLevel: number): Skill => ({
     id,
+    gameId: id,
     kind,
     name: names(`s${id}`),
     description: '',
@@ -293,7 +294,7 @@ describe('일반화된 경로 (합성 데이터)', () => {
   const data: GameData = {
     meta: { source: 'test', mhdbVersion: 'test', generatedAt: '', locales: ['ko', 'en', 'ja'] },
     skills: [skill(1, 'armor', 5), skill(2, 'weapon', 3), skill(3, 'armor', 3)],
-    armorSets: [{ id: 1, name: names('set'), setSkillId: null, groupSkillId: null, pieceIds: [1, 2, 3, 4, 5, 6] }],
+    armorSets: [{ id: 1, gameId: 1, name: names('set'), setSkillId: null, groupSkillId: null, pieceIds: [1, 2, 3, 4, 5, 6] }],
     armor: [
       ...kinds.map((kind, i) => ({
         id: i + 1,
@@ -322,14 +323,15 @@ describe('일반화된 경로 (합성 데이터)', () => {
       },
     ],
     decorations: [
-      { id: 1, name: names('d-armor-s3'), kind: 'armor', size: 1, rarity: 1, skills: [{ skillId: 3, level: 1 }] },
-      { id: 2, name: names('d-weapon-s3'), kind: 'weapon', size: 1, rarity: 1, skills: [{ skillId: 3, level: 1 }] },
-      { id: 3, name: names('d-weapon-s2'), kind: 'weapon', size: 2, rarity: 1, skills: [{ skillId: 2, level: 1 }] },
+      { id: 1, gameId: 1, name: names('d-armor-s3'), kind: 'armor', size: 1, rarity: 1, skills: [{ skillId: 3, level: 1 }] },
+      { id: 2, gameId: 2, name: names('d-weapon-s3'), kind: 'weapon', size: 1, rarity: 1, skills: [{ skillId: 3, level: 1 }] },
+      { id: 3, gameId: 3, name: names('d-weapon-s2'), kind: 'weapon', size: 2, rarity: 1, skills: [{ skillId: 2, level: 1 }] },
     ],
     talismans: [],
     weapons: [
       {
         id: 1,
+        gameId: 1,
         kind: 'bow',
         name: names('w'),
         rarity: 8,

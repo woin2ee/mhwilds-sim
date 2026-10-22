@@ -4,6 +4,7 @@ import { SlotBadge, SlotList } from '../../components/SlotBadge'
 import { Badge, Button } from '../../components/ui'
 import { activeSkillLevels, computeBuild, unwantedSkillsOf, type BuildSummary } from '../../core/calc'
 import { resolveTalisman } from '../../core/equipment'
+import { suggestName } from '../../core/savedBuilds'
 import { resultToBuild } from '../../core/search/toBuild'
 import type { SearchRequest, SearchResultItem } from '../../core/search/types'
 import { armorDefense, canTranscend } from '../../core/transcend'
@@ -14,6 +15,7 @@ import { ARMOR_KIND_LABEL } from '../../data/labels'
 import { ARMOR_KINDS, type ArmorKind, type SkillPoint } from '../../data/types'
 import { cx } from '../../lib/cx'
 import { useAppState } from '../../state/context'
+import { SaveBuildDialog } from '../saved/SaveBuildDialog'
 import { bonusRankLabel, formatCount } from './format'
 
 type Variant = Partial<Record<ArmorKind, number>> & { talismanIndex?: number }
@@ -167,6 +169,7 @@ export function ResultCard({
   const { db, customTalismans, openInManual } = useAppState()
   const [variant, setVariant] = useState<Variant>({})
   const [open, setOpen] = useState<Expandable | null>(null)
+  const [saving, setSaving] = useState(false)
 
   const build = useMemo(() => resultToBuild(db, item, request, variant), [db, item, request, variant])
   const summary = useMemo(() => computeBuild(db, build, customTalismans), [db, build, customTalismans])
@@ -240,9 +243,14 @@ export function ResultCard({
           남는 슬롯 <SlotList slots={freeSlots} size="sm" empty="없음" />
         </span>
         {item.variantCount > 1 && <Badge>방어구 조합 {formatCount(item.variantCount)}개</Badge>}
-        <Button size="sm" className="ml-auto" onClick={() => openInManual(build)}>
-          수동 세팅에서 열기
-        </Button>
+        <div className="ml-auto flex gap-1.5">
+          <Button size="sm" variant="ghost" onClick={() => setSaving(true)}>
+            저장
+          </Button>
+          <Button size="sm" onClick={() => openInManual(build)}>
+            수동 세팅에서 열기
+          </Button>
+        </div>
       </header>
 
       <div className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
@@ -318,6 +326,15 @@ export function ResultCard({
           />
         ))}
       </div>
+
+      {saving && (
+        <SaveBuildDialog
+          open
+          onClose={() => setSaving(false)}
+          build={build}
+          defaultName={suggestName(db, request.required)}
+        />
+      )}
     </article>
   )
 }

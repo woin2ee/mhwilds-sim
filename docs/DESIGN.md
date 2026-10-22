@@ -23,6 +23,8 @@ src/core/                   UI와 무관한 순수 로직 (Node/Worker 에서도
   equipment.ts              장비 → ResolvedEquipment (스킬·슬롯·방어력)
   calc.ts                   computeBuild: 빌드 합계 계산 (수동 세팅·검색 검증 공용)
   buildUpdates.ts           BuildState 불변 갱신 도우미 (장비 교체·장식주 재배치)
+  savedBuilds.ts            내 세팅(SavedBuild) 타입·기본 이름
+  share/                    공유 코드(gameId 기반 바이너리 → base64url)·백업 파일 (§8)
   search/types.ts           검색 요청/응답 계약 + 워커 메시지
   search/engine.ts          검색 엔진 (runSearch: DFS·결과 생성)
   search/prepare.ts         요청 정리, 후보 필터, 동등 클래스, 가지치기 테이블
@@ -36,6 +38,7 @@ src/state/                  전역 상태 (DB, 내 호석, 수동 세팅 빌드,
 src/components/             공통 UI (Button, Panel, Combobox, SkillSelect, SkillPointEditor, SlotBadge, SkillChip, controls ...)
 src/features/manual/        수동 세팅 화면
 src/features/search/        스킬 검색 화면
+src/features/saved/         내 세팅 목록, 저장·공유·가져오기 대화상자, 공유 링크 처리
 src/features/talismans/     내 호석 관리 화면
 ```
 
@@ -150,3 +153,48 @@ src/features/talismans/     내 호석 관리 화면
 
 ### 7.3 내 호석 (`features/talismans`)
 - 감정 호석 등록/수정/삭제: 이름, 레어도(선택), 스킬 최대 3개(+레벨), 슬롯 최대 3개(종류+레벨). localStorage 저장.
+
+## 8. 저장·공유 (`src/core/share`, `src/core/savedBuilds.ts`, `features/saved`)
+
+로그인 없이 동작한다. 서버가 필요해지면 같은 형식을 그대로 클라우드에 올리면 된다.
+
+- **내 세팅**: `SavedBuild[]` 를 localStorage(`saved-builds:v1`)에 저장. 첫 저장 때 `navigator.storage.persist()` 요청
+  (사파리는 7일 넘게 방문하지 않으면 저장소를 지울 수 있어 백업 내보내기를 함께 안내한다).
+- **공유 코드 / 링크**: 세팅 1개를 짧은 문자열로. 링크는 `<사이트>#b=<코드>` — 열면 불러올지 묻는다.
+- **백업 파일**: 내 세팅 전체 + 내 호석을 JSON 파일로 내보내기/가져오기(병합).
+
+### 8.1 안정적인 식별자
+MHDB 의 `id` 는 DB 번호라 데이터를 다시 만들면 바뀔 수 있으므로 공유 코드에는 **게임 내부 id(gameId)** 를 쓴다
+(모두 int32, 아래 키로 유일함을 데이터 생성 시 검증).
+
+| 대상 | 키 |
+|---|---|
+| 스킬 | `skill.gameId` |
+| 방어구 | (`armorSet.gameId`, 부위) |
+| 무기 | (무기 종류, `weapon.gameId`) |
+| 장식주 | `decoration.gameId` |
+| 제작 호석 | (`charm.gameId`, 등급 `level`) |
+
+### 8.2 공유 코드 형식 v1
+바이트열을 base64url(패딩 없음)로 쓴다. `varint` = LEB128 부호 없는 정수, `zz(n)` = zigzag 인코딩(int32), `str` = u8 바이트 길이 + UTF-8 (최대 60바이트, 글자 경계에서 자름).
+
+```
+u8   version = 1
+무기  u8 tag: 0 없음 | 1 DB | 2 직접 입력
+      1 → u8 무기 종류 인덱스(WEAPON_KINDS), varint zz(gameId)
+      2 → u8 슬롯 수, u8 레벨…, u8 스킬 수, (varint zz(스킬 gameId), u8 레벨)…
+방어구 ARMOR_KINDS 순서로 5번: u8 tag: 0 없음 | 1 장착 | 2 장착+초월, 이어서 (1·2) varint zz(세트 gameId)
+호석  u8 tag: 0 없음 | 1 제작 | 2 직접 입력
+      1 → varint zz(charm gameId), u8 등급
+      2 → str 이름, u8 레어도(0 = 없음), u8 스킬 수, (varint zz(스킬 gameId), u8 레벨)…, u8 슬롯 수, u8 (종류<<2 | 레벨)… (종류 0 방어구, 1 무기)
+장식주 EQUIP_KEYS 순서로 7번: u8 칸 수 n(≤8), u8 비트마스크(i번 칸 채움), 채워진 칸마다 varint zz(장식주 gameId)
+이름  str (0 = 없음)
+```
+
+- 디코딩 시 버전이 다르거나 바이트가 모자라면 `ShareCodeError`.
+- 현재 데이터에 없는 항목은 비우고 `missing` 에 한국어로 적는다 (예: '머리 방어구', '장식주 2개', '무기 스킬 1개').
+- 직접 입력 호석은 내용(`TalismanDraft`)으로 돌려주고, `attachTalisman` 이 내용이 같은 내 호석(`sameTalisman`, 이름 무시)을 재사용하거나 새로 추가한다.
+
+### 8.3 백업 파일
+`BackupFile` (`app: 'mhwilds-sim'`, `kind: 'backup'`, `version: 1`). 세팅은 공유 코드로, 내 호석은 그대로 담는다.
+가져오기는 병합: 호석은 내용이 같으면 재사용, 세팅은 이름과 코드가 모두 같으면 건너뛴다. 새 항목은 새 id 를 받는다.

@@ -106,6 +106,7 @@ async function main() {
   const outSkills = skills
     .map((s) => ({
       id: s.id,
+      gameId: s.gameId,
       kind: s.kind,
       name: namesOf(skillNameIdx, s.id),
       description: s.description ?? '',
@@ -126,6 +127,7 @@ async function main() {
   const outSets = armorSets
     .map((set) => ({
       id: set.id,
+      gameId: set.gameId,
       name: namesOf(setNameIdx, set.id),
       setSkillId: set.bonus?.skill?.id ?? null,
       groupSkillId: set.groupBonus?.skill?.id ?? null,
@@ -156,6 +158,7 @@ async function main() {
   const outDecorations = decorations
     .map((d) => ({
       id: d.id,
+      gameId: d.gameId,
       name: namesOf(decoNameIdx, d.id),
       kind: d.kind,
       size: d.slot,
@@ -172,6 +175,7 @@ async function main() {
       outTalismans.push({
         id: r.id,
         charmId: charm.id,
+        charmGameId: charm.gameId,
         name: namesOf(charmRankNameIdx, r.id),
         level: r.level,
         isMaxRank: i === ranks.length - 1,
@@ -186,6 +190,7 @@ async function main() {
   const outWeapons = weapons
     .map((w) => ({
       id: w.id,
+      gameId: w.gameId,
       kind: w.kind,
       name: namesOf(weaponNameIdx, w.id),
       rarity: w.rarity,
@@ -214,6 +219,28 @@ async function main() {
     for (const item of list) {
       for (const p of item.skills) if (!skillIds.has(p.skillId)) problems.push(`${item.id}: 스킬 ${p.skillId} 없음`)
       for (const slot of item.slots ?? []) if (slot < 1 || slot > 3) problems.push(`${item.id}: 슬롯 ${slot}`)
+    }
+  }
+  // 공유 코드는 게임 내부 id 로 장비를 찾으므로 int32 이고 키가 유일해야 한다 (DESIGN.md §8.1)
+  const setGameIds = new Map(outSets.map((s) => [s.id, s.gameId]))
+  const gameKeys = [
+    ['스킬', outSkills.map((s) => [s.gameId])],
+    ['방어구 세트', outSets.map((s) => [s.gameId])],
+    ['방어구', outArmor.map((a) => [setGameIds.get(a.setId), a.kind])],
+    ['무기', outWeapons.map((w) => [w.kind, w.gameId])],
+    ['장식주', outDecorations.map((d) => [d.gameId])],
+    ['호석', outTalismans.map((t) => [t.charmGameId, t.level])],
+  ]
+  for (const [label, keys] of gameKeys) {
+    const seen = new Set()
+    for (const key of keys) {
+      const ids = key.filter((part) => typeof part !== 'string')
+      if (!ids.every((id) => Number.isInteger(id) && id >= -(2 ** 31) && id < 2 ** 31)) {
+        problems.push(`${label}: gameId 가 int32 가 아님 ${JSON.stringify(key)}`)
+      }
+      const text = JSON.stringify(key)
+      if (seen.has(text)) problems.push(`${label}: gameId 키 중복 ${text}`)
+      seen.add(text)
     }
   }
   if (problems.length) throw new Error(`데이터 검증 실패:\n${problems.slice(0, 20).join('\n')}`)

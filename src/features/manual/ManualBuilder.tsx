@@ -1,11 +1,14 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Button, Panel } from '../../components/ui'
+import { clearDecorations, hasAnyDecoration, isEmptyBuild } from '../../core/buildUpdates'
 import { computeBuild, type SlotUsage } from '../../core/calc'
+import { suggestName, topSkills } from '../../core/savedBuilds'
 import { emptyBuild, type EquipKey } from '../../core/types'
 import { ARMOR_KINDS } from '../../data/types'
 import { useAppState } from '../../state/context'
+import { SaveBuildDialog } from '../saved/SaveBuildDialog'
+import { ShareDialog } from '../saved/ShareDialog'
 import { ArmorRow } from './ArmorRow'
-import { clearDecorations, hasAnyDecoration, isEmptyBuild } from '../../core/buildUpdates'
 import { SummaryPanel } from './SummaryPanel'
 import { TalismanRow } from './TalismanRow'
 import { WeaponRow } from './WeaponRow'
@@ -14,7 +17,9 @@ const NO_USAGES: readonly SlotUsage[] = []
 
 /** 수동 세팅: 장비·장식주를 직접 골라 최종 스킬/방어력을 확인한다 */
 export function ManualBuilder() {
-  const { db, manualBuild, setManualBuild, customTalismans } = useAppState()
+  const { db, manualBuild, setManualBuild, customTalismans, savedBuilds, manualSourceId, setManualSourceId } =
+    useAppState()
+  const [dialog, setDialog] = useState<'save' | 'share' | null>(null)
   const summary = useMemo(
     () => computeBuild(db, manualBuild, customTalismans),
     [db, manualBuild, customTalismans],
@@ -29,16 +34,40 @@ export function ManualBuilder() {
     return map
   }, [summary])
 
+  // 내 세팅에서 불러온 세팅이면 이름과 수정 여부를 보여 준다
+  const source = manualSourceId ? savedBuilds.find((s) => s.id === manualSourceId) : undefined
+  const modified = source !== undefined && JSON.stringify(source.build) !== JSON.stringify(manualBuild)
+  const empty = isEmptyBuild(manualBuild)
+
   const reset = () => {
-    if (window.confirm('수동 세팅을 모두 초기화할까요?')) setManualBuild(emptyBuild())
+    if (!window.confirm('수동 세팅을 모두 초기화할까요?')) return
+    setManualBuild(emptyBuild())
+    setManualSourceId(null)
   }
 
   return (
     <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)]">
       <Panel
-        title="장비"
+        title={
+          <span>
+            장비
+            {source && (
+              <span className="font-normal text-muted">
+                {' '}
+                · {source.name}
+                {modified && ' (수정됨)'}
+              </span>
+            )}
+          </span>
+        }
         actions={
           <>
+            <Button size="sm" disabled={empty} onClick={() => setDialog('save')}>
+              저장
+            </Button>
+            <Button size="sm" disabled={empty} onClick={() => setDialog('share')}>
+              공유
+            </Button>
             <Button
               size="sm"
               variant="ghost"
@@ -47,7 +76,7 @@ export function ManualBuilder() {
             >
               장식주 비우기
             </Button>
-            <Button size="sm" variant="ghost" disabled={isEmptyBuild(manualBuild)} onClick={reset}>
+            <Button size="sm" variant="ghost" disabled={empty} onClick={reset}>
               전체 초기화
             </Button>
           </>
@@ -64,6 +93,21 @@ export function ManualBuilder() {
       <aside className="lg:sticky lg:top-16 lg:max-h-[calc(100vh-5rem)] lg:overflow-y-auto">
         <SummaryPanel summary={summary} />
       </aside>
+
+      <SaveBuildDialog
+        open={dialog === 'save'}
+        onClose={() => setDialog(null)}
+        build={manualBuild}
+        defaultName={suggestName(db, topSkills(summary))}
+        sourceId={source?.id ?? null}
+        onSaved={(saved) => setManualSourceId(saved.id)}
+      />
+      <ShareDialog
+        open={dialog === 'share'}
+        onClose={() => setDialog(null)}
+        build={manualBuild}
+        name={source?.name ?? null}
+      />
     </div>
   )
 }

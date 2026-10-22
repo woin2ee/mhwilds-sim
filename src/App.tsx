@@ -1,8 +1,11 @@
 import { useEffect, useState, type ReactNode } from 'react'
+import { ToastProvider } from './components/ToastProvider'
 import { Badge } from './components/ui'
 import { GameDb, loadGameData } from './data/db'
 import { cx } from './lib/cx'
 import { ManualBuilder } from './features/manual/ManualBuilder'
+import { SavedBuildsPage } from './features/saved/SavedBuildsPage'
+import { SharedLinkHandler } from './features/saved/SharedLinkHandler'
 import { SearchPage } from './features/search/SearchPage'
 import { TalismanManager } from './features/talismans/TalismanManager'
 import { AppStateProvider } from './state/AppState'
@@ -21,9 +24,12 @@ export default function App() {
   if (error) return <Centered>데이터를 불러오지 못했습니다: {error}</Centered>
   if (!db) return <Centered>게임 데이터를 불러오는 중…</Centered>
   return (
-    <AppStateProvider db={db}>
-      <Shell />
-    </AppStateProvider>
+    <ToastProvider>
+      <AppStateProvider db={db}>
+        <Shell />
+        <SharedLinkHandler />
+      </AppStateProvider>
+    </ToastProvider>
   )
 }
 
@@ -34,6 +40,7 @@ function Centered({ children }: { children: ReactNode }) {
 const TABS: { id: TabId; label: string }[] = [
   { id: 'manual', label: '수동 세팅' },
   { id: 'search', label: '스킬 검색' },
+  { id: 'saved', label: '내 세팅' },
   { id: 'talismans', label: '내 호석' },
 ]
 
@@ -72,6 +79,9 @@ function Shell() {
         </div>
         <div hidden={tab !== 'search'}>
           <SearchPage />
+        </div>
+        <div hidden={tab !== 'saved'}>
+          <SavedBuildsPage />
         </div>
         <div hidden={tab !== 'talismans'}>
           <TalismanManager />

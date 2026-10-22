@@ -34,3 +34,25 @@ export function usePersistentState<T>(
   }, [key, value])
   return [value, setValue]
 }
+
+/**
+ * 브라우저에 저장소 보존을 요청한다 (공간이 부족해도 지우지 않도록). 이미 허용됐거나 허용되면 true.
+ * 브라우저마다 자동 허용·사용자 확인·미지원이 달라서 결과는 참고용이다.
+ */
+export async function requestPersistentStorage(): Promise<boolean> {
+  try {
+    if (await navigator.storage?.persisted?.()) return true
+    return (await navigator.storage?.persist?.()) ?? false
+  } catch {
+    return false
+  }
+}
+
+/** 저장소 보존 여부 (알 수 없으면 null) */
+export async function isStoragePersisted(): Promise<boolean | null> {
+  try {
+    return (await navigator.storage?.persisted?.()) ?? null
+  } catch {
+    return null
+  }
+}

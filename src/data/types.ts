@@ -50,6 +50,8 @@ export interface SkillRank {
 
 export interface Skill {
   id: number
+  /** 게임 내부 id (공유 코드용, 데이터를 다시 만들어도 바뀌지 않음) */
+  gameId: number
   kind: SkillKind
   name: Names
   description: string
@@ -60,6 +62,8 @@ export interface Skill {
 
 export interface ArmorSet {
   id: number
+  /** 게임 내부 id. 방어구는 (세트 gameId, 부위)로 식별한다. */
+  gameId: number
   name: Names
   /** 시리즈 스킬 id. α/β/γ 세트가 같은 시리즈 스킬을 공유하며 부위 수를 합산한다. */
   setSkillId: number | null
@@ -86,6 +90,8 @@ export interface ArmorPiece {
 
 export interface Decoration {
   id: number
+  /** 게임 내부 id */
+  gameId: number
   name: Names
   kind: DecorationKind
   size: SlotLevel
@@ -97,6 +103,8 @@ export interface Decoration {
 export interface FixedTalisman {
   id: number
   charmId: number
+  /** 호석 계열의 게임 내부 id. (charmGameId, level)로 식별한다. */
+  charmGameId: number
   name: Names
   level: number
   /** 같은 호석 계열의 최고 등급 여부 */
@@ -114,6 +122,8 @@ export interface WeaponSpecial {
 
 export interface Weapon {
   id: number
+  /** 게임 내부 id. 무기 종류마다 따로 매겨지므로 (kind, gameId)로 식별한다. */
+  gameId: number
   kind: WeaponKind
   name: Names
   rarity: number

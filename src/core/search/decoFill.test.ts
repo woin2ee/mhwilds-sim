@@ -6,7 +6,8 @@ import { assignDecorations, DecoFiller, removeDominated, type ConcreteSlot, type
 let nextId = 1
 function deco(kind: SlotKind, size: SlotLevel, pts: number[], unwanted: number[] = []): FillDeco {
   const decoration: Decoration = {
-    id: nextId++,
+    id: nextId,
+    gameId: nextId++,
     name: { ko: '', en: '', ja: '' },
     kind,
     size,
