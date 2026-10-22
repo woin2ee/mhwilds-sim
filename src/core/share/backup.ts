@@ -1,4 +1,4 @@
-// 백업 파일 내보내기/가져오기 (DESIGN.md §8.3)
+// 백업 만들기/가져오기 (DESIGN.md §8.3). 파일과 백업 코드가 같은 BackupFile 을 담는다.
 import type { GameDb } from '../../data/db'
 import type { SkillPoint, SlotLevel } from '../../data/types'
 import type { SavedBuild } from '../savedBuilds'
@@ -9,6 +9,7 @@ import { ShareCodeError, type BackupFile, type BackupImportResult, type Talisman
 
 const INVALID_BACKUP = '올바른 백업 파일이 아니에요'
 
+/** 가져올 때 쓰지 않는 값(호석 id, 공유 코드 속 이름)은 빼서 백업 코드를 짧게 한다 */
 export function createBackup(
   db: GameDb,
   savedBuilds: readonly SavedBuild[],
@@ -21,7 +22,8 @@ export function createBackup(
     exportedAt: new Date().toISOString(),
     dataVersion: db.data.meta.mhdbVersion,
     talismans: customTalismans.map((t) => ({
-      ...t,
+      name: t.name,
+      rarity: t.rarity,
       skills: t.skills.map((p) => ({ ...p })),
       slots: t.slots.map((slot) => ({ ...slot })),
       skillGameIds: t.skills.map((p) => db.skills.get(p.skillId)?.gameId ?? null),
@@ -31,12 +33,15 @@ export function createBackup(
       memo: s.memo,
       createdAt: s.createdAt,
       updatedAt: s.updatedAt,
-      code: encodeBuild(db, s.build, customTalismans, s.name),
+      code: encodeBuild(db, s.build, customTalismans, null),
     })),
   }
 }
 
-/** 백업 파일(JSON.parse 결과)을 현재 목록에 병합한다. 형식이 틀리면 ShareCodeError. */
+/**
+ * 백업(파일의 JSON.parse 결과나 decodeBackupCode 결과)을 현재 목록에 병합한다. 형식이 틀리면 ShareCodeError.
+ * 상태를 바꾸지 않는 순수 함수라, 화면은 결과를 미리 보여 준 뒤 그대로 반영한다.
+ */
 export function importBackup(
   db: GameDb,
   input: unknown,
@@ -92,7 +97,8 @@ export function importBackup(
     addedBuilds++
   }
 
-  return { savedBuilds, customTalismans, addedBuilds, addedTalismans, skippedBuilds, missing }
+  const { exportedAt } = file
+  return { savedBuilds, customTalismans, addedBuilds, addedTalismans, skippedBuilds, missing, exportedAt }
 }
 
 function buildKey(db: GameDb, name: string, build: BuildState, talismans: readonly CustomTalisman[]): string {
@@ -120,13 +126,17 @@ interface ParsedBuild {
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 const isInt = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v)
 
-function parseBackup(input: unknown): { talismans: ParsedTalisman[]; builds: ParsedBuild[] } {
+function parseBackup(input: unknown): { talismans: ParsedTalisman[]; builds: ParsedBuild[]; exportedAt: string | null } {
   if (!isRecord(input) || input.app !== 'mhwilds-sim' || input.kind !== 'backup') {
     throw new ShareCodeError(INVALID_BACKUP)
   }
   if (input.version !== 1) throw new ShareCodeError('지원하지 않는 백업 버전이에요')
   if (!Array.isArray(input.talismans) || !Array.isArray(input.builds)) throw new ShareCodeError(INVALID_BACKUP)
-  return { talismans: input.talismans.map(parseTalisman), builds: input.builds.map(parseBuild) }
+  return {
+    talismans: input.talismans.map(parseTalisman),
+    builds: input.builds.map(parseBuild),
+    exportedAt: typeof input.exportedAt === 'string' ? input.exportedAt : null,
+  }
 }
 
 function parseTalisman(value: unknown): ParsedTalisman {

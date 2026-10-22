@@ -4,11 +4,16 @@ import { armorByName, decorationIdByName, loadTestDb, skillIdByName } from '../.
 import { computeBuild } from '../calc'
 import type { SavedBuild } from '../savedBuilds'
 import { emptyBuild, type BuildState, type CustomTalisman } from '../types'
+import { toBase64Url } from './binary'
 import {
   attachTalisman,
   createBackup,
+  decodeBackupCode,
   decodeBuild,
+  encodeBackupCode,
   encodeBuild,
+  extractShareCode,
+  hasBackupCode,
   importBackup,
   sameTalisman,
   ShareCodeError,
@@ -105,9 +110,10 @@ describe('백업', () => {
   const talismans = [used, unused]
 
   it('빈 상태로 가져오면 세팅·호석이 모두 복원된다', () => {
-    const file = roundTripJson(createBackup(db, savedBuilds, talismans))
-    const result = importBackup(db, file, { savedBuilds: [], customTalismans: [] }, counter('id'))
+    const backup = createBackup(db, savedBuilds, talismans)
+    const result = importBackup(db, roundTripJson(backup), { savedBuilds: [], customTalismans: [] }, counter('id'))
     expect(result).toMatchObject({ addedBuilds: 3, addedTalismans: 2, skippedBuilds: 0, missing: [] })
+    expect(result.exportedAt).toBe(backup.exportedAt)
     expect(result.customTalismans.map((t) => t.name)).toEqual(['쓰는 호석', '안 쓰는 호석'])
     result.savedBuilds.forEach((restored, i) => {
       const original = savedBuilds[i]
@@ -115,6 +121,25 @@ describe('백업', () => {
       expect(restored.id).not.toBe(original.id)
       expect(summary(restored.build, result.customTalismans)).toEqual(summary(original.build, talismans))
     })
+  })
+
+  it('가져올 때 쓰지 않는 호석 id 와 코드 속 이름은 담지 않는다', () => {
+    const file = createBackup(db, savedBuilds, talismans)
+    for (const t of file.talismans) expect(t).not.toHaveProperty('id')
+    for (const b of file.builds) expect(decodeBuild(db, b.code).name).toBeNull()
+  })
+
+  it('예전 형식(호석 id, 이름 든 코드)의 백업도 똑같이 가져온다', () => {
+    const file = createBackup(db, savedBuilds, talismans)
+    const old = {
+      ...file,
+      talismans: file.talismans.map((t, i) => ({ ...t, id: talismans[i].id })),
+      builds: file.builds.map((b, i) => ({ ...b, code: encodeBuild(db, savedBuilds[i].build, talismans, b.name) })),
+    }
+    const empty = { savedBuilds: [], customTalismans: [] }
+    expect(importBackup(db, roundTripJson(old), empty, counter('id'))).toEqual(
+      importBackup(db, roundTripJson(file), empty, counter('id')),
+    )
   })
 
   it('같은 백업을 다시 가져오면 모두 건너뛴다', () => {
@@ -174,5 +199,73 @@ describe('백업', () => {
     expect(() =>
       importBackup(db, { ...valid, version: 2 }, { savedBuilds: [], customTalismans: [] }, counter('id')),
     ).toThrow('지원하지 않는 백업 버전이에요')
+  })
+})
+
+describe('백업 코드', () => {
+  const savedBuilds = makeSavedBuilds()
+  const talismans = [used, unused]
+  const empty = { savedBuilds: [], customTalismans: [] }
+
+  it('백업 코드로 옮겨도 파일과 똑같이 가져온다', async () => {
+    const file = createBackup(db, savedBuilds, talismans)
+    const code = await encodeBackupCode(file)
+    expect(code).toMatch(/^mhwilds-backup-1\.[A-Za-z0-9_-]+$/)
+    expect(code.length).toBeLessThan(JSON.stringify(file).length)
+    expect(await decodeBackupCode(code)).toEqual(roundTripJson(file))
+    expect(importBackup(db, await decodeBackupCode(code), empty, counter('id'))).toEqual(
+      importBackup(db, roundTripJson(file), empty, counter('id')),
+    )
+  })
+
+  it('앞뒤 글, 중간 줄바꿈·공백, 대문자 앞머리를 견딘다', async () => {
+    const file = createBackup(db, savedBuilds, talismans)
+    const code = await encodeBackupCode(file)
+    const wrapped = code.replace(/(.{40})/g, '$1\n ')
+    for (const text of [`  ${code}\n`, `몬헌 백업\n${wrapped}`, `${code}입니다`, code.replace('mhwilds', 'MHWILDS')]) {
+      expect(hasBackupCode(text)).toBe(true)
+      expect(await decodeBackupCode(text)).toEqual(roundTripJson(file))
+    }
+  })
+
+  it('공유 코드·링크와 섞이지 않는다', async () => {
+    const code = await encodeBackupCode(createBackup(db, savedBuilds, talismans))
+    const shareCode = encodeBuild(db, savedBuilds[0].build, talismans, '세팅')
+    expect(extractShareCode(code)).toBeNull()
+    expect(hasBackupCode(shareCode)).toBe(false)
+    expect(hasBackupCode(`https://example.com/#b=${shareCode}`)).toBe(false)
+  })
+
+  it('잘리거나 망가진 코드는 ShareCodeError', async () => {
+    // 내용이 고정돼야 망가뜨린 결과도 매번 같다
+    const file = { ...createBackup(db, savedBuilds, talismans), exportedAt: '2026-10-22T00:00:00.000Z' }
+    const code = await encodeBackupCode(file)
+    const body = code.slice(code.indexOf('.') + 1)
+    const middle = Math.floor(code.length / 2)
+    const notJson = toBase64Url(new Uint8Array([0x4b, 0x4c, 0x04, 0x00])) // deflate-raw('abc')
+    const cases = [
+      '',
+      body,
+      'mhwilds-backup-1.',
+      code.slice(0, middle),
+      code.slice(0, middle) + (code[middle] === 'A' ? 'B' : 'A') + code.slice(middle + 1),
+      `mhwilds-backup-1.${notJson}`,
+      `mhwilds-backup-1.!!!`,
+      code.replace('-1.', '-0.'),
+    ]
+    for (const text of cases) await expect(decodeBackupCode(text), text.slice(0, 30)).rejects.toThrow(ShareCodeError)
+    await expect(decodeBackupCode(code.replace('-1.', '-2.'))).rejects.toThrow('더 새로운 형식의 백업 코드예요')
+  })
+
+  it('풀면 지나치게 커지는 코드는 끝까지 풀지 않고 거절한다', async () => {
+    const zeros = new Blob([new Uint8Array(9 * 1024 * 1024)]).stream().pipeThrough(new CompressionStream('deflate-raw'))
+    const bomb = `mhwilds-backup-1.${toBase64Url(new Uint8Array(await new Response(zeros).arrayBuffer()))}`
+    await expect(decodeBackupCode(bomb)).rejects.toThrow('올바른 백업 코드가 아니에요')
+  })
+
+  it('JSON 이지만 백업이 아니면 가져오기에서 ShareCodeError', async () => {
+    const other = await decodeBackupCode(await encodeBackupCode({ app: 'other' } as unknown as BackupFile))
+    expect(other).toEqual({ app: 'other' })
+    expect(() => importBackup(db, other, empty, counter('id'))).toThrow(ShareCodeError)
   })
 })

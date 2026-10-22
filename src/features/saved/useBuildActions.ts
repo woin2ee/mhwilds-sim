@@ -16,8 +16,12 @@ import { useToast } from '../../state/toast'
 
 export type ParsedShare = { decoded: DecodedBuild } | { error: string }
 
-/** 붙여 넣은 글(코드·링크)을 해석한다. 빈 글이면 null */
-export function parseShared(db: GameDb, text: string): ParsedShare | null {
+/** 붙여 넣은 글(코드·링크)을 해석한다. 빈 글이면 null, 코드가 없으면 notFound 를 오류로 */
+export function parseShared(
+  db: GameDb,
+  text: string,
+  notFound = '공유 링크나 코드를 찾지 못했어요.',
+): ParsedShare | null {
   if (!text.trim()) return null
   let code: string | null = null
   try {
@@ -25,7 +29,7 @@ export function parseShared(db: GameDb, text: string): ParsedShare | null {
   } catch {
     code = null
   }
-  if (!code) return { error: '공유 링크나 코드를 찾지 못했어요.' }
+  if (!code) return { error: notFound }
   try {
     return { decoded: decodeBuild(db, code) }
   } catch (err) {

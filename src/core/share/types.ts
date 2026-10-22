@@ -27,10 +27,13 @@ export class ShareCodeError extends Error {
   }
 }
 
-/** 백업 파일의 호석. skillGameIds 는 skills 와 같은 순서의 게임 내부 id (데이터를 다시 만들어도 스킬을 찾기 위함) */
-export type BackupTalisman = CustomTalisman & { skillGameIds?: (number | null)[] }
+/**
+ * 백업의 호석. id 는 담지 않는다 (가져올 때 새로 받음).
+ * skillGameIds 는 skills 와 같은 순서의 게임 내부 id (데이터를 다시 만들어도 스킬을 찾기 위함)
+ */
+export type BackupTalisman = TalismanDraft & { skillGameIds?: (number | null)[] }
 
-/** 백업 파일 (JSON). 세팅은 공유 코드 형태로 담아 데이터 갱신에도 깨지지 않게 한다. */
+/** 백업 (JSON 파일 또는 백업 코드). 세팅은 공유 코드 형태로 담아 데이터 갱신에도 깨지지 않게 한다. */
 export interface BackupFile {
   app: 'mhwilds-sim'
   kind: 'backup'
@@ -39,6 +42,7 @@ export interface BackupFile {
   /** 내보낼 때의 데이터 버전 (참고용) */
   dataVersion: string
   talismans: BackupTalisman[]
+  /** code 는 이름을 뺀 공유 코드 (이름은 name 에) */
   builds: { name: string; memo: string; createdAt: string; updatedAt: string; code: string }[]
 }
 
@@ -52,4 +56,6 @@ export interface BackupImportResult {
   skippedBuilds: number
   /** 현재 데이터에서 찾지 못한 항목 요약 */
   missing: string[]
+  /** 백업을 만든 시각 (ISO, 없으면 null) */
+  exportedAt: string | null
 }
