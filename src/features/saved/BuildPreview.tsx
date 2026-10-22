@@ -62,7 +62,7 @@ export function BuildPreview({
           방어력 <span className="font-semibold text-fg tabular-nums">{summary.defense.max}</span>
         </span>
         <span className="inline-flex items-center gap-1">
-          남은 슬롯 <SlotList slots={summary.freeSlots} size="sm" empty="없음" />
+          남은 슬롯 <SlotList slots={summary.freeSlots} size="sm" empty="없음" sorted />
         </span>
       </p>
     </div>

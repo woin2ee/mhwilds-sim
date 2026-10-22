@@ -208,12 +208,6 @@ export function ResultCard({
     const points = unwanted.byEquip.get(key)
     return points ? skillPointsText(db, points) : undefined
   }
-  // 남는 슬롯: 무기 슬롯 먼저, 레벨 내림차순
-  const freeSlots = useMemo(
-    () =>
-      [...summary.freeSlots].sort((a, b) => (a.kind === b.kind ? b.level - a.level : a.kind === 'weapon' ? -1 : 1)),
-    [summary],
-  )
 
   const decorations = useMemo(() => {
     const counts = new Map<number, number>()
@@ -283,7 +277,7 @@ export function ResultCard({
           방어력 <span className="font-semibold tabular-nums">{summary.defense.max}</span>
         </span>
         <span className="inline-flex items-center gap-1 text-xs text-muted">
-          남는 슬롯 <SlotList slots={freeSlots} size="sm" empty="없음" />
+          남는 슬롯 <SlotList slots={summary.freeSlots} size="sm" empty="없음" sorted />
         </span>
         {item.variantCount > 1 && <Badge>방어구 조합 {formatCount(item.variantCount)}개</Badge>}
         <div className="ml-auto flex gap-1.5">

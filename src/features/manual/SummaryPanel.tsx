@@ -82,7 +82,7 @@ export function SummaryPanel({ summary }: { summary: BuildSummary }) {
             <div className="min-w-0">
               <SectionTitle aside={`${usedSlots}/${summary.slots.length} 사용`}>남은 슬롯</SectionTitle>
               <div className="pt-1">
-                <SlotList slots={summary.freeSlots} empty="없음" />
+                <SlotList slots={summary.freeSlots} empty="없음" sorted />
               </div>
             </div>
           </section>
