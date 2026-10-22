@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
+import { ThemeSelect } from './components/ThemeSelect'
 import { ToastProvider } from './components/ToastProvider'
 import { Badge } from './components/ui'
 import { GameDb, loadGameData } from './data/db'
@@ -53,7 +54,8 @@ function Shell() {
           <h1 className="flex items-center gap-2 text-base font-bold">
             와일즈 스킬 시뮬레이터 <Badge>비공식</Badge>
           </h1>
-          <nav className="flex gap-1" aria-label="메뉴">
+          {/* 좁은 화면에서는 메뉴를 둘째 줄로 내리고 테마 선택을 제목 줄 오른쪽에 둔다 */}
+          <nav className="flex gap-1 max-md:order-last max-md:w-full" aria-label="메뉴">
             {TABS.map((t) => (
               <button
                 key={t.id}
@@ -69,6 +71,7 @@ function Shell() {
               </button>
             ))}
           </nav>
+          <ThemeSelect className="ml-auto" />
         </div>
       </header>
 

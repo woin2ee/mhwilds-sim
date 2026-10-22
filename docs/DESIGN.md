@@ -33,7 +33,7 @@ src/core/                   UI와 무관한 순수 로직 (Node/Worker 에서도
   search/search.worker.ts   Web Worker 진입점
   search/client.ts          메인 스레드용 워커 래퍼 (SearchClient)
   search/toBuild.ts         검색 결과 → BuildState
-src/lib/                    cx, 검색어 매칭(초성), localStorage 훅
+src/lib/                    cx, 검색어 매칭(초성), localStorage 훅, 화면 테마
 src/state/                  전역 상태 (DB, 내 호석, 수동 세팅 빌드, 탭)
 src/components/             공통 UI (Button, Panel, Combobox, SkillSelect, SkillPointEditor, SlotBadge, SkillChip, controls ...)
 src/features/manual/        수동 세팅 화면
@@ -136,6 +136,10 @@ src/features/talismans/     내 호석 관리 화면
 ## 7. 화면
 
 공통: 한국어 UI, 데스크톱 2단 / 모바일 1단, 의미 기반 색상 토큰만 사용, 게임에서 추출한 아이콘·이미지·로고 사용 금지.
+
+테마: 헤더에서 시스템 설정 따르기 / 라이트 / 다크를 고른다(localStorage `theme:v1`, 기본은 시스템 설정).
+`<html data-theme="light|dark">` 에 따라 `index.css` 의 토큰 값이 바뀐다. 첫 화면 깜빡임을 막으려고
+`index.html` 의 인라인 스크립트가 React 보다 먼저 같은 규칙으로 적용한다 (`src/lib/theme.ts` 와 함께 고친다).
 
 ### 7.1 수동 세팅 (`features/manual`)
 - 장비 7칸(무기·머리·몸통·팔·허리·다리·호석) + 각 장비의 슬롯별 장식주 선택.

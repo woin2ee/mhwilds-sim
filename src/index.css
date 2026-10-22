@@ -21,6 +21,8 @@
     'Malgun Gothic', system-ui, sans-serif;
 }
 
+/* 라이트가 기본이고 <html data-theme="dark"> 이면 다크. data-theme 은 사용자가 고른 테마(시스템 설정 따르기/라이트/다크)에
+   따라 src/lib/theme.ts 와 index.html 의 인라인 스크립트가 붙인다. 토큰을 추가하면 두 블록에 모두 값을 넣는다. */
 :root {
   color-scheme: light;
   --bg: #f3f4f6;
@@ -38,23 +40,21 @@
   --slot-armor: #0e7490;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-    --bg: #0d1015;
-    --surface: #151920;
-    --surface-2: #1c212a;
-    --line: #2a313c;
-    --fg: #e5e8ee;
-    --muted: #8d97a7;
-    --accent: #f59e0b;
-    --accent-fg: #1a1206;
-    --good: #4ade80;
-    --bad: #f87171;
-    --warn: #facc15;
-    --slot-weapon: #fb923c;
-    --slot-armor: #22d3ee;
-  }
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #0d1015;
+  --surface: #151920;
+  --surface-2: #1c212a;
+  --line: #2a313c;
+  --fg: #e5e8ee;
+  --muted: #8d97a7;
+  --accent: #f59e0b;
+  --accent-fg: #1a1206;
+  --good: #4ade80;
+  --bad: #f87171;
+  --warn: #facc15;
+  --slot-weapon: #fb923c;
+  --slot-armor: #22d3ee;
 }
 
 body {

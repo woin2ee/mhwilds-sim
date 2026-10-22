@@ -92,35 +92,55 @@ export function Toggle({
   )
 }
 
+/** icon 을 주면 아이콘만 보이고, label 은 툴팁과 스크린리더가 읽는 이름이 된다 */
+type SegmentedOption<T extends string> =
+  | { value: T; label: ReactNode; icon?: undefined }
+  | { value: T; label: string; icon: ReactNode }
+
 export function Segmented<T extends string>({
   value,
   options,
   onChange,
   size = 'md',
+  ariaLabel,
+  className,
 }: {
   value: T
-  options: readonly { value: T; label: ReactNode }[]
+  options: readonly SegmentedOption<T>[]
   onChange: (value: T) => void
   size?: 'sm' | 'md'
+  ariaLabel?: string
+  className?: string
 }) {
   return (
-    <div className="inline-flex rounded-md border border-line bg-surface-2 p-0.5" role="radiogroup">
-      {options.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          role="radio"
-          aria-checked={option.value === value}
-          onClick={() => onChange(option.value)}
-          className={cx(
-            'rounded px-2.5 font-medium transition-colors',
-            size === 'sm' ? 'h-6 text-xs' : 'h-8 text-sm',
-            option.value === value ? 'bg-surface text-fg shadow-sm' : 'text-muted hover:text-fg',
-          )}
-        >
-          {option.label}
-        </button>
-      ))}
+    <div
+      className={cx('inline-flex rounded-md border border-line bg-surface-2 p-0.5', className)}
+      role="radiogroup"
+      aria-label={ariaLabel}
+    >
+      {options.map((option) => {
+        const iconOnly = option.icon !== undefined
+        return (
+          <button
+            key={option.value}
+            type="button"
+            role="radio"
+            aria-checked={option.value === value}
+            aria-label={iconOnly ? option.label : undefined}
+            title={iconOnly ? option.label : undefined}
+            onClick={() => onChange(option.value)}
+            className={cx(
+              'rounded font-medium transition-colors',
+              size === 'sm' ? 'h-6 text-xs' : 'h-8 text-sm',
+              iconOnly ? 'inline-flex items-center justify-center' : 'px-2.5',
+              iconOnly && (size === 'sm' ? 'w-6' : 'w-8'),
+              option.value === value ? 'bg-surface text-fg shadow-sm' : 'text-muted hover:text-fg',
+            )}
+          >
+            {iconOnly ? option.icon : option.label}
+          </button>
+        )
+      })}
     </div>
   )
 }

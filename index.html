@@ -10,6 +10,19 @@
       href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"
     />
     <title>와일즈 스킬 시뮬레이터 (비공식)</title>
+    <script>
+      // 첫 화면이 그려지기 전에 테마를 적용해 깜빡임을 막는다. 저장 키·규칙은 src/lib/theme.ts 와 같게 유지한다.
+      {
+        let theme = null
+        try {
+          theme = JSON.parse(localStorage.getItem('mhwilds-sim:theme:v1'))
+        } catch {}
+        if (theme !== 'light' && theme !== 'dark') {
+          theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+        }
+        document.documentElement.dataset.theme = theme
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
