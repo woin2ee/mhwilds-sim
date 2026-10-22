@@ -73,12 +73,31 @@ function skillChips(db: GameDb, summary: BuildSummary, request: SearchRequest): 
   return [...required, ...unwantedChips, ...bonuses, ...extra]
 }
 
+/** 비선호 스킬이 붙은 곳: 방어구·호석 자체 스킬은 부위별로, 장식주는 id 로 (무기 자체 스킬은 세지 않는다) */
+function unwantedSources(summary: BuildSummary, excluded: readonly number[]) {
+  const skillIds = new Set(unwantedSkillsOf(summary, excluded))
+  const byEquip = new Map<EquipKey, SkillPoint[]>()
+  const decorationIds = new Set<number>()
+  for (const s of summary.skills) {
+    if (!skillIds.has(s.skillId)) continue
+    for (const c of s.contributions) {
+      if (c.decorationId !== null) {
+        decorationIds.add(c.decorationId)
+      } else if (c.from !== 'weapon') {
+        byEquip.set(c.from, [...(byEquip.get(c.from) ?? []), { skillId: s.skillId, level: c.level }])
+      }
+    }
+  }
+  return { byEquip, decorationIds }
+}
+
 function EquipRow({
   label,
   name,
   rarity,
   equipKey,
   summary,
+  unwanted,
   alternatives,
   open,
   onToggle,
@@ -88,6 +107,8 @@ function EquipRow({
   rarity?: number
   equipKey: EquipKey
   summary: BuildSummary
+  /** 이 장비 자체에 붙은 비선호 스킬 (예: '체술 1') */
+  unwanted?: string
   alternatives: number
   open: boolean
   onToggle: () => void
@@ -105,6 +126,14 @@ function EquipRow({
           {slots.map((s) => (
             <SlotBadge key={s.index} slot={s.slot} size="sm" filled={s.decorationId !== null} />
           ))}
+        </span>
+      )}
+      {unwanted && (
+        <span
+          title="비선호 스킬"
+          className="shrink-0 rounded border border-bad/40 bg-bad/10 px-1 text-[11px] whitespace-nowrap text-bad"
+        >
+          {unwanted}
         </span>
       )}
       {alternatives > 0 && (
@@ -174,6 +203,11 @@ export function ResultCard({
   const build = useMemo(() => resultToBuild(db, item, request, variant), [db, item, request, variant])
   const summary = useMemo(() => computeBuild(db, build, customTalismans), [db, build, customTalismans])
   const chips = useMemo(() => skillChips(db, summary, request), [db, summary, request])
+  const unwanted = useMemo(() => unwantedSources(summary, request.excludedSkills), [summary, request.excludedSkills])
+  const unwantedText = (key: EquipKey) => {
+    const points = unwanted.byEquip.get(key)
+    return points ? skillPointsText(db, points) : undefined
+  }
   // 남는 슬롯: 무기 슬롯 먼저, 레벨 내림차순
   const freeSlots = useMemo(
     () =>
@@ -232,10 +266,19 @@ export function ResultCard({
   const weapon = summary.equipment.weapon
   return (
     <article
-      className={cx('space-y-2.5 rounded-lg border bg-surface p-3', deprioritized ? 'border-bad/40' : 'border-line')}
+      className={cx(
+        'space-y-2.5 rounded-lg border bg-surface p-3',
+        // 비선호 결과는 왼쪽 빨간 띠와 배지로 일반 결과와 구분한다
+        deprioritized ? 'border-bad/40 border-l-4 border-l-bad' : 'border-line',
+      )}
     >
       <header className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
         <span className="text-xs font-semibold text-muted">#{index}</span>
+        {deprioritized && (
+          <span className="rounded border border-bad/40 bg-bad/10 px-1.5 py-px text-[11px] font-medium text-bad">
+            비선호
+          </span>
+        )}
         <span className="text-sm">
           방어력 <span className="font-semibold tabular-nums">{summary.defense.max}</span>
         </span>
@@ -265,6 +308,7 @@ export function ResultCard({
               rarity={piece?.rarity}
               equipKey={kind}
               summary={summary}
+              unwanted={unwantedText(kind)}
               alternatives={Math.max(0, item.armor[kind].length - 1)}
               open={open === kind}
               onToggle={() => toggle(kind)}
@@ -276,6 +320,7 @@ export function ResultCard({
           name={talismanName(db, build.talisman, customTalismans)}
           equipKey="talisman"
           summary={summary}
+          unwanted={unwantedText('talisman')}
           alternatives={Math.max(0, item.talismans.length - 1)}
           open={open === 'talisman'}
           onToggle={() => toggle('talisman')}
@@ -305,7 +350,11 @@ export function ResultCard({
         <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs">
           <span className="text-muted">장식주</span>
           {decorations.map(({ deco, count }) => (
-            <span key={deco.id} className="inline-flex items-center gap-1" title={skillPointsText(db, deco.skills)}>
+            <span
+              key={deco.id}
+              className={cx('inline-flex items-center gap-1', unwanted.decorationIds.has(deco.id) && 'text-bad')}
+              title={skillPointsText(db, deco.skills)}
+            >
               <SlotBadge slot={{ kind: deco.kind, level: deco.size }} size="sm" filled />
               {nameOf(deco.name)}
               {count > 1 && <span className="text-muted">×{count}</span>}
