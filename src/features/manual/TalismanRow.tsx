@@ -93,7 +93,7 @@ export function TalismanRow({ usages }: { usages: readonly SlotUsage[] }) {
   )
 
   return (
-    <EquipmentRow label="호석">
+    <EquipmentRow equip="talisman">
       <div className="flex items-center gap-2">
         <Combobox
           items={options}

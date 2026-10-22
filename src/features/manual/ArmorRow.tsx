@@ -61,7 +61,7 @@ export function ArmorRow({ kind, usages }: { kind: ArmorKind; usages: readonly S
     })
 
   return (
-    <EquipmentRow label={ARMOR_KIND_LABEL[kind]}>
+    <EquipmentRow equip={kind}>
       <Combobox
         items={items}
         value={piece}

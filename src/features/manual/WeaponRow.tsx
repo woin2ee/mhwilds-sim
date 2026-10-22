@@ -107,7 +107,7 @@ export function WeaponRow({ usages }: { usages: readonly SlotUsage[] }) {
   }
 
   return (
-    <EquipmentRow label="무기">
+    <EquipmentRow equip="weapon">
       <div className="mb-2">
         <Segmented size="sm" value={mode} options={MODE_OPTIONS} onChange={changeMode} />
       </div>
