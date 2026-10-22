@@ -1,4 +1,6 @@
 import { useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { Dialog } from '../../components/Dialog'
 import { MobileBar } from '../../components/MobileBar'
 import { Button, Panel, Segmented } from '../../components/ui'
 import { clearDecorations, hasAnyDecoration, isEmptyBuild } from '../../core/buildUpdates'
@@ -7,11 +9,14 @@ import { suggestName, topSkills } from '../../core/savedBuilds'
 import { emptyBuild, type EquipKey } from '../../core/types'
 import { ARMOR_KINDS } from '../../data/types'
 import { cx } from '../../lib/cx'
+import { isPipSupported, usePipWindow } from '../../lib/pip'
 import { useScrollMemory } from '../../lib/scroll'
 import { useAppState } from '../../state/context'
+import { useToast } from '../../state/toast'
 import { SaveBuildDialog } from '../saved/SaveBuildDialog'
 import { ShareDialog } from '../saved/ShareDialog'
 import { ArmorRow } from './ArmorRow'
+import { GameOverlay } from './GameOverlay'
 import { SummaryPanel } from './SummaryPanel'
 import { TalismanRow } from './TalismanRow'
 import { WeaponRow } from './WeaponRow'
@@ -29,8 +34,10 @@ const PANE_OPTIONS: { value: Pane; label: string }[] = [
 export function ManualBuilder() {
   const { db, manualBuild, setManualBuild, customTalismans, savedBuilds, manualSourceId, setManualSourceId } =
     useAppState()
-  const [dialog, setDialog] = useState<'save' | 'share' | null>(null)
+  const [dialog, setDialog] = useState<'save' | 'share' | 'overlay' | null>(null)
   const [pane, setPane] = useState<Pane>('equipment')
+  const overlay = usePipWindow()
+  const toast = useToast()
   const showPane = useScrollMemory(pane, setPane)
   const summary = useMemo(
     () => computeBuild(db, manualBuild, customTalismans),
@@ -59,6 +66,22 @@ export function ManualBuilder() {
 
   const activeSkills = summary.skills.filter((s) => s.level > 0).length
 
+  // 게임 위에 띄우기: 다른 창 위에 늘 떠 있는 작은 창에 이 세팅을 보여 준다 (지원하지 않는 브라우저면 안내)
+  const toggleOverlay = () => {
+    if (overlay.window) {
+      overlay.close()
+      return
+    }
+    if (!isPipSupported()) {
+      setDialog('overlay')
+      return
+    }
+    // 크기는 처음에만 쓰인다. 다음부터는 브라우저가 지난번에 닫을 때의 자리·크기로 연다
+    overlay
+      .open({ width: 360, height: 640, title: '게임 위에 띄운 세팅' })
+      .catch(() => toast('작은 창을 띄우지 못했어요. 다시 눌러 주세요.'))
+  }
+
   return (
     // 1단(lg 미만)에서는 블록으로 둬야 맨 끝의 MobileBar 가 sticky 로 화면 아래에 붙는다 (grid 칸 안에선 안 움직임)
     <div className="max-lg:space-y-4 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)] lg:items-start lg:gap-4">
@@ -83,6 +106,16 @@ export function ManualBuilder() {
             </Button>
             <Button size="sm" disabled={empty} onClick={() => setDialog('share')}>
               공유
+            </Button>
+            {/* 게임은 PC 에서 하므로 휴대폰·태블릿에서는 숨긴다 */}
+            <Button
+              size="sm"
+              disabled={empty && !overlay.window}
+              onClick={toggleOverlay}
+              title="다른 창 위에 늘 떠 있는 작은 창으로 이 세팅을 띄워요. 게임 화면으로 돌아가도 보여요."
+              className="pointer-coarse:hidden"
+            >
+              {overlay.window ? '띄운 창 닫기' : '게임 위에 띄우기'}
             </Button>
             <Button
               size="sm"
@@ -129,6 +162,22 @@ export function ManualBuilder() {
         build={manualBuild}
         name={source?.name ?? null}
       />
+      <Dialog open={dialog === 'overlay'} onClose={() => setDialog(null)} title="게임 위에 띄우기">
+        <div className="space-y-2 text-sm">
+          <p>
+            이 브라우저에서는 작은 창을 띄울 수 없어요. PC 의 <strong>크롬</strong>이나 <strong>엣지</strong>로 이
+            사이트를 열고 다시 눌러 주세요.
+          </p>
+          <p className="text-muted">
+            Steam 오버레이(Shift+Tab)의 웹 브라우저로 보고 있다면, 창 위쪽의 핀 아이콘을 누르면 게임 위에 고정돼요.
+          </p>
+        </div>
+      </Dialog>
+      {overlay.window &&
+        createPortal(
+          <GameOverlay build={manualBuild} summary={summary} name={source?.name ?? null} />,
+          overlay.window.document.body,
+        )}
 
       {/* 휴대폰·태블릿: 장비/결과 전환 + 요약 */}
       <MobileBar>
