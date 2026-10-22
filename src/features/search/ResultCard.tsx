@@ -10,7 +10,7 @@ import type { SearchRequest, SearchResultItem } from '../../core/search/types'
 import { armorDefense, canTranscend } from '../../core/transcend'
 import type { EquipKey } from '../../core/types'
 import { nameOf, type GameDb } from '../../data/db'
-import { skillName, skillPointsText, talismanName } from '../../data/format'
+import { skillName, skillPointsText, skillTooltip, talismanName } from '../../data/format'
 import { ARMOR_KIND_LABEL } from '../../data/labels'
 import { ARMOR_KINDS, type ArmorKind, type SkillPoint } from '../../data/types'
 import { cx } from '../../lib/cx'
@@ -47,7 +47,7 @@ function skillChips(db: GameDb, summary: BuildSummary, request: SearchRequest): 
       level,
       maxLevel: bonus ? undefined : skill.maxLevel,
       tone: level >= r.level ? 'required' : 'missing',
-      title: bonus ? bonusRankLabel(skill, level) : skill.ranks.find((x) => x.level === level)?.description,
+      title: bonus ? bonusRankLabel(skill, level) : skillTooltip(skill, level),
     })
   }
   const unwantedChips: ChipInfo[] = []
