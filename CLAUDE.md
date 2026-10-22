@@ -10,6 +10,11 @@
 - `npm test` (vitest, 실제 데이터 `public/data/wilds.json` 사용)
 - `npm run data:update` — MHDB 에서 데이터 재생성. 결과 JSON 은 커밋한다.
 
+## 작업 흐름
+
+- 사용자가 직접 확인할 만한 변경이면 커밋 전에 `npm run dev` 로 로컬 서버(http://localhost:5173)를 띄워 두고, 사용자의 확인을 받은 뒤 커밋·배포한다.
+- `main` 에 push 하면 GitHub Actions 가 테스트 후 GitHub Pages 에 자동 배포한다. push 는 SSH 리모트로 한다 (gh 토큰에 workflow 권한 없음).
+
 ## 구조 원칙
 
 - `src/core/**` 는 순수 TS (React/DOM import 금지). Node 테스트와 Web Worker 에서 그대로 돈다.
