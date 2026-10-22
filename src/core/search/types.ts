@@ -39,6 +39,8 @@ export interface SearchRequest {
   includeLowRank: boolean
   /** 레어도 5~8 방어구에 초월 적용 (슬롯·방어력) */
   transcend: boolean
+  /** false 면 장식주를 쓰지 않는다: 방어구·호석·무기 자체 스킬만으로 찾고 슬롯은 모두 남긴다 */
+  useDecorations: boolean
   /** 후보에서 뺄 방어구 id */
   excludedArmorIds: number[]
   sort: SearchSort

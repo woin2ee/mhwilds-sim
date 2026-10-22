@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { GameDb } from '../../data/db'
-import type { GameData, Skill } from '../../data/types'
+import { ARMOR_KINDS, type GameData, type Skill, type SkillPoint } from '../../data/types'
 import { armorByName, loadTestDb, skillIdByName } from '../../test/testDb'
 import { activeSkillLevels, computeBuild, missingRequirements, unwantedSkillsOf } from '../calc'
 import { resolveWeapon } from '../equipment'
@@ -39,6 +39,7 @@ function request(overrides: Partial<SearchRequest>): SearchRequest {
     talismans: fixedTalismans,
     includeLowRank: false,
     transcend: false,
+    useDecorations: true,
     excludedArmorIds: [],
     sort: 'slots',
     limit: 30,
@@ -261,6 +262,68 @@ describe('runSearch', () => {
     expect(ratios.at(-1)).toBe(1)
   })
 
+  describe('장식주 없이', () => {
+    const noDeco = (overrides: Partial<SearchRequest>) => request({ useDecorations: false, ...overrides })
+    const pointsOf = (skills: readonly SkillPoint[], skillId: number) =>
+      skills.reduce((sum, s) => (s.skillId === skillId ? sum + s.level : sum), 0)
+
+    /** 방어구(상위 랭크)만으로 요구 점수를 채우는 실제 방어구 조합 수 — 엔진과 독립적으로 부위별 DP 로 센다 */
+    function countArmorOnlyCombos(required: readonly SkillPoint[]): number {
+      const keyOf = (pts: readonly number[]) => pts.join(',')
+      let states = new Map([[keyOf(required.map(() => 0)), 1]])
+      for (const kind of ARMOR_KINDS) {
+        const next = new Map<string, number>()
+        const pieces = db.armorByKind[kind].filter((p) => p.rank !== 'low')
+        for (const [key, count] of states) {
+          const pts = key.split(',').map(Number)
+          for (const piece of pieces) {
+            const k = keyOf(required.map((r, i) => Math.min(r.level, pts[i] + pointsOf(piece.skills, r.skillId))))
+            next.set(k, (next.get(k) ?? 0) + count)
+          }
+        }
+        states = next
+      }
+      return states.get(keyOf(required.map((r) => r.level))) ?? 0
+    }
+
+    it('방어구만으로 조건을 채우는 조합을 빠짐없이 찾는다', () => {
+      const r = noDeco({ required: req(['약점 특효', 5], ['도전자', 5]), talismans: [], limit: 10_000 })
+      const res = runSearch(db, r)
+      expect(res.truncated).toBe(false)
+      expect(res.preferred).toHaveLength(res.totalPreferred)
+      expect(res.preferred.reduce((n, item) => n + item.variantCount, 0)).toBe(countArmorOnlyCombos(r.required))
+    })
+
+    it('장식주를 하나도 쓰지 않고 슬롯은 모두 남긴다', () => {
+      const r = noDeco({ required: req(['약점 특효', 5], ['도전자', 5]), weapon: weaponOf({ type: 'db', id: 71 }) }) // 앙길바인 [3,3,3]
+      const res = runSearch(db, r)
+      expect(res.preferred).toHaveLength(r.limit)
+      verify(r, res)
+      for (const item of res.preferred) {
+        expect(Object.values(item.decorations).flat().every((id) => id === null)).toBe(true)
+        const summary = computeBuild(db, resultToBuild(db, item, r))
+        expect(summary.freeSlots).toHaveLength(summary.slots.length)
+      }
+      const scores = res.preferred.map((i) => slotScore(i.freeSlots))
+      expect(scores).toEqual([...scores].sort((a, b) => b - a))
+    })
+
+    it('장식주가 있어야 채워지는 조건은 결과가 없다', () => {
+      const r = noDeco({ required: req(['약점 특효', 5], ['도전자', 5], ['연격', 3]), talismans: [] })
+      expect(runSearch(db, r).totalPreferred).toBe(0)
+      expect(runSearch(db, { ...r, useDecorations: true }).totalPreferred).toBeGreaterThan(0)
+    })
+
+    it('무기 스킬은 무기 자체 스킬로만 센다', () => {
+      const weapon = weaponOf({ type: 'db', id: 6 }) // 허무의 활Ⅰ: 집중 Lv2, 슬롯 [1]
+      const r = noDeco({ required: req(['집중', 2], ['약점 특효', 5], ['도전자', 5]), weapon })
+      const res = runSearch(db, r)
+      expect(res.preferred.length).toBeGreaterThan(0)
+      verify(r, res)
+      expect(runSearch(db, { ...r, required: req(['집중', 3], ['약점 특효', 5], ['도전자', 5]) }).totalPreferred).toBe(0)
+    })
+  })
+
   it('제외한 방어구와 하위 랭크 방어구는 후보에 없다', () => {
     const excludedPiece = armorByName(db, '슈바르카그리브γ')
     const r = request({ required: req(['약점 특효', 4]), excludedArmorIds: [excludedPiece.id], limit: 100 })
@@ -359,6 +422,7 @@ describe('일반화된 경로 (합성 데이터)', () => {
       talismans: [],
       includeLowRank: false,
       transcend: false,
+      useDecorations: true,
       excludedArmorIds: [],
       sort: 'slots',
       limit: 10,

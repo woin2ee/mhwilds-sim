@@ -27,6 +27,7 @@ export interface SearchConditions {
   fixedTalisman: TalismanRef | null
   includeLowRank: boolean
   transcend: boolean
+  useDecorations: boolean
   sort: SearchSort
 }
 
@@ -43,6 +44,7 @@ export const DEFAULT_CONDITIONS: SearchConditions = {
   fixedTalisman: null,
   includeLowRank: false,
   transcend: false,
+  useDecorations: true,
   sort: 'slots',
 }
 
@@ -121,6 +123,7 @@ export function buildRequest(
     talismans,
     includeLowRank: cond.includeLowRank,
     transcend: cond.transcend,
+    useDecorations: cond.useDecorations,
     excludedArmorIds: [],
     sort: cond.sort,
     limit: RESULT_LIMIT,

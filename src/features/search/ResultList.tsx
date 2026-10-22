@@ -42,13 +42,15 @@ function PagedCards({
 /** 결과가 없을 때 조건별로 해 볼 만한 것 */
 function emptyHints(request: SearchRequest, hasWeaponSkill: boolean): string[] {
   const hints = ['원하는 스킬의 레벨을 낮추거나 스킬 수를 줄여 보세요.']
+  if (!request.useDecorations) hints.unshift('‘장식주 없이 찾기’를 끄면 모자란 스킬을 장식주로 채워요.')
   if (request.excludedSkills.length > 0 && request.excludeMode === 'exclude') {
     hints.push('비선호 스킬을 ‘아래에 따로 표시’로 바꾸거나 줄여 보세요.')
   }
   if (!request.includeLowRank) hints.push('‘하위 랭크 방어구 포함’을 켜 보세요.')
-  if (!request.transcend) hints.push('초월한 방어구가 있다면 ‘방어구 초월 적용’을 켜 보세요.')
+  // 초월·무기 슬롯은 장식주를 넣을 자리만 늘리므로 장식주 없이 찾을 때는 도움이 안 된다
+  if (!request.transcend && request.useDecorations) hints.push('초월한 방어구가 있다면 ‘방어구 초월 적용’을 켜 보세요.')
   if (request.talismans.length === 0) hints.push('호석을 ‘자동’으로 바꿔 보세요.')
-  if (hasWeaponSkill && request.weapon.slots.length === 0) {
+  if (hasWeaponSkill && request.weapon.slots.length === 0 && request.useDecorations) {
     hints.push('무기 스킬은 무기 슬롯이 있어야 장식주로 채울 수 있어요. 무기를 지정해 보세요.')
   }
   return hints
@@ -97,7 +99,8 @@ export function ResultList({
             </span>
           )}
           <span className="ml-2 text-xs text-muted">
-            대체 방어구 포함 {formatCount(variantTotal)}개 조합 · {formatElapsed(response.elapsedMs)}
+            {!request.useDecorations && '장식주 없이 · '}대체 방어구 포함 {formatCount(variantTotal)}개 조합 ·{' '}
+            {formatElapsed(response.elapsedMs)}
           </span>
         </div>
         <Segmented size="sm" value={request.sort} options={SORT_OPTIONS} onChange={onSortChange} />

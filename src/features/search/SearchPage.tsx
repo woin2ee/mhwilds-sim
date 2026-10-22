@@ -121,11 +121,22 @@ export function SearchPage() {
   const stale = resultKey !== null && resultKey !== currentKey
   const isWeaponSkill = (skillId: number) => db.skills.get(skillId)?.kind === 'weapon'
   const weaponSkillWithoutWeapon =
+    request.useDecorations &&
     request.required.some((r) => isWeaponSkill(r.skillId)) &&
     request.weapon.slots.length === 0 &&
     request.weapon.skills.length === 0 &&
     !request.talismans.some(
       (t) => t.slots.some((s) => s.kind === 'weapon') || t.skills.some((p) => isWeaponSkill(p.skillId)),
+    )
+  // 장식주 없이 찾으면 무기 스킬은 무기·호석에 붙은 것만 센다
+  const weaponSkillWithoutDecorations =
+    !request.useDecorations &&
+    request.required.some(
+      (r) =>
+        isWeaponSkill(r.skillId) &&
+        ![request.weapon.skills, ...request.talismans.map((t) => t.skills)].some((skills) =>
+          skills.some((p) => p.skillId === r.skillId),
+        ),
     )
 
   return (
@@ -199,6 +210,12 @@ export function SearchPage() {
               label="방어구 초월 적용"
               description="레어도 5는 슬롯 3칸 +1, 레어도 6은 앞 2칸 +1 (빈 칸은 Lv1, 최대 Lv3). 레어도 5~8은 최대 방어력도 올라가요."
             />
+            <Toggle
+              checked={!cond.useDecorations}
+              onChange={(withoutDecorations) => patch({ useDecorations: !withoutDecorations })}
+              label="장식주 없이 찾기"
+              description="방어구·호석·무기에 붙은 스킬만으로 찾고, 슬롯은 모두 비워 둬요."
+            />
           </div>
         </Panel>
       </div>
@@ -224,7 +241,7 @@ export function SearchPage() {
             <p className="text-sm text-muted">
               원하는 스킬 {request.required.length}개 · 비선호 {request.excludedSkills.length}개
               {request.excludedSkills.length > 0 && ` (${cond.excludeMode === 'exclude' ? '제외' : '아래에 표시'})`} · 호석
-              후보 {request.talismans.length}개
+              후보 {request.talismans.length}개{!request.useDecorations && ' · 장식주 없이'}
             </p>
           </div>
           {running && (
@@ -248,6 +265,12 @@ export function SearchPage() {
           {weaponSkillWithoutWeapon && (
             <p className="mt-2 text-xs text-warn">
               무기 스킬은 무기·호석·무기 장식주로만 얻을 수 있어요. 무기나 무기 슬롯을 지정하세요.
+            </p>
+          )}
+          {weaponSkillWithoutDecorations && (
+            <p className="mt-2 text-xs text-warn">
+              장식주 없이 찾으면 무기 스킬은 무기·호석에 붙은 것으로만 얻을 수 있어요. 그 스킬이 붙은 무기를 지정하거나
+              ‘장식주 없이 찾기’를 끄세요.
             </p>
           )}
           {stale && !running && <p className="mt-2 text-xs text-warn">조건이 바뀌었어요. 다시 검색하면 반영돼요.</p>}

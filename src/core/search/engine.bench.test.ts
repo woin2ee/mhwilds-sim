@@ -41,6 +41,7 @@ const base: SearchRequest = {
   talismans: [...fixed, ...customs],
   includeLowRank: false,
   transcend: false,
+  useDecorations: true,
   excludedArmorIds: [],
   sort: 'slots',
   limit: 300,
@@ -84,6 +85,9 @@ const CASES: [string, Partial<SearchRequest>][] = [
   ],
   ['느슨한 조건: 약특1 (상한 도달 예상)', { required: req(['약점 특효', 1]) }],
   ['느슨한 조건: 약특1 (하위 랭크 포함)', { required: req(['약점 특효', 1]), includeLowRank: true }],
+  ['장식주 없이: 약특5 도전5 연격3', { required: req(['약점 특효', 5], ['도전자', 5], ['연격', 3]), useDecorations: false }],
+  ['장식주 없이: 약특5 도전5', { required: req(['약점 특효', 5], ['도전자', 5]), useDecorations: false }],
+  ['장식주 없이: 약특1 (상한 도달 예상)', { required: req(['약점 특효', 1]), useDecorations: false }],
 ]
 
 describe.skipIf(!process.env.BENCH)('search benchmark', () => {

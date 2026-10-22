@@ -4,7 +4,7 @@ import { ARMOR_KINDS, type ArmorKind, type ArmorPiece, type SkillPoint, type Slo
 import { resolveWeapon } from '../equipment'
 import { armorDefense, armorSlots, canTranscend } from '../transcend'
 import type { CustomTalisman, Slot, SlotKind } from '../types'
-import { DecoFiller, type FillDeco, type SlotCounts } from './decoFill'
+import { DecoFiller, slotScore, type FillDeco, type SlotCounts } from './decoFill'
 import type { SearchRequest, SearchTalisman } from './types'
 
 /**
@@ -148,9 +148,10 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
   const excludeMode = request.excludeMode === 'exclude'
 
   // ---- 장식주 풀 판정 ----
-  const allowedDecos = db.data.decorations.filter(
-    (d) => !excludeMode || !d.skills.some((s) => excluded.has(s.skillId)),
-  )
+  // 장식주 없이 찾으면 후보 장식주가 없어 점수형 요구 스킬이 모두 'none' 풀이 된다 (방어구·호석·무기 점수로만 판정)
+  const allowedDecos = request.useDecorations
+    ? db.data.decorations.filter((d) => !excludeMode || !d.skills.some((s) => excluded.has(s.skillId)))
+    : []
   const minSize = points.map(() => ({ armor: 4, weapon: 4 }))
   for (const deco of allowedDecos) {
     points.forEach((p, i) => {
@@ -217,6 +218,13 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
 
   // ---- 방어구 동등 클래스 ----
   const excludedArmor = new Set(request.excludedArmorIds)
+  // 결과 정렬 기준(engine.ts)과 같은 순서: 슬롯 점수 → 방어력, 방어력순이면 반대
+  const bySlots = request.sort !== 'defense'
+  const byResultOrder = (a: ArmorClass, b: ArmorClass) => {
+    const slots = slotScore(b.slotCounts) - slotScore(a.slotCounts)
+    const defense = b.defense - a.defense
+    return bySlots ? slots || defense : defense || slots
+  }
   const classesByKind = new Map<ArmorKind, ArmorClass[]>()
   for (const kind of ARMOR_KINDS) {
     const candidates = db.armorByKind[kind].filter(
@@ -279,8 +287,9 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
         cls.potential[ti] = value
       })
     }
-    // 유망한 클래스부터 탐색 (상한에 걸려 중단돼도 좋은 결과가 먼저 나오도록)
-    classes.sort((a, b) => b.potential[0] - a.potential[0] || b.defense - a.defense)
+    // 유망한 클래스부터 탐색 (상한에 걸려 중단돼도 좋은 결과가 먼저 나오도록). 잠재력이 같으면 결과 정렬 기준 순.
+    // 장식주 없이 찾으면 잠재력이 모두 0 이고 리프가 모두 결과라서 정렬 기준 순서만 남는다
+    classes.sort((a, b) => b.potential[0] - a.potential[0] || byResultOrder(a, b))
     classesByKind.set(kind, classes)
   }
   const kinds = [...ARMOR_KINDS].sort((a, b) => classesByKind.get(a)!.length - classesByKind.get(b)!.length)
