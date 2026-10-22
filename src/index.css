@@ -1,0 +1,66 @@
+@import 'tailwindcss';
+
+/* 의미 기반 색상 토큰. 컴포넌트는 bg-surface, text-muted, border-line 처럼 이 이름만 쓴다.
+   라이트/다크는 아래 변수만 바뀌므로 dark: 변형을 따로 쓸 필요가 없다. */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-good: var(--good);
+  --color-bad: var(--bad);
+  --color-warn: var(--warn);
+  --color-slot-weapon: var(--slot-weapon);
+  --color-slot-armor: var(--slot-armor);
+  --font-sans:
+    'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Noto Sans KR',
+    'Malgun Gothic', system-ui, sans-serif;
+}
+
+:root {
+  color-scheme: light;
+  --bg: #f3f4f6;
+  --surface: #ffffff;
+  --surface-2: #eceef2;
+  --line: #d6dae1;
+  --fg: #1b1f27;
+  --muted: #5f6b7a;
+  --accent: #b45309;
+  --accent-fg: #ffffff;
+  --good: #15803d;
+  --bad: #c2271d;
+  --warn: #a15c07;
+  --slot-weapon: #c2410c;
+  --slot-armor: #0e7490;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #0d1015;
+    --surface: #151920;
+    --surface-2: #1c212a;
+    --line: #2a313c;
+    --fg: #e5e8ee;
+    --muted: #8d97a7;
+    --accent: #f59e0b;
+    --accent-fg: #1a1206;
+    --good: #4ade80;
+    --bad: #f87171;
+    --warn: #facc15;
+    --slot-weapon: #fb923c;
+    --slot-armor: #22d3ee;
+  }
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}

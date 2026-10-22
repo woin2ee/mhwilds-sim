@@ -1,0 +1,152 @@
+# 설계 문서
+
+몬스터 헌터 와일즈 비공식 방어구 세팅 시뮬레이터. 정적 사이트(GitHub Pages)로 배포되며 모든 계산은 브라우저에서 한다.
+
+## 1. 목표 (1순위 기능)
+
+1. **수동 세팅** — 무기·방어구 5부위·호석·장식주를 직접 골라 최종 스킬/방어력/내성/남은 슬롯을 확인한다.
+2. **스킬 검색** — 원하는 스킬(레벨)을 고르면 가능한 방어구 조합을 찾는다.
+3. **비선호 스킬 제외** — 원하지 않는 스킬을 고르면
+   - `exclude`: 그 스킬이 붙은 방어구·호석·장식주를 아예 후보에서 뺀다.
+   - `deprioritize`(기본): 결과에는 포함하되 비선호 스킬이 들어간 조합은 하단 **비선호 결과**로 분리한다.
+4. **결과 정리** — 요구 스킬 관점에서 동등한 방어구는 한 결과로 묶고(부위별 대체 후보로 표시) 결과 수를 줄인다.
+
+## 2. 구조
+
+```
+scripts/build-data.mjs      MHDB → public/data/wilds.json 변환 (npm run data:update)
+public/data/wilds.json      게임 데이터 (레포에 커밋)
+src/data/                   데이터 타입(types.ts), 색인(db.ts: GameDb), 한국어 라벨(labels.ts)
+src/core/                   UI와 무관한 순수 로직 (Node/Worker 에서도 동작)
+  types.ts                  BuildState, Slot, CustomTalisman 등
+  transcend.ts              방어구 초월 규칙
+  equipment.ts              장비 → ResolvedEquipment (스킬·슬롯·방어력)
+  calc.ts                   computeBuild: 빌드 합계 계산 (수동 세팅·검색 검증 공용)
+  buildUpdates.ts           BuildState 불변 갱신 도우미 (장비 교체·장식주 재배치)
+  search/types.ts           검색 요청/응답 계약 + 워커 메시지
+  search/engine.ts          검색 엔진 (runSearch: DFS·결과 생성)
+  search/prepare.ts         요청 정리, 후보 필터, 동등 클래스, 가지치기 테이블
+  search/decoFill.ts        장식주 채우기 (메모이제이션) + 실제 슬롯 배치
+  search/topK.ts            상위 N개 유지 힙
+  search/search.worker.ts   Web Worker 진입점
+  search/client.ts          메인 스레드용 워커 래퍼 (SearchClient)
+  search/toBuild.ts         검색 결과 → BuildState
+src/lib/                    cx, 검색어 매칭(초성), localStorage 훅
+src/state/                  전역 상태 (DB, 내 호석, 수동 세팅 빌드, 탭)
+src/components/             공통 UI (Button, Panel, Combobox, SkillSelect, SkillPointEditor, SlotBadge, SkillChip, controls ...)
+src/features/manual/        수동 세팅 화면
+src/features/search/        스킬 검색 화면
+src/features/talismans/     내 호석 관리 화면
+```
+
+규칙: `src/core` 는 React/DOM 을 import 하지 않는다. 화면은 계산을 직접 구현하지 않고 `computeBuild` 를 쓴다.
+
+## 3. 데이터
+
+`scripts/build-data.mjs` 가 [MHDB](https://docs.wilds.mhdb.io) API(ko/en/ja)에서 받아 `src/data/types.ts` 의 `GameData` 형식으로 저장한다.
+갱신은 `npm run data:update` 후 결과 파일을 커밋한다. 데이터 출처: [mhdb-wilds-data](https://github.com/LartTyler/mhdb-wilds-data) (GPL-3.0).
+
+- 이름은 `Names {ko,en,ja}`. 화면 표시는 `nameOf(names)` (현재 ko).
+- 방어구의 `skills` 에는 armor 스킬만 있다. 시리즈/그룹 스킬은 `setId → ArmorSet.setSkillId/groupSkillId` 로 센다.
+- 제작 호석(`talismans`)은 등급별로 펼쳐져 있고 `isMaxRank` 로 최고 등급을 표시한다. 슬롯은 없다.
+
+## 4. 게임 규칙 (와일즈)
+
+| 항목 | 규칙 |
+|---|---|
+| 슬롯 종류 | 무기 슬롯(무기·호석) / 방어구 슬롯(방어구·호석). 레벨 1~3 |
+| 장식주 | 같은 종류 슬롯에만, `장식주 크기 ≤ 슬롯 레벨` 이면 장착. 무기 장식주는 무기 스킬만, 방어구 장식주는 방어구 스킬만 준다 (데이터로 확인) |
+| 스킬 레벨 | 출처를 모두 합산하고 `maxLevel` 에서 자른다 |
+| 시리즈 스킬 | 같은 `setSkillId` 를 가진 방어구 수(α/β/γ 합산). 2부위 → 1단계, 4부위 → 2단계 |
+| 그룹 스킬 | 같은 `groupSkillId` 를 가진 방어구 수(세트가 달라도 합산). 3부위 → 발동 |
+| 제작 호석 | 방어구 스킬만, 슬롯 없음 |
+| 감정 호석 | 사용자가 직접 입력 (`CustomTalisman`). 무기 스킬 가능, 무기/방어구 슬롯 가능 |
+| 방어구 초월 | `transcend.ts` 참고. 레어도 5: 3칸 모두 +1, 레어도 6: 앞 2칸 +1 (빈 칸 → Lv1, 최대 Lv3), 7·8: 슬롯 변화 없음. 최대 방어력 +16/+12/+10/+8 |
+| 무기 | 검색에서는 고정. 무기 스킬 + 무기 슬롯 제공 |
+
+결과적으로 **방어구 스킬**은 방어구·호석·방어구 장식주(방어구 슬롯 + 호석의 방어구 슬롯)로만,
+**무기 스킬**은 무기·호석·무기 장식주(무기 슬롯 + 호석의 무기 슬롯)로만 얻는다. 두 풀은 독립적이다.
+
+## 5. 계산 코어 (`computeBuild`)
+
+`computeBuild(db, build, customTalismans)` → `BuildSummary`:
+스킬 합계(출처 포함, 최대 레벨 적용), 시리즈/그룹 스킬 단계, 방어력(base/max), 내성, 슬롯별 장식주(유효성), 빈 슬롯.
+보조 함수: `activeSkillLevels`, `missingRequirements`, `unwantedSkillsOf`(무기 자체 스킬은 비선호로 세지 않음).
+`BuildState.decorations[key][i]` 의 i 는 `ResolvedEquipment.slots` 의 순서(방어구·무기는 레벨 내림차순, 호석은 사용자 입력 순서).
+
+## 6. 검색 엔진 (`src/core/search/engine.ts`)
+
+`runSearch(db, request, hooks) → SearchResponse` — 순수 동기 함수. 워커가 감싸서 실행한다.
+
+### 6.1 입력 정리
+- `required` 를 합치고(같은 스킬은 큰 레벨) `maxLevel` 로 자른다. armor/weapon 스킬(`R_pts`)과 set/group 스킬(`R_bonus`, 요구 레벨 → 필요한 부위 수)로 나눈다.
+- 무기는 고정: 무기 스킬을 기본 점수로, 무기 슬롯을 무기 슬롯 풀로 쓴다.
+- 후보 필터
+  - 방어구: `includeLowRank`(rank === 'low' 제외 여부), `excludedArmorIds`, `exclude` 모드면 비선호 스킬 보유 방어구 제거.
+  - 호석: `request.talismans`. `exclude` 모드면 비선호 스킬 보유 호석 제거. 비어 있으면 '호석 없음' 하나.
+  - 장식주: `R_pts` 스킬을 하나라도 주는 장식주만. 비선호 스킬이 붙은 장식주는 먼저 제외하고 시도하며,
+    `deprioritize` 모드에서 그걸로 안 될 때만 포함해 재시도한다(그 결과는 비선호).
+  - 어떤 부위의 후보가 0개면 그 부위는 '미장착'(빈 클래스) 하나로 둔다.
+
+### 6.2 동등 클래스로 압축
+부위별로 방어구를 다음 키로 묶는다. 키가 같으면 요구 조건 충족 여부와 장식주 배치가 완전히 같다.
+- `R_pts` 각 스킬의 점수 (요구 레벨에서 자름)
+- 초월 반영 슬롯 (레벨 내림차순)
+- `R_bonus` 각 스킬에 대한 소속 여부 (setSkillId/groupSkillId 일치)
+- 보유한 비선호 스킬 목록 (deprioritize 모드)
+
+클래스 멤버는 방어력(초월 반영 max) 내림차순, `[0]` 이 대표. 호석도 같은 방식(점수·슬롯(종류+레벨)·비선호)으로 묶는다.
+
+### 6.3 탐색
+- 무기 스킬 풀은 방어구와 무관하므로 **호석 클래스마다 한 번** 무기 장식주 충족 가능 여부를 계산해 불가능한 호석 클래스를 버린다.
+- 방어구 5부위(클래스 수가 적은 부위부터) × 호석 클래스를 DFS. 상태: 스킬 점수, 시리즈/그룹 부위 수, 방어구/무기 슬롯 개수(레벨별).
+- 가지치기 (모두 낙관적 상한이어야 함 = 정답을 버리면 안 됨)
+  1. 시리즈/그룹: 현재 부위 수 + 남은 부위 중 해당 소속 클래스가 있는 부위 수 < 필요 부위 수 → 컷
+  2. 스킬별: 현재 점수 + 남은 부위 최대 점수 + (장식주가 있는 스킬이면 남은/현재 슬롯으로 얻을 수 있는 최대치) < 요구 → 컷
+  3. 풀별 총량: Σ(부족분) > 현재 슬롯 잠재력 + Σ(남은 부위별 최대 잠재력) → 컷
+     (슬롯 잠재력 = 그 슬롯에 들어갈 수 있는 장식주가 주는 요구 스킬 점수 합의 최댓값).
+     장식주 최소 크기(1/2/3)별로 스킬을 나눠 각각 검사한다 (Lv3 장식주로만 얻는 스킬은 Lv3 슬롯만 센다).
+- 유망한 클래스(점수·슬롯이 큰 것)부터 탐색해, 상한에 걸려 중단돼도 좋은 조합이 먼저 잡히게 한다.
+- 리프: 장식주 채우기(6.4)가 가능하면 결과로 기록.
+
+### 6.4 장식주 채우기 (정확한 판정)
+풀(방어구/무기)별로 독립 계산. 상태 = (스킬별 부족분, 레벨별 남은 슬롯 수), 전역 메모이제이션.
+부족분이 남은 첫 스킬을 고르고, 그 스킬을 주는 장식주를 하나씩 시도한다: 그 장식주가 들어가는 **가장 작은** 슬롯에 넣고(교환 논법상 최적) 부족분을 줄여 재귀.
+여러 해 중 남는 슬롯 점수(아래)가 가장 큰 배치를 고른다. 마지막에 개수 기반 배치를 실제 장비·슬롯 인덱스로 옮긴다
+(큰 장식주부터 맞는 가장 작은 실제 슬롯에).
+
+### 6.5 결과
+- 결과 1건 = 부위별 클래스 + 호석 클래스 조합. `armor[kind]` = 클래스 멤버 id 들, `talismans` = 호석 클래스 멤버들.
+- `skillLevels`, `freeSlots`, `defense`, `unwantedSkills` 는 대표 조합 기준 (`computeBuild` 와 일치해야 함).
+- 비선호 스킬이 하나라도 있으면 `deprioritized`, 아니면 `preferred`.
+- 정렬: `slots` = 남는 슬롯 점수(Σ level², 무기·방어구 슬롯 모두) 내림차순 → 방어력 내림차순, `defense` = 방어력 → 남는 슬롯.
+- 목록별 상위 `limit` 개만 힙(`topK.ts`)으로 유지해 반환하고, `totalPreferred/totalDeprioritized` 는 찾은 전체 개수.
+- 상한: 리프 200만 회 또는 20초에 도달하면 중단하고 `truncated: true` (이때 total 은 최소 개수 → 화면에 'N건 이상').
+- `onProgress` 는 약 100ms 마다 (최상위 분기 진행률, 찾은 수).
+
+반환 직전 대표 조합을 `computeBuild` 로 다시 계산해 표시 값(스킬·남은 슬롯·방어력·비선호)을 채운다.
+
+### 6.6 검증
+테스트에서 모든 결과를 `resultToBuild` → `computeBuild` 로 다시 계산해
+`missingRequirements` 가 비고, 슬롯이 전부 유효하고, `unwantedSkills/freeSlots/defense` 가 일치하는지 확인한다.
+
+## 7. 화면
+
+공통: 한국어 UI, 데스크톱 2단 / 모바일 1단, 의미 기반 색상 토큰만 사용, 게임에서 추출한 아이콘·이미지·로고 사용 금지.
+
+### 7.1 수동 세팅 (`features/manual`)
+- 장비 7칸(무기·머리·몸통·팔·허리·다리·호석) + 각 장비의 슬롯별 장식주 선택.
+- 무기: 무기 종류 선택 → 무기 검색, 또는 '직접 입력'(슬롯·무기 스킬).
+- 방어구: 부위별 검색(옵션에 레어도·슬롯·스킬 표시), 레어도 5~8이면 '초월' 체크.
+- 호석: 내 호석 + 제작 호석 검색.
+- 장식주: 슬롯 종류·크기에 맞는 것만 표시. 장비를 바꾸면 그 장비의 장식주는 비운다.
+- 요약: 발동 스킬(레벨/최대, 초과분, 출처), 시리즈/그룹 스킬(부위 수·단계·다음 단계), 방어력, 내성, 남은 슬롯.
+
+### 7.2 스킬 검색 (`features/search`)
+- 조건: 원하는 스킬(+레벨), 비선호 스킬 + 모드(비선호로 아래에 표시 / 아예 제외), 무기, 호석(자동/내 호석만/고정/없음), 옵션(하위 랭크 포함, 초월 적용).
+- 실행: `SearchClient` (취소 가능, 진행률 표시).
+- 결과: 카드 목록. 부위별 대표 방어구 + 대체 후보 수(펼쳐서 선택), 장식주 요약, 스킬 칩(요구=초록, 추가=회색, 비선호=빨강), 남는 슬롯, 방어력, '수동 세팅에서 열기'.
+- 비선호 결과는 하단 접힌 섹션.
+
+### 7.3 내 호석 (`features/talismans`)
+- 감정 호석 등록/수정/삭제: 이름, 레어도(선택), 스킬 최대 3개(+레벨), 슬롯 최대 3개(종류+레벨). localStorage 저장.
