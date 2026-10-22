@@ -59,7 +59,7 @@ export function TalismanForm({
             onChange={(e) => setName(e.target.value)}
             placeholder={defaultName}
             maxLength={40}
-            className="h-9 rounded-md border border-line bg-surface-2 px-2.5 text-sm text-fg placeholder:text-muted focus:border-accent focus:outline-none"
+            className="h-9 rounded-md border border-line bg-surface-2 px-2.5 text-sm text-fg placeholder:text-muted focus:border-accent focus:outline-none pointer-coarse:h-10"
           />
         </label>
         <label className="flex flex-col gap-1 text-xs text-muted">

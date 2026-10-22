@@ -165,7 +165,7 @@ function NameMemoFields({
       <label className="block space-y-1 text-xs text-muted">
         <span>이름</span>
         <input
-          autoFocus
+          data-autofocus
           required
           maxLength={NAME_MAX}
           value={name}

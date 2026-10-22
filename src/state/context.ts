@@ -20,6 +20,7 @@ export interface AppStateValue {
   manualSourceId: string | null
   setManualSourceId: (id: string | null) => void
   tab: TabId
+  /** 탭 이동. 탭마다 스크롤 위치를 기억해 돌아가고, 지금 탭을 다시 고르면 맨 위로 올라간다. */
   setTab: (tab: TabId) => void
   /** 빌드를 수동 세팅 탭에서 연다. 내 세팅에서 불러온 경우 sourceId 를 넘긴다. */
   openInManual: (build: BuildState, sourceId?: string | null) => void

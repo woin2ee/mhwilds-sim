@@ -11,9 +11,10 @@ const BUTTON_VARIANT: Record<ButtonVariant, string> = {
   ghost: 'bg-transparent text-muted hover:text-fg hover:bg-surface-2 border border-transparent',
   danger: 'bg-transparent text-bad hover:bg-bad/10 border border-bad/40',
 }
+// 터치 기기(pointer-coarse)에서는 손가락으로 누르기 쉽게 키운다
 const BUTTON_SIZE: Record<ButtonSize, string> = {
-  sm: 'h-7 px-2 text-xs gap-1',
-  md: 'h-9 px-3 text-sm gap-1.5',
+  sm: 'h-7 px-2 text-xs gap-1 pointer-coarse:h-9 pointer-coarse:px-3 pointer-coarse:text-sm',
+  md: 'h-9 px-3 text-sm gap-1.5 pointer-coarse:h-10',
 }
 
 export function Button({
@@ -79,7 +80,7 @@ export function Toggle({
     <label className={cx('flex cursor-pointer items-start gap-2 text-sm', disabled && 'cursor-default opacity-50')}>
       <input
         type="checkbox"
-        className="mt-0.5 size-4 accent-[var(--accent)]"
+        className="mt-0.5 size-4 shrink-0 accent-[var(--accent)] pointer-coarse:size-5"
         checked={checked}
         disabled={disabled}
         onChange={(e) => onChange(e.target.checked)}
@@ -130,10 +131,10 @@ export function Segmented<T extends string>({
             title={iconOnly ? option.label : undefined}
             onClick={() => onChange(option.value)}
             className={cx(
-              'rounded font-medium transition-colors',
-              size === 'sm' ? 'h-6 text-xs' : 'h-8 text-sm',
+              'rounded font-medium whitespace-nowrap transition-colors',
+              size === 'sm' ? 'h-6 text-xs pointer-coarse:h-8 pointer-coarse:text-sm' : 'h-8 text-sm pointer-coarse:h-10',
               iconOnly ? 'inline-flex items-center justify-center' : 'px-2.5',
-              iconOnly && (size === 'sm' ? 'w-6' : 'w-8'),
+              iconOnly && (size === 'sm' ? 'w-6 pointer-coarse:w-8' : 'w-8 pointer-coarse:w-10'),
               option.value === value ? 'bg-surface text-fg shadow-sm' : 'text-muted hover:text-fg',
             )}
           >
@@ -184,7 +185,7 @@ export function LevelSelect({
       aria-label={ariaLabel}
       value={value}
       onChange={(e) => onChange(Number(e.target.value))}
-      className={cx('h-8 rounded-md border border-line bg-surface-2 px-1.5 text-sm', className)}
+      className={cx('h-8 rounded-md border border-line bg-surface-2 px-1.5 text-sm pointer-coarse:h-10', className)}
     >
       {levels.map((level) => (
         <option key={level} value={level}>

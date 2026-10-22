@@ -88,7 +88,7 @@ export function SavedBuildsPage() {
             onChange={(e) => setQuery(e.target.value)}
             placeholder="이름·메모 검색"
             aria-label="내 세팅 검색"
-            className="mt-3 h-9 w-full rounded-md border border-line bg-surface-2 px-2.5 text-sm text-fg placeholder:text-muted focus:border-accent focus:outline-none sm:w-72"
+            className="mt-3 h-9 w-full rounded-md border border-line bg-surface-2 px-2.5 text-sm text-fg placeholder:text-muted focus:border-accent focus:outline-none sm:w-72 pointer-coarse:h-10"
           />
         )}
       </Panel>

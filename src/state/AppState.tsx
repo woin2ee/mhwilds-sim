@@ -2,6 +2,7 @@ import { useCallback, useMemo, type ReactNode } from 'react'
 import type { SavedBuild } from '../core/savedBuilds'
 import { emptyBuild, type BuildState, type CustomTalisman } from '../core/types'
 import type { GameDb } from '../data/db'
+import { useScrollMemory } from '../lib/scroll'
 import { usePersistentState } from '../lib/storage'
 import { AppStateContext, type TabId } from './context'
 
@@ -36,14 +37,15 @@ export function AppStateProvider({ db, children }: { db: GameDb; children: React
     null,
     isNullableString,
   )
-  const [tab, setTab] = usePersistentState<TabId>('tab', 'manual', isTab)
+  const [tab, setTabState] = usePersistentState<TabId>('tab', 'manual', isTab)
+  // 탭마다 스크롤 위치를 기억해, 탭을 오가도 보던 자리로 돌아온다
+  const setTab = useScrollMemory(tab, setTabState)
 
   const openInManual = useCallback(
     (build: BuildState, sourceId: string | null = null) => {
       setManualBuild(build)
       setManualSourceId(sourceId)
-      setTab('manual')
-      window.scrollTo({ top: 0 })
+      setTab('manual', { top: true })
     },
     [setManualBuild, setManualSourceId, setTab],
   )

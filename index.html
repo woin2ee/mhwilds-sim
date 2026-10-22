@@ -3,7 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover: 아이폰 노치·홈 표시줄 영역까지 쓰고 여백은 env(safe-area-inset-*) 로 직접 둔다 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- 방어력·공유 코드의 숫자를 iOS 가 전화번호 링크로 바꾸지 않게 -->
+    <meta name="format-detection" content="telephone=no" />
     <meta name="description" content="몬스터 헌터 와일즈 비공식 방어구 세팅·스킬 검색 시뮬레이터" />
     <link
       rel="stylesheet"

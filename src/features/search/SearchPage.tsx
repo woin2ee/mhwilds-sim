@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { MobileBar } from '../../components/MobileBar'
 import { Button, EmptyState, Panel, Segmented, Toggle } from '../../components/ui'
 import { SearchCancelledError, SearchClient, type RunningSearch } from '../../core/search/client'
 import type {
@@ -8,6 +9,8 @@ import type {
   SearchResponse,
   SearchSort,
 } from '../../core/search/types'
+import { cx } from '../../lib/cx'
+import { useScrollMemory } from '../../lib/scroll'
 import { usePersistentState } from '../../lib/storage'
 import { useAppState } from '../../state/context'
 import {
@@ -32,6 +35,13 @@ const EXCLUDE_MODE_HELP: Record<ExcludeMode, string> = {
   deprioritize: '비선호 스킬이 들어간 조합은 결과 맨 아래 ‘비선호 결과’로 따로 모아요.',
   exclude: '비선호 스킬이 붙은 방어구·호석·장식주를 후보에서 아예 빼고 찾아요.',
 }
+
+/** lg 미만(1단)에서 한 번에 하나만 보여 주는 패널 */
+type Pane = 'conditions' | 'results'
+const PANE_OPTIONS: { value: Pane; label: string }[] = [
+  { value: 'conditions', label: '조건' },
+  { value: 'results', label: '결과' },
+]
 
 interface SearchResultState {
   seq: number
@@ -61,6 +71,8 @@ export function SearchPage() {
   const [progress, setProgress] = useState<SearchProgress | null>(null)
   const [result, setResult] = useState<SearchResultState | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [pane, setPane] = useState<Pane>('conditions')
+  const showPane = useScrollMemory(pane, setPane)
 
   useEffect(
     () => () => {
@@ -117,8 +129,9 @@ export function SearchPage() {
     )
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[380px_minmax(0,1fr)] lg:items-start">
-      <div className="space-y-4">
+    // 1단(lg 미만)에서는 블록으로 둬야 맨 끝의 MobileBar 가 sticky 로 화면 아래에 붙는다 (grid 칸 안에선 안 움직임)
+    <div className="max-lg:space-y-4 lg:grid lg:grid-cols-[380px_minmax(0,1fr)] lg:items-start lg:gap-4">
+      <div className={cx('space-y-4', pane !== 'conditions' && 'max-lg:hidden')}>
         <Panel
           title="원하는 스킬"
           actions={
@@ -190,17 +203,18 @@ export function SearchPage() {
         </Panel>
       </div>
 
-      <div className="min-w-0 space-y-4">
+      <div className={cx('min-w-0 space-y-4', pane !== 'results' && 'max-lg:hidden')}>
         <Panel>
           <div className="flex flex-wrap items-center gap-3">
+            {/* 휴대폰·태블릿에서는 화면 아래 바의 버튼을 쓴다 */}
             {running ? (
-              <Button className="min-w-24" onClick={() => runningRef.current?.cancel()}>
+              <Button className="min-w-24 max-lg:hidden" onClick={() => runningRef.current?.cancel()}>
                 취소
               </Button>
             ) : (
               <Button
                 variant="primary"
-                className="min-w-24"
+                className="min-w-24 max-lg:hidden"
                 disabled={request.required.length === 0}
                 onClick={() => run(request)}
               >
@@ -256,6 +270,34 @@ export function SearchPage() {
           !running && <EmptyState>원하는 스킬을 고르고 검색을 눌러 주세요.</EmptyState>
         )}
       </div>
+
+      {/* 휴대폰·태블릿: 조건/결과 전환 + 검색. 검색하면 결과 패널로 넘어간다 */}
+      <MobileBar progress={running ? progress.ratio : null}>
+        <Segmented
+          value={pane}
+          options={PANE_OPTIONS}
+          onChange={(next) => showPane(next)}
+          ariaLabel="보기 전환"
+          className="shrink-0"
+        />
+        {running ? (
+          <Button className="ml-auto min-w-24" onClick={() => runningRef.current?.cancel()}>
+            취소
+          </Button>
+        ) : (
+          <Button
+            variant="primary"
+            className="ml-auto min-w-24"
+            disabled={request.required.length === 0}
+            onClick={() => {
+              run(request)
+              showPane('results', { top: true })
+            }}
+          >
+            검색
+          </Button>
+        )}
+      </MobileBar>
     </div>
   )
 }

@@ -10,7 +10,7 @@ export function SelectBox({
   return (
     <select
       className={cx(
-        'h-9 rounded-md border border-line bg-surface-2 px-2 text-sm text-fg focus:border-accent focus:outline-none',
+        'h-9 rounded-md border border-line bg-surface-2 px-2 text-sm text-fg focus:border-accent focus:outline-none pointer-coarse:h-10',
         className,
       )}
       {...props}

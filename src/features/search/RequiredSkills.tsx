@@ -18,7 +18,7 @@ function BonusLevelSelect({ skill, value, onChange }: { skill: Skill; value: num
       aria-label={`${nameOf(skill.name)} 단계`}
       value={value}
       onChange={(e) => onChange(Number(e.target.value))}
-      className="h-8 rounded-md border border-line bg-surface-2 px-1.5 text-sm"
+      className="h-8 rounded-md border border-line bg-surface-2 px-1.5 text-sm pointer-coarse:h-10"
     >
       {skill.ranks.map((rank) => (
         <option key={rank.level} value={rank.level} title={rank.name ? nameOf(rank.name) : undefined}>
@@ -108,7 +108,7 @@ export function ExcludedSkills({
   return (
     <div className="space-y-2">
       {excluded.length > 0 && (
-        <div className="flex flex-wrap gap-1">
+        <div className="flex flex-wrap gap-1 pointer-coarse:gap-2">
           {excluded.map((id) => {
             const skill = db.skills.get(id)
             if (!skill) return null

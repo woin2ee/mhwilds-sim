@@ -59,8 +59,38 @@
 
 body {
   margin: 0;
+  /* 가로 모드에서 아이폰 노치 영역을 피한다 (index.html 의 viewport-fit=cover) */
+  padding-inline: env(safe-area-inset-left) env(safe-area-inset-right);
   background: var(--bg);
   color: var(--fg);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+}
+
+/* 터치 기기(휴대폰·태블릿). 레이어 밖 규칙이라 text-sm 같은 유틸리티보다 우선한다. */
+@media (pointer: coarse) {
+  /* iOS 사파리는 글자가 16px 보다 작은 입력 칸에 포커스하면 화면을 확대하므로 입력 요소는 16px 로 둔다 */
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  /* 대화상자·선택 시트가 열려 있는 동안 뒤 페이지가 스크롤되지 않게 */
+  html:has(dialog:modal) {
+    overflow: hidden;
+  }
+}
+
+/* 화면에 보이는 영역(키보드 위)에 맞춘 위치. 변수는 src/lib/viewport.ts 의 useVisualViewportVars 가 붙인다. */
+@utility vv-fill {
+  top: var(--vv-top, 0px);
+  bottom: auto;
+  height: var(--vv-height, 100dvh);
+}
+/* 보이는 영역의 아래쪽 끝에 붙인다 (바닥 시트) */
+@utility vv-bottom {
+  top: calc(var(--vv-top, 0px) + var(--vv-height, 100dvh));
+  bottom: auto;
+  translate: 0 -100%;
 }

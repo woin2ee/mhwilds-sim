@@ -7,7 +7,7 @@ import { copyText } from '../../lib/clipboard'
 import { useAppState } from '../../state/context'
 
 const FIELD =
-  'w-full rounded-md border border-line bg-surface-2 px-2.5 py-2 font-mono text-xs text-fg focus:border-accent focus:outline-none'
+  'w-full min-w-0 rounded-md border border-line bg-surface-2 px-2.5 py-2 font-mono text-xs text-fg focus:border-accent focus:outline-none'
 
 /** 세팅 하나를 링크·코드로 공유 */
 export function ShareDialog({

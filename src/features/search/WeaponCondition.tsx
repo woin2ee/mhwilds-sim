@@ -80,7 +80,7 @@ export function WeaponCondition({
               aria-label="무기 종류"
               value={cond.weaponKind}
               onChange={(e) => onChange({ weaponKind: e.target.value as SearchConditions['weaponKind'], weaponId: null })}
-              className="h-9 shrink-0 rounded-md border border-line bg-surface-2 px-2 text-sm"
+              className="h-9 shrink-0 rounded-md border border-line bg-surface-2 px-2 text-sm pointer-coarse:h-10"
             >
               {WEAPON_KINDS.map((kind) => (
                 <option key={kind} value={kind}>
@@ -142,7 +142,7 @@ export function WeaponCondition({
                     customWeaponSlots: cond.customWeaponSlots.map((l, j) => (j === i ? Number(e.target.value) : l)),
                   })
                 }
-                className="h-8 rounded-md border border-line bg-surface-2 px-1.5 text-sm"
+                className="h-8 rounded-md border border-line bg-surface-2 px-1.5 text-sm pointer-coarse:h-10"
               >
                 <option value={0}>없음</option>
                 {([1, 2, 3] as SlotLevel[]).map((l) => (

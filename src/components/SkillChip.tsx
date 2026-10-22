@@ -36,7 +36,12 @@ export function SkillChip({
   return (
     <span
       title={title}
-      className={cx('inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-xs whitespace-nowrap', TONE[tone])}
+      className={cx(
+        'inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-xs whitespace-nowrap',
+        // 지울 수 있는 칩은 터치 기기에서 누르기 쉽게 키운다 (칩 사이 간격은 쓰는 쪽에서 pointer-coarse:gap-2)
+        onRemove && 'pointer-coarse:py-1 pointer-coarse:text-sm',
+        TONE[tone],
+      )}
     >
       <span>{name}</span>
       {level !== undefined && (
@@ -47,7 +52,13 @@ export function SkillChip({
       )}
       {children}
       {onRemove && (
-        <button type="button" aria-label={`${name} 제거`} onClick={onRemove} className="-mr-0.5 opacity-60 hover:opacity-100">
+        <button
+          type="button"
+          aria-label={`${name} 제거`}
+          onClick={onRemove}
+          // after: 로 보이는 크기는 그대로 두고 누르는 영역만 넓힌다
+          className="relative -mr-0.5 opacity-60 after:absolute after:-inset-1.5 hover:opacity-100"
+        >
           ×
         </button>
       )}

@@ -123,7 +123,7 @@ function SkillRow({ total }: { total: SkillTotal }) {
   return (
     <li>
       <details className="group">
-        <summary className="flex cursor-pointer list-none items-center gap-2 rounded px-1 py-1 hover:bg-surface-2 [&::-webkit-details-marker]:hidden">
+        <summary className="flex cursor-pointer list-none items-center gap-2 rounded px-1 py-1 hover:bg-surface-2 pointer-coarse:py-2 [&::-webkit-details-marker]:hidden">
           <span className="min-w-0 flex-1 truncate text-sm">{skillName(db, total.skillId)}</span>
           {overflow > 0 && <span className="text-xs text-warn">+{overflow} 초과</span>}
           <LevelPips level={total.level} max={total.maxLevel} />

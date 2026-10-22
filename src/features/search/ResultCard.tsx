@@ -112,7 +112,7 @@ function EquipRow({
           type="button"
           aria-expanded={open}
           onClick={onToggle}
-          className="shrink-0 rounded px-1 text-xs text-accent hover:bg-surface-2"
+          className="shrink-0 rounded px-1 text-xs text-accent hover:bg-surface-2 pointer-coarse:px-2 pointer-coarse:py-1.5 pointer-coarse:text-sm"
         >
           외 {alternatives} {open ? '▴' : '▾'}
         </button>
@@ -138,7 +138,7 @@ function AlternativeList({
             type="button"
             onClick={() => onSelect(i)}
             className={cx(
-              'flex w-full items-start gap-2 px-2.5 py-1.5 text-left text-xs hover:bg-surface',
+              'flex w-full items-start gap-2 px-2.5 py-1.5 text-left text-xs hover:bg-surface pointer-coarse:py-2.5',
               i === selectedIndex && 'text-accent',
             )}
           >

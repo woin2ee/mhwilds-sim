@@ -1,10 +1,13 @@
 import { useMemo, useState } from 'react'
-import { Button, Panel } from '../../components/ui'
+import { MobileBar } from '../../components/MobileBar'
+import { Button, Panel, Segmented } from '../../components/ui'
 import { clearDecorations, hasAnyDecoration, isEmptyBuild } from '../../core/buildUpdates'
 import { computeBuild, type SlotUsage } from '../../core/calc'
 import { suggestName, topSkills } from '../../core/savedBuilds'
 import { emptyBuild, type EquipKey } from '../../core/types'
 import { ARMOR_KINDS } from '../../data/types'
+import { cx } from '../../lib/cx'
+import { useScrollMemory } from '../../lib/scroll'
 import { useAppState } from '../../state/context'
 import { SaveBuildDialog } from '../saved/SaveBuildDialog'
 import { ShareDialog } from '../saved/ShareDialog'
@@ -15,11 +18,20 @@ import { WeaponRow } from './WeaponRow'
 
 const NO_USAGES: readonly SlotUsage[] = []
 
+/** lg 미만(1단)에서 한 번에 하나만 보여 주는 패널 */
+type Pane = 'equipment' | 'result'
+const PANE_OPTIONS: { value: Pane; label: string }[] = [
+  { value: 'equipment', label: '장비' },
+  { value: 'result', label: '결과' },
+]
+
 /** 수동 세팅: 장비·장식주를 직접 골라 최종 스킬/방어력을 확인한다 */
 export function ManualBuilder() {
   const { db, manualBuild, setManualBuild, customTalismans, savedBuilds, manualSourceId, setManualSourceId } =
     useAppState()
   const [dialog, setDialog] = useState<'save' | 'share' | null>(null)
+  const [pane, setPane] = useState<Pane>('equipment')
+  const showPane = useScrollMemory(pane, setPane)
   const summary = useMemo(
     () => computeBuild(db, manualBuild, customTalismans),
     [db, manualBuild, customTalismans],
@@ -45,9 +57,13 @@ export function ManualBuilder() {
     setManualSourceId(null)
   }
 
+  const activeSkills = summary.skills.filter((s) => s.level > 0).length
+
   return (
-    <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)]">
+    // 1단(lg 미만)에서는 블록으로 둬야 맨 끝의 MobileBar 가 sticky 로 화면 아래에 붙는다 (grid 칸 안에선 안 움직임)
+    <div className="max-lg:space-y-4 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)] lg:items-start lg:gap-4">
       <Panel
+        className={cx(pane !== 'equipment' && 'max-lg:hidden')}
         title={
           <span>
             장비
@@ -90,7 +106,12 @@ export function ManualBuilder() {
           <TalismanRow usages={usagesByKey.get('talisman') ?? NO_USAGES} />
         </div>
       </Panel>
-      <aside className="lg:sticky lg:top-16 lg:max-h-[calc(100vh-5rem)] lg:overflow-y-auto">
+      <aside
+        className={cx(
+          'lg:sticky lg:top-16 lg:max-h-[calc(100vh-5rem)] lg:overflow-y-auto',
+          pane !== 'result' && 'max-lg:hidden',
+        )}
+      >
         <SummaryPanel summary={summary} />
       </aside>
 
@@ -108,6 +129,21 @@ export function ManualBuilder() {
         build={manualBuild}
         name={source?.name ?? null}
       />
+
+      {/* 휴대폰·태블릿: 장비/결과 전환 + 요약 */}
+      <MobileBar>
+        <Segmented
+          value={pane}
+          options={PANE_OPTIONS}
+          onChange={(next) => showPane(next)}
+          ariaLabel="보기 전환"
+          className="shrink-0"
+        />
+        <p className="ml-auto min-w-0 truncate text-right text-xs text-muted">
+          방어력 <span className="font-semibold text-fg tabular-nums">{summary.defense.max}</span> · 스킬{' '}
+          <span className="font-semibold text-fg tabular-nums">{activeSkills}</span>개
+        </p>
+      </MobileBar>
     </div>
   )
 }
