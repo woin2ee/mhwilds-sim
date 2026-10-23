@@ -31,7 +31,13 @@ npm run data:update  # MHDB 에서 게임 데이터 갱신 → public/data/wilds
 ## 데이터 출처와 고지
 
 - 게임 데이터: [MHDB](https://docs.wilds.mhdb.io) — 게임 파일에서 추출한 데이터
-  ([mhdb-wilds-data](https://github.com/LartTyler/mhdb-wilds-data), GPL-3.0)
+  ([mhdb-wilds-data](https://github.com/LartTyler/mhdb-wilds-data), GPL-3.0).
+  `scripts/build-data.mjs` 가 시뮬레이터에 쓰는 값만 골라 `public/data/wilds.json` 으로 변환합니다.
 - 이 사이트는 캡콤의 지식재산을 이용한 비공식 팬메이드(2차 창작) 도구이며, 캡콤과 관련이 없습니다.
   [캡콤 2차 창작 가이드라인](https://www.capcom-games.com/ko-kr/fan-content-guidelines/)에 따라
   영리 목적으로 운영하지 않으며, 게임에서 추출한 이미지·아이콘·로고를 사용하지 않습니다.
+
+## 라이선스
+
+[GNU GPL v3.0](LICENSE). 게임 데이터 원본이 GPL-3.0 이라 코드와 변환한 데이터 모두 같은 라이선스로 배포합니다.
+몬스터 헌터의 이름·수치 등 게임 콘텐츠에 대한 권리는 캡콤에 있으며, 이 라이선스로 허락하는 대상이 아닙니다.

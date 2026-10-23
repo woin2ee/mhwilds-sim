@@ -121,6 +121,15 @@ function Shell() {
         이 사이트는 캡콤의 지식재산을 이용한 비공식 팬메이드(2차 창작) 도구이며, 캡콤과 관련이 없습니다.
         <br />
         게임 데이터: MHDB (게임 파일 추출) · 데이터 기준 {db.data.meta.mhdbVersion.slice(0, 10)}
+        <br />
+        <a
+          href="https://github.com/woin2ee/mhwilds-sim"
+          target="_blank"
+          rel="noreferrer"
+          className="underline underline-offset-2 hover:text-fg"
+        >
+          소스 코드 (GPL-3.0)
+        </a>
       </footer>
     </div>
   )
