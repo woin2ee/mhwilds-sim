@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { SlotList } from '../../components/SlotBadge'
 import { Badge, EmptyState, Panel } from '../../components/ui'
 import type { BonusTotal, BuildSummary, SkillTotal } from '../../core/calc'
@@ -117,6 +117,7 @@ export function SummaryPanel({ summary }: { summary: BuildSummary }) {
 
 function SkillRow({ total }: { total: SkillTotal }) {
   const db = useDb()
+  const [allLevels, setAllLevels] = useState(false)
   const skill = db.skills.get(total.skillId)
   const rank = skill?.ranks.find((r) => r.level === total.level)
   const overflow = total.rawLevel - total.maxLevel
@@ -135,10 +136,39 @@ function SkillRow({ total }: { total: SkillTotal }) {
         <div className="mx-1 mt-0.5 mb-2 space-y-1 border-l-2 border-line pl-2 text-xs">
           {/* 레벨 효과만으로는 뜻이 안 통하는 스킬이 많아(예: 완충 'Lv1 스킬 효과 발동') 스킬 설명을 먼저 보여 준다 */}
           {skill?.description && <p>{skill.description}</p>}
-          {rank?.description && rank.description !== skill?.description && (
-            <p>
-              <span className="text-muted">Lv{total.level}</span> {rank.description}
-            </p>
+          {allLevels && skill ? (
+            // 모든 레벨: 지금 레벨만 진하게 두고 나머지는 흐리게
+            <ol>
+              {skill.ranks.map((r) => {
+                const current = r.level === total.level
+                return (
+                  <li
+                    key={r.level}
+                    aria-current={current || undefined}
+                    className={current ? 'font-medium' : 'text-muted'}
+                  >
+                    <span className={cx(current && 'text-accent')}>Lv{r.level}</span> {r.description}
+                  </li>
+                )
+              })}
+            </ol>
+          ) : (
+            rank?.description &&
+            rank.description !== skill?.description && (
+              <p>
+                <span className="text-muted">Lv{total.level}</span> {rank.description}
+              </p>
+            )
+          )}
+          {skill && skill.ranks.length > 1 && (
+            <button
+              type="button"
+              aria-expanded={allLevels}
+              onClick={() => setAllLevels((open) => !open)}
+              className="-ml-1 rounded px-1 text-accent hover:bg-surface-2 pointer-coarse:py-1.5 pointer-coarse:text-sm"
+            >
+              모든 레벨 {allLevels ? '▴' : '▾'}
+            </button>
           )}
           <ul className="text-muted">
             {total.contributions.map((c, i) => (
