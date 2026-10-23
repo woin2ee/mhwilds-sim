@@ -19,6 +19,7 @@ import { ArmorRow } from './ArmorRow'
 import { GameOverlay } from './GameOverlay'
 import { SummaryPanel } from './SummaryPanel'
 import { TalismanRow } from './TalismanRow'
+import { useDecorationFill } from './useDecorationFill'
 import { WeaponRow } from './WeaponRow'
 
 const NO_USAGES: readonly SlotUsage[] = []
@@ -52,6 +53,7 @@ export function ManualBuilder() {
     }
     return map
   }, [summary])
+  const fill = useDecorationFill(summary)
 
   // 내 세팅에서 불러온 세팅이면 이름과 수정 여부를 보여 준다
   const source = manualSourceId ? savedBuilds.find((s) => s.id === manualSourceId) : undefined
@@ -132,11 +134,11 @@ export function ManualBuilder() {
         }
       >
         <div className="divide-y divide-line">
-          <WeaponRow usages={usagesByKey.get('weapon') ?? NO_USAGES} />
+          <WeaponRow usages={usagesByKey.get('weapon') ?? NO_USAGES} fill={fill} />
           {ARMOR_KINDS.map((kind) => (
-            <ArmorRow key={kind} kind={kind} usages={usagesByKey.get(kind) ?? NO_USAGES} />
+            <ArmorRow key={kind} kind={kind} usages={usagesByKey.get(kind) ?? NO_USAGES} fill={fill} />
           ))}
-          <TalismanRow usages={usagesByKey.get('talisman') ?? NO_USAGES} />
+          <TalismanRow usages={usagesByKey.get('talisman') ?? NO_USAGES} fill={fill} />
         </div>
       </Panel>
       <aside

@@ -12,6 +12,7 @@ import { useAppState } from '../../state/context'
 import { setDecoration, setTalisman } from '../../core/buildUpdates'
 import { DecorationSlots } from './DecorationSlots'
 import { EquipmentRow, MissingItem } from './EquipmentRow'
+import type { DecorationFill } from './useDecorationFill'
 
 interface TalismanOption {
   key: string
@@ -30,7 +31,7 @@ const getLabel = (o: TalismanOption) => o.name
 const getSearchText = (o: TalismanOption) => o.searchText
 const groupBy = (o: TalismanOption) => o.group
 
-export function TalismanRow({ usages }: { usages: readonly SlotUsage[] }) {
+export function TalismanRow({ usages, fill }: { usages: readonly SlotUsage[]; fill: DecorationFill }) {
   const { db, manualBuild: build, setManualBuild, customTalismans, setTab } = useAppState()
 
   const options = useMemo<TalismanOption[]>(() => {
@@ -130,6 +131,7 @@ export function TalismanRow({ usages }: { usages: readonly SlotUsage[] }) {
       <DecorationSlots
         usages={usages}
         onChange={(index, id) => setManualBuild((b) => setDecoration(b, 'talisman', index, id))}
+        fill={fill}
       />
     </EquipmentRow>
   )

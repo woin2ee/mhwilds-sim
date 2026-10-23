@@ -17,6 +17,7 @@ import { DecorationSlots } from './DecorationSlots'
 import { EquipmentRow, MissingItem } from './EquipmentRow'
 import { toSlots } from './labels'
 import { SkillPointEditor } from '../../components/SkillPointEditor'
+import type { DecorationFill } from './useDecorationFill'
 
 type CustomWeapon = Extract<WeaponChoice, { type: 'custom' }>
 type Mode = WeaponChoice['type']
@@ -51,7 +52,7 @@ function statsText(weapon: Weapon): string {
   return parts.join(' · ')
 }
 
-export function WeaponRow({ usages }: { usages: readonly SlotUsage[] }) {
+export function WeaponRow({ usages, fill }: { usages: readonly SlotUsage[]; fill: DecorationFill }) {
   const { db, manualBuild: build, setManualBuild } = useAppState()
   const [storedKind, setStoredKind] = usePersistentState<WeaponKind>(
     'manual-weapon-kind:v1',
@@ -153,6 +154,7 @@ export function WeaponRow({ usages }: { usages: readonly SlotUsage[] }) {
       <DecorationSlots
         usages={usages}
         onChange={(index, id) => setManualBuild((b) => setDecoration(b, 'weapon', index, id))}
+        fill={fill}
       />
     </EquipmentRow>
   )

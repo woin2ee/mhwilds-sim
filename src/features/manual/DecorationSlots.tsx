@@ -1,26 +1,32 @@
 import { useCallback, useMemo } from 'react'
 import { Combobox } from '../../components/Combobox'
 import { SlotBadge } from '../../components/SlotBadge'
+import { Button } from '../../components/ui'
 import type { SlotUsage } from '../../core/calc'
+import type { SkillFillPlan } from '../../core/decorationFill'
 import { canPlace } from '../../core/equipment'
 import { nameOf } from '../../data/db'
 import { skillPointsText } from '../../data/format'
 import { SLOT_KIND_LABEL } from '../../data/labels'
 import type { Decoration, DecorationKind, SlotLevel } from '../../data/types'
+import { cx } from '../../lib/cx'
 import { useDb } from '../../state/context'
+import { decorationsText, resultText, type DecorationFill } from './useDecorationFill'
 
 const getKey = (d: Decoration) => d.id
 const getLabel = (d: Decoration) => nameOf(d.name)
 const KINDS: DecorationKind[] = ['weapon', 'armor']
 const LEVELS: SlotLevel[] = [1, 2, 3]
 
-/** 장비 한 칸의 슬롯별 장식주 선택 */
+/** 장비 한 칸의 슬롯별 장식주 선택. 고른 장식주의 스킬이 최대가 아니면 빈 슬롯을 한 번에 채우는 버튼을 붙인다 */
 export function DecorationSlots({
   usages,
   onChange,
+  fill,
 }: {
   usages: readonly SlotUsage[]
   onChange: (index: number, decorationId: number | null) => void
+  fill: DecorationFill
 }) {
   const db = useDb()
   // 슬롯 종류·레벨별 장착 가능한 장식주 (큰 것 → 이름순)
@@ -61,6 +67,7 @@ export function DecorationSlots({
     <ul className="mt-2 space-y-1.5">
       {usages.map((usage) => {
         const decoration = usage.decorationId !== null ? (db.decorations.get(usage.decorationId) ?? null) : null
+        const plan = decoration && usage.valid ? fill.planFor(decoration) : null
         return (
           <li key={usage.index} className="flex items-center gap-2">
             <SlotBadge slot={usage.slot} filled={decoration !== null} />
@@ -77,15 +84,30 @@ export function DecorationSlots({
               maxResults={400}
               className="flex-1"
             />
+            {/* 넓은 화면에서는 장식주 스킬과 채우기 버튼을 같은 폭의 칸에 둬서, 장식주가 든 줄끼리 선택 상자 폭이 같다 */}
             {decoration && (
-              <span className="hidden w-32 shrink-0 truncate text-xs text-muted sm:inline">
-                {skillPointsText(db, decoration.skills)}
-              </span>
+              <div className={cx('flex shrink-0 items-center gap-2 sm:w-56', !plan && 'max-sm:hidden')}>
+                <span className="min-w-0 flex-1 truncate text-xs text-muted max-sm:hidden">
+                  {skillPointsText(db, decoration.skills)}
+                </span>
+                {plan && <FillButton plan={plan} onClick={() => fill.fill(plan)} />}
+              </div>
             )}
             {!usage.valid && <span className="shrink-0 text-xs text-bad">슬롯에 맞지 않음</span>}
           </li>
         )
       })}
     </ul>
+  )
+}
+
+/** 빈 슬롯에 장식주를 여러 개 넣어 스킬을 최대 레벨까지(슬롯이 모자라면 되는 데까지) 올린다 */
+function FillButton({ plan, onClick }: { plan: SkillFillPlan; onClick: () => void }) {
+  const db = useDb()
+  const title = `빈 슬롯에 ${decorationsText(db, plan)} 넣기 → ${resultText(db, plan)}`
+  return (
+    <Button size="sm" title={title} onClick={onClick}>
+      최대까지<span className="max-sm:hidden"> 채우기</span>
+    </Button>
   )
 }

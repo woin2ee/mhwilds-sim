@@ -14,6 +14,7 @@ import { refitDecorations, setArmor, setDecoration } from '../../core/buildUpdat
 import { DecorationSlots } from './DecorationSlots'
 import { EquipmentRow, MissingItem } from './EquipmentRow'
 import { toSlots } from './labels'
+import type { DecorationFill } from './useDecorationFill'
 
 const getKey = (a: ArmorPiece) => a.id
 const getLabel = (a: ArmorPiece) => nameOf(a.name)
@@ -25,7 +26,15 @@ function bonusNames(db: GameDb, piece: ArmorPiece): string[] {
   return [setSkillId, groupSkillId].flatMap((id) => (id === null ? [] : [skillName(db, id)]))
 }
 
-export function ArmorRow({ kind, usages }: { kind: ArmorKind; usages: readonly SlotUsage[] }) {
+export function ArmorRow({
+  kind,
+  usages,
+  fill,
+}: {
+  kind: ArmorKind
+  usages: readonly SlotUsage[]
+  fill: DecorationFill
+}) {
   const { db, manualBuild: build, setManualBuild } = useAppState()
   const choice = build.armor[kind] ?? null
   const piece = choice ? (db.armor.get(choice.id) ?? null) : null
@@ -80,6 +89,7 @@ export function ArmorRow({ kind, usages }: { kind: ArmorKind; usages: readonly S
       <DecorationSlots
         usages={usages}
         onChange={(index, id) => setManualBuild((b) => setDecoration(b, kind, index, id))}
+        fill={fill}
       />
     </EquipmentRow>
   )
