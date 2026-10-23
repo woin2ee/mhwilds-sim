@@ -7,30 +7,30 @@ import { BackupPreview } from './BackupPreview'
 import { DecodedBuildView } from './DecodedBuildView'
 import { parseShared } from './useBuildActions'
 
-/** code: 공유 링크·코드 가져오기, backup: 백업 가져오기 (백업 파일도 고를 수 있음) */
+/** code: 공유 링크·코드 가져오기 (내 세팅의 대화상자), backup: 백업 가져오기 (백업 탭, 백업 파일도 고를 수 있음) */
 export type ImportMode = 'code' | 'backup'
 
-const TEXT: Record<ImportMode, { title: string; placeholder: string; notFound: string }> = {
-  code: {
-    title: '코드로 가져오기',
-    placeholder: '공유 링크나 코드를 붙여 넣으세요',
-    notFound: '공유 링크나 코드를 찾지 못했어요.',
-  },
-  backup: { title: '백업 가져오기', placeholder: '백업 코드를 붙여 넣으세요', notFound: '백업 코드를 찾지 못했어요.' },
+const TEXT: Record<ImportMode, { placeholder: string; notFound: string }> = {
+  code: { placeholder: '공유 링크나 코드를 붙여 넣으세요', notFound: '공유 링크나 코드를 찾지 못했어요.' },
+  backup: { placeholder: '백업 코드를 붙여 넣으세요', notFound: '백업 코드를 찾지 못했어요.' },
 }
 
-/** 붙여 넣은 글을 알아서 해석한다: 백업 코드면 백업 미리보기, 공유 링크·코드면 세팅 미리보기 */
-export function ImportDialog({ open, onClose, mode }: { open: boolean; onClose: () => void; mode: ImportMode }) {
+/** 내 세팅의 ‘코드로 가져오기’ */
+export function ImportDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
-    <Dialog open={open} onClose={onClose} title={TEXT[mode].title}>
-      <ImportContent mode={mode} onDone={onClose} />
+    <Dialog open={open} onClose={onClose} title="코드로 가져오기">
+      <ImportForm mode="code" onDone={onClose} />
     </Dialog>
   )
 }
 
 type BackupInput = { backup: unknown } | { error: string }
 
-function ImportContent({ mode, onDone }: { mode: ImportMode; onDone: () => void }) {
+/**
+ * 붙여 넣은 글을 알아서 해석한다: 백업 코드면 백업 미리보기, 공유 링크·코드면 세팅 미리보기.
+ * 가져오거나 열면 onDone (대화상자는 닫고, 백업 탭은 입력을 비운다)
+ */
+export function ImportForm({ mode, onDone }: { mode: ImportMode; onDone: () => void }) {
   const db = useDb()
   const [text, setText] = useState('')
   const [file, setFile] = useState<{ name: string; input: BackupInput } | null>(null)

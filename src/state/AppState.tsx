@@ -20,7 +20,8 @@ function isSavedBuildList(v: unknown): v is SavedBuild[] {
   return Array.isArray(v) && v.every((s) => isObject(s) && typeof s.id === 'string' && isBuildState(s.build))
 }
 
-const isTab = (v: unknown): v is TabId => v === 'manual' || v === 'search' || v === 'saved' || v === 'talismans'
+const isTab = (v: unknown): v is TabId =>
+  v === 'manual' || v === 'search' || v === 'saved' || v === 'talismans' || v === 'backup'
 const isNullableString = (v: unknown): v is string | null => v === null || typeof v === 'string'
 
 /** 앱 전역 상태. 호석·수동 세팅·내 세팅·현재 탭은 localStorage 에 자동 저장된다. */

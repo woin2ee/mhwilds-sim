@@ -1,34 +1,27 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Badge, Button, EmptyState, Panel } from '../../components/ui'
 import { NAME_MAX, newSavedBuild, type SavedBuild } from '../../core/savedBuilds'
 import { cx } from '../../lib/cx'
-import { isStoragePersisted } from '../../lib/storage'
 import { matchesQuery } from '../../lib/text'
 import { useAppState } from '../../state/context'
 import { useToast } from '../../state/toast'
-import { BackupExportDialog } from './BackupExportDialog'
 import { formatDateTime } from './backupFile'
+import { BackupTabLink } from './BackupPage'
 import { BuildPreview } from './BuildPreview'
-import { ImportDialog, type ImportMode } from './ImportDialog'
+import { ImportDialog } from './ImportDialog'
 import { EditSavedDialog } from './SaveBuildDialog'
 import { ShareDialog } from './ShareDialog'
 import { useConfirmReplaceManual } from './useBuildActions'
 
-/** 내 세팅: 브라우저에 저장한 세팅 목록, 공유 코드 가져오기, 백업 */
+/** 내 세팅: 브라우저에 저장한 세팅 목록, 공유 코드 가져오기 (백업은 백업 탭) */
 export function SavedBuildsPage() {
-  const { savedBuilds, setSavedBuilds, customTalismans, openInManual, manualSourceId } = useAppState()
+  const { savedBuilds, setSavedBuilds, openInManual, manualSourceId } = useAppState()
   const toast = useToast()
   const confirmReplace = useConfirmReplaceManual()
   const [query, setQuery] = useState('')
-  const [importMode, setImportMode] = useState<ImportMode | null>(null)
-  const [exportOpen, setExportOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
   const [shareTarget, setShareTarget] = useState<SavedBuild | null>(null)
   const [editTarget, setEditTarget] = useState<SavedBuild | null>(null)
-  const [persisted, setPersisted] = useState<boolean | null>(null)
-
-  useEffect(() => {
-    void isStoragePersisted().then(setPersisted)
-  }, [savedBuilds.length])
 
   const list = useMemo(
     () =>
@@ -58,28 +51,14 @@ export function SavedBuildsPage() {
       <Panel
         title={`내 세팅 ${savedBuilds.length}개`}
         actions={
-          <>
-            <Button size="sm" onClick={() => setImportMode('code')}>
-              코드로 가져오기
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={savedBuilds.length === 0 && customTalismans.length === 0}
-              onClick={() => setExportOpen(true)}
-            >
-              백업 내보내기
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => setImportMode('backup')}>
-              백업 가져오기
-            </Button>
-          </>
+          <Button size="sm" onClick={() => setImportOpen(true)}>
+            코드로 가져오기
+          </Button>
         }
       >
         <p className="text-sm leading-relaxed text-muted">
-          세팅은 이 브라우저에만 저장돼요. 브라우저 데이터를 지우거나 기기를 바꾸면 사라지니, 가끔 ‘백업 내보내기’로 백업
-          코드나 파일을 받아 두세요. 다른 기기로 옮길 때는 백업 코드를 복사해 붙여 넣으면 돼요.
-          {persisted === true && ' (저장소 보존 허용됨)'}
+          세팅은 이 브라우저에만 저장돼요. 브라우저 데이터를 지우거나 기기를 바꾸면 사라지니, 가끔 <BackupTabLink /> 탭에서
+          내 호석과 함께 내보내 두세요.
         </p>
         {savedBuilds.length > 0 && (
           <input
@@ -116,8 +95,7 @@ export function SavedBuildsPage() {
         </div>
       )}
 
-      <ImportDialog open={importMode !== null} mode={importMode ?? 'code'} onClose={() => setImportMode(null)} />
-      <BackupExportDialog open={exportOpen} onClose={() => setExportOpen(false)} />
+      <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} />
       <EditSavedDialog target={editTarget} onClose={() => setEditTarget(null)} />
       {shareTarget && (
         <ShareDialog open onClose={() => setShareTarget(null)} build={shareTarget.build} name={shareTarget.name} />

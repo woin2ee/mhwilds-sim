@@ -6,6 +6,7 @@ import { Badge } from './components/ui'
 import { GameDb, loadGameData } from './data/db'
 import { cx } from './lib/cx'
 import { ManualBuilder } from './features/manual/ManualBuilder'
+import { BackupPage } from './features/saved/BackupPage'
 import { SavedBuildsPage } from './features/saved/SavedBuildsPage'
 import { SharedLinkHandler } from './features/saved/SharedLinkHandler'
 import { SearchPage } from './features/search/SearchPage'
@@ -44,11 +45,13 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'search', label: '스킬 검색' },
   { id: 'saved', label: '내 세팅' },
   { id: 'talismans', label: '내 호석' },
+  { id: 'backup', label: '백업' },
 ]
 
 /**
  * 탭 메뉴. bar 는 휴대폰용(폭을 똑같이 나눈 밑줄 탭), pills 는 데스크톱 헤더용.
- * 아이콘은 pills 는 이름 옆, bar 는 이름 위 (휴대폰 폭에서 옆에 두면 '수동 세팅'이 넘친다)
+ * 아이콘은 pills 는 이름 옆, bar 는 이름 위 (휴대폰 폭에서 옆에 두면 '수동 세팅'이 넘친다).
+ * 태블릿 폭(md~lg) 헤더에서는 탭 5개 옆에 제목이 다 보이도록 아이콘을 뺀다
  */
 function TabNav({ variant, className }: { variant: 'bar' | 'pills'; className?: string }) {
   const { tab, setTab } = useAppState()
@@ -71,7 +74,7 @@ function TabNav({ variant, className }: { variant: 'bar' | 'pills'; className?: 
                 : 'text-muted'),
           )}
         >
-          <TabIcon tab={t.id} className={variant === 'pills' ? 'size-4' : 'size-5'} />
+          <TabIcon tab={t.id} className={variant === 'pills' ? 'size-4 max-lg:hidden' : 'size-5'} />
           {t.label}
         </button>
       ))}
@@ -108,6 +111,9 @@ function Shell() {
         </div>
         <div hidden={tab !== 'talismans'}>
           <TalismanManager />
+        </div>
+        <div hidden={tab !== 'backup'}>
+          <BackupPage />
         </div>
       </main>
 

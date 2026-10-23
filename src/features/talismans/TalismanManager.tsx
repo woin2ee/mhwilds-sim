@@ -6,6 +6,7 @@ import type { CustomTalisman } from '../../core/types'
 import { skillName } from '../../data/format'
 import { useAppState, useDb } from '../../state/context'
 import { fitDecorations, setTalisman } from '../../core/buildUpdates'
+import { BackupTabLink } from '../saved/BackupPage'
 import { TalismanForm, type TalismanDraft } from './TalismanForm'
 
 function newId(): string {
@@ -59,7 +60,8 @@ export function TalismanManager() {
       >
         <p className="mb-4 text-sm leading-relaxed text-muted">
           감정 호석처럼 직접 얻은 호석을 등록하면 <span className="text-fg">수동 세팅</span>과{' '}
-          <span className="text-fg">스킬 검색</span>에서 사용할 수 있어요. 등록한 호석은 이 브라우저에만 저장됩니다.
+          <span className="text-fg">스킬 검색</span>에서 사용할 수 있어요. 등록한 호석은 이 브라우저에만 저장되니, 가끔{' '}
+          <BackupTabLink /> 탭에서 내 세팅과 함께 내보내 두세요.
         </p>
 
         {editing === 'new' && (

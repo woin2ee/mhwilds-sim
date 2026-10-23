@@ -14,6 +14,14 @@ const SHAPES: Record<Exclude<TabId, 'manual' | 'talismans'>, ReactNode> = {
   ),
   // 책갈피
   saved: <path d="M18.5 21 12 17l-6.5 4V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2z" />,
+  // 보관 상자
+  backup: (
+    <>
+      <rect x="3" y="4" width="18" height="5" rx="1" />
+      <path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9" />
+      <path d="M10 13h4" />
+    </>
+  ),
 }
 
 /** 탭 메뉴 아이콘. 글자 라벨 옆에 붙이는 장식이라 스크린리더에는 숨긴다. 크기는 className 으로 준다. */
