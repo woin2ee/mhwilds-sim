@@ -3,10 +3,12 @@ import { Combobox } from '../../components/Combobox'
 import { SkillSelect } from '../../components/SkillSelect'
 import { SlotList } from '../../components/SlotBadge'
 import { Button, LevelSelect, Segmented } from '../../components/ui'
+import { WeaponBonusSkills } from '../../components/WeaponBonusSkills'
+import { gogmaSkillsOf, isGogmaArtian } from '../../core/gogmaArtian'
 import type { Slot } from '../../core/types'
 import { nameOf } from '../../data/db'
 import { skillPointsText } from '../../data/format'
-import { SPECIAL_LABEL, WEAPON_KIND_LABEL } from '../../data/labels'
+import { GOGMA_ARTIAN_NAMES, SPECIAL_LABEL, WEAPON_KIND_LABEL } from '../../data/labels'
 import { WEAPON_KINDS, type SkillKind, type SlotLevel, type Weapon } from '../../data/types'
 import { useAppState } from '../../state/context'
 import type { SearchConditions, WeaponMode } from './conditions'
@@ -20,7 +22,13 @@ const WEAPON_SKILL_KINDS: readonly SkillKind[] = ['weapon']
 
 const getKey = (w: Weapon) => w.id
 const getLabel = (w: Weapon) => nameOf(w.name)
-const getSearchText = (w: Weapon) => [w.name.ko, w.name.en, w.name.ja]
+// 거극 아티어 무기는 이름에 '거극 아티어'가 없어서 따로 붙인다
+const getSearchText = (w: Weapon) => [
+  w.name.ko,
+  w.name.en,
+  w.name.ja,
+  ...(isGogmaArtian(w) ? Object.values(GOGMA_ARTIAN_NAMES) : []),
+]
 const weaponSlots = (w: Weapon): Slot[] => w.slots.map((level) => ({ kind: 'weapon', level }))
 
 function weaponSpecials(w: Weapon): string {
@@ -48,17 +56,26 @@ export function WeaponCondition({
   const importFromManual = () => {
     const w = manualBuild.weapon
     if (!w) return
+    const gogma = gogmaSkillsOf(db, w)
+    const gogmaPatch = { weaponSetSkillId: gogma.setSkillId, weaponGroupSkillId: gogma.groupSkillId }
     if (w.type === 'db') {
       const weapon = db.weapons.get(w.id)
-      if (weapon) onChange({ weaponMode: 'db', weaponKind: weapon.kind, weaponId: weapon.id })
+      if (weapon) onChange({ weaponMode: 'db', weaponKind: weapon.kind, weaponId: weapon.id, ...gogmaPatch })
     } else {
       onChange({
         weaponMode: 'custom',
         customWeaponSlots: [0, 1, 2].map((i) => w.slots[i] ?? 0),
         customWeaponSkills: w.skills,
+        ...gogmaPatch,
       })
     }
   }
+  const gogmaSkills = (
+    <WeaponBonusSkills
+      value={{ setSkillId: cond.weaponSetSkillId, groupSkillId: cond.weaponGroupSkillId }}
+      onChange={(skills) => onChange({ weaponSetSkillId: skills.setSkillId, weaponGroupSkillId: skills.groupSkillId })}
+    />
+  )
 
   return (
     <div className="space-y-2.5">
@@ -105,8 +122,12 @@ export function WeaponCondition({
                     <span className="text-xs text-muted">R{w.rarity}</span>
                     <SlotList slots={weaponSlots(w)} size="sm" />
                   </span>
-                  {w.skills.length > 0 && (
-                    <span className="truncate text-xs text-muted">{skillPointsText(db, w.skills)}</span>
+                  {(w.skills.length > 0 || isGogmaArtian(w)) && (
+                    <span className="truncate text-xs text-muted">
+                      {[isGogmaArtian(w) ? nameOf(GOGMA_ARTIAN_NAMES) : '', skillPointsText(db, w.skills)]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </span>
                   )}
                 </span>
               )}
@@ -125,6 +146,7 @@ export function WeaponCondition({
               {selected.skills.length > 0 && <div>{skillPointsText(db, selected.skills)}</div>}
             </div>
           )}
+          {selected && isGogmaArtian(selected) && gogmaSkills}
         </div>
       )}
 
@@ -198,6 +220,7 @@ export function WeaponCondition({
               skill && onChange({ customWeaponSkills: [...cond.customWeaponSkills, { skillId: skill.id, level: 1 }] })
             }
           />
+          {gogmaSkills}
         </div>
       )}
     </div>

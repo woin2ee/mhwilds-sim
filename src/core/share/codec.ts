@@ -1,7 +1,8 @@
-// 공유 코드 v1 인코딩/디코딩 (DESIGN.md §8.2). 장비는 게임 내부 id 로 담는다.
+// 공유 코드 v1·v2 인코딩/디코딩 (DESIGN.md §8.2). 장비는 게임 내부 id 로 담는다.
 import type { GameDb } from '../../data/db'
 import { ARMOR_KIND_LABEL } from '../../data/labels'
 import { ARMOR_KINDS, WEAPON_KINDS, type SkillPoint, type SlotLevel } from '../../data/types'
+import { customWeaponChoice, dbWeaponChoice, gogmaSkillsOf, type GogmaSkills } from '../gogmaArtian'
 import {
   EQUIP_KEYS,
   emptyBuild,
@@ -14,14 +15,24 @@ import {
 import { ByteReader, ByteWriter, INVALID_CODE, fromBase64Url, toBase64Url } from './binary'
 import { ShareCodeError, type DecodedBuild } from './types'
 
-export const FORMAT_VERSION = 1
+/**
+ * 읽을 수 있는 가장 새 버전. 2 = 무기 tag 3·4(거극 아티어 스킬)가 생긴 형식.
+ * 쓸 때는 tag 3·4 가 있을 때만 2 를 적어 그 밖의 세팅은 예전 코드와 똑같이 두고, 갱신 전 페이지는 '새 형식'으로 안내받는다.
+ */
+export const FORMAT_VERSION = 2
 const MAX_SLOTS = 3
 const MAX_SKILLS = 8
 const MAX_DECORATION_SLOTS = 8
+/** 거극 아티어 무기에 붙는 시리즈·그룹 스킬 */
+const MAX_GOGMA_SKILLS = 2
 
 const WEAPON_NONE = 0
 const WEAPON_DB = 1
 const WEAPON_CUSTOM = 2
+/** DB 무기 + 거극 아티어 스킬 */
+const WEAPON_DB_GOGMA = 3
+/** 직접 입력 무기 + 거극 아티어 스킬 */
+const WEAPON_CUSTOM_GOGMA = 4
 const ARMOR_NONE = 0
 const ARMOR_ON = 1
 const ARMOR_TRANSCEND = 2
@@ -40,8 +51,9 @@ export function encodeBuild(
   name?: string | null,
 ): string {
   const w = new ByteWriter()
-  w.u8(FORMAT_VERSION)
-  writeWeapon(w, db, build.weapon)
+  const gogma = gogmaSkillGameIds(db, build.weapon)
+  w.u8(gogma.length > 0 ? FORMAT_VERSION : 1)
+  writeWeapon(w, db, build.weapon, gogma)
 
   for (const kind of ARMOR_KINDS) {
     const choice = build.armor?.[kind] ?? null
@@ -69,25 +81,40 @@ export function encodeBuild(
   return toBase64Url(w.toBytes())
 }
 
-function writeWeapon(w: ByteWriter, db: GameDb, choice: WeaponChoice | null): void {
+/** 무기에 붙은 거극 아티어 스킬의 gameId (무기 tag 3·4). 없으면 빈 배열 */
+function gogmaSkillGameIds(db: GameDb, choice: WeaponChoice | null): number[] {
+  const { setSkillId, groupSkillId } = gogmaSkillsOf(db, choice)
+  return [setSkillId, groupSkillId].flatMap((id) => (id === null ? [] : [db.skill(id).gameId]))
+}
+
+function writeWeapon(w: ByteWriter, db: GameDb, choice: WeaponChoice | null, gogma: readonly number[]): void {
   if (choice?.type === 'db') {
     const weapon = db.weapons.get(choice.id)
     const kindIndex = weapon ? WEAPON_KINDS.indexOf(weapon.kind) : -1
     if (weapon && kindIndex >= 0) {
-      w.u8(WEAPON_DB)
+      w.u8(gogma.length > 0 ? WEAPON_DB_GOGMA : WEAPON_DB)
       w.u8(kindIndex)
       w.zz(weapon.gameId)
+      writeGogmaSkills(w, gogma)
       return
     }
   } else if (choice?.type === 'custom') {
-    w.u8(WEAPON_CUSTOM)
+    w.u8(gogma.length > 0 ? WEAPON_CUSTOM_GOGMA : WEAPON_CUSTOM)
     const slots = choice.slots.slice(0, MAX_SLOTS)
     w.u8(slots.length)
     for (const level of slots) w.u8(clampSlot(level))
     writeSkills(w, db, choice.skills)
+    writeGogmaSkills(w, gogma)
     return
   }
   w.u8(WEAPON_NONE)
+}
+
+/** tag 3·4 의 끝: u8 스킬 수(1~2), varint zz(스킬 gameId)… (없으면 아무것도 쓰지 않는다) */
+function writeGogmaSkills(w: ByteWriter, gogma: readonly number[]): void {
+  if (gogma.length === 0) return
+  w.u8(gogma.length)
+  for (const gameId of gogma) w.zz(gameId)
 }
 
 function writeTalisman(
@@ -139,7 +166,7 @@ function writeSkills(w: ByteWriter, db: GameDb, points: readonly SkillPoint[]): 
 export function decodeBuild(db: GameDb, code: string): DecodedBuild {
   const r = new ByteReader(fromBase64Url(code.trim()))
   const version = r.u8()
-  if (version !== FORMAT_VERSION) {
+  if (version < 1 || version > FORMAT_VERSION) {
     // 조금 큰 번호는 사이트가 갱신되기 전에 만든 새 형식일 수 있고, 그 외는 그냥 잘못된 코드다
     const newer = version > FORMAT_VERSION && version <= 15
     throw new ShareCodeError(newer ? '더 새로운 형식의 코드예요. 페이지를 새로고침해 보세요' : INVALID_CODE)
@@ -148,17 +175,23 @@ export function decodeBuild(db: GameDb, code: string): DecodedBuild {
   const missing = { weapon: false, weaponSkills: 0, armor: [] as string[], talisman: false, talismanSkills: 0, decorations: 0 }
 
   const weaponTag = r.u8()
-  if (weaponTag === WEAPON_DB) {
+  if (weaponTag === WEAPON_DB || weaponTag === WEAPON_DB_GOGMA) {
     const kind = WEAPON_KINDS[r.u8()]
     if (!kind) throw new ShareCodeError(INVALID_CODE)
     const weapon = db.weaponByGameKey(kind, r.zz())
-    if (weapon) build.weapon = { type: 'db', id: weapon.id }
-    else missing.weapon = true
-  } else if (weaponTag === WEAPON_CUSTOM) {
+    const gogma = weaponTag === WEAPON_DB_GOGMA ? readGogmaSkills(r, db) : null
+    if (weapon) {
+      build.weapon = dbWeaponChoice(weapon.id, gogma?.skills)
+      missing.weaponSkills += gogma?.missing ?? 0
+    } else {
+      missing.weapon = true
+    }
+  } else if (weaponTag === WEAPON_CUSTOM || weaponTag === WEAPON_CUSTOM_GOGMA) {
     const slots = readSlotLevels(r)
     const skills = readSkills(r, db)
-    missing.weaponSkills += skills.missing
-    build.weapon = { type: 'custom', slots, skills: skills.points }
+    const gogma = weaponTag === WEAPON_CUSTOM_GOGMA ? readGogmaSkills(r, db) : null
+    missing.weaponSkills += skills.missing + (gogma?.missing ?? 0)
+    build.weapon = customWeaponChoice(slots, skills.points, gogma?.skills)
   } else if (weaponTag !== WEAPON_NONE) {
     throw new ShareCodeError(INVALID_CODE)
   }
@@ -241,6 +274,21 @@ function readSlotLevels(r: ByteReader): SlotLevel[] {
     levels.push(level as SlotLevel)
   }
   return levels
+}
+
+/** 무기 tag 3·4 의 거극 아티어 스킬. 현재 데이터에 없거나 종류가 겹치는 스킬은 missing 으로 센다 */
+function readGogmaSkills(r: ByteReader, db: GameDb): { skills: GogmaSkills; missing: number } {
+  const count = r.u8()
+  if (count === 0 || count > MAX_GOGMA_SKILLS) throw new ShareCodeError(INVALID_CODE)
+  const skills: GogmaSkills = { setSkillId: null, groupSkillId: null }
+  let missing = 0
+  for (let i = 0; i < count; i++) {
+    const skill = db.skillByGameId(r.zz())
+    if (skill?.kind === 'set' && skills.setSkillId === null) skills.setSkillId = skill.id
+    else if (skill?.kind === 'group' && skills.groupSkillId === null) skills.groupSkillId = skill.id
+    else missing++
+  }
+  return { skills, missing }
 }
 
 function readSkills(r: ByteReader, db: GameDb): { points: SkillPoint[]; missing: number } {

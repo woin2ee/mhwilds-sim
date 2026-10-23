@@ -5,6 +5,7 @@ import { fillDecorations, pick, seededRandom } from '../../test/builds'
 import { armorByName, decorationIdByName, loadTestDb, skillIdByName } from '../../test/testDb'
 import { linkTalisman } from '../buildUpdates'
 import { computeBuild } from '../calc'
+import { customWeaponChoice, dbWeaponChoice, isGogmaArtian } from '../gogmaArtian'
 import { emptyBuild, type BuildState, type CustomTalisman, type TalismanChoice, type WeaponChoice } from '../types'
 import { fromBase64Url, toBase64Url } from './binary'
 import { decodeBuild, encodeBuild, extractShareCode, ShareCodeError, shareUrl, type DecodedBuild } from './index'
@@ -164,7 +165,7 @@ describe('잘못된 코드', () => {
 
   it('다른 버전 · 뒤에 붙은 바이트는 ShareCodeError', () => {
     const wrongVersion = Uint8Array.from(validBytes)
-    wrongVersion[0] = 2
+    wrongVersion[0] = 3
     expect(() => decodeBuild(db, toBase64Url(wrongVersion))).toThrow('더 새로운 형식의 코드예요')
     wrongVersion[0] = 0
     expect(() => decodeBuild(db, toBase64Url(wrongVersion))).toThrow('올바른 공유 코드가 아니에요')
@@ -225,6 +226,65 @@ describe('현재 데이터에 없는 항목', () => {
     const decoded = decodeBuild(reduced, encodeBuild(db, build, [], null))
     expect(decoded.missing).toEqual(['무기 스킬 1개'])
     expect(decoded.build.weapon).toEqual({ type: 'custom', slots: [3], skills: [] })
+  })
+})
+
+describe('거극 아티어 무기', () => {
+  const gogma = db.weaponByGameKey('great-sword', 87)! // 망각의 오스트란차
+  const hunger = skillIdByName(db, '쇄인룡의 굶주림')
+  const lordsSoul = skillIdByName(db, '주인의 혼')
+  const version = (code: string) => fromBase64Url(code)[0]
+
+  it('붙은 시리즈·그룹 스킬까지 돌아오고, 이때만 버전 2 로 쓴다', () => {
+    for (const skills of [
+      { setSkillId: hunger, groupSkillId: lordsSoul },
+      { setSkillId: hunger, groupSkillId: null },
+      { setSkillId: null, groupSkillId: lordsSoul },
+    ]) {
+      const build = { ...emptyBuild(), weapon: dbWeaponChoice(gogma.id, skills) }
+      const { code, decoded } = roundTrip(build, '거극')
+      expect(decoded.missing).toEqual([])
+      expect(decoded.build).toEqual(build)
+      expect(JSON.stringify(decoded.build.weapon)).toBe(JSON.stringify(build.weapon))
+      expect(version(code)).toBe(2)
+    }
+    // 스킬을 고르지 않았으면 예전과 똑같은 v1 코드
+    const none = { ...emptyBuild(), weapon: dbWeaponChoice(gogma.id) }
+    const code = encodeBuild(db, none, [], null)
+    expect(version(code)).toBe(1)
+    expect(decodeBuild(db, code).build).toEqual(none)
+  })
+
+  it('직접 입력 무기의 거극 아티어 스킬도 담는다', () => {
+    const skills = [{ skillId: attack, level: 1 }]
+    const build = { ...emptyBuild(), weapon: customWeaponChoice([3, 3, 3], skills, { setSkillId: hunger, groupSkillId: lordsSoul }) }
+    const { code, decoded } = roundTrip(build, null)
+    expect(decoded.missing).toEqual([])
+    expect(decoded.build).toEqual(build)
+    expect(JSON.stringify(decoded.build.weapon)).toBe(JSON.stringify(build.weapon))
+    expect(version(code)).toBe(2)
+    expect(version(encodeBuild(db, { ...emptyBuild(), weapon: customWeaponChoice([3, 3, 3], skills) }, [], null))).toBe(1)
+
+    // 현재 데이터에 없는 스킬은 무기 스킬 개수로 센다
+    const reduced = new GameDb({ ...db.data, skills: db.data.skills.filter((s) => s.id !== hunger && s.id !== attack) })
+    const partial = decodeBuild(reduced, code)
+    expect(partial.missing).toEqual(['무기 스킬 2개'])
+    expect(partial.build.weapon).toEqual({ type: 'custom', slots: [3, 3, 3], skills: [], groupSkillId: lordsSoul })
+  })
+
+  it('거극 아티어가 아닌 무기에 남은 스킬 값은 담지 않는다', () => {
+    const other = db.data.weapons.find((w) => w.kind === 'great-sword' && !isGogmaArtian(w))!
+    const code = encodeBuild(db, { ...emptyBuild(), weapon: { type: 'db', id: other.id, setSkillId: hunger } }, [], null)
+    expect(version(code)).toBe(1)
+    expect(decodeBuild(db, code).build.weapon).toEqual({ type: 'db', id: other.id })
+  })
+
+  it('현재 데이터에 없는 스킬은 개수로 적는다', () => {
+    const build = { ...emptyBuild(), weapon: dbWeaponChoice(gogma.id, { setSkillId: hunger, groupSkillId: lordsSoul }) }
+    const reduced = new GameDb({ ...db.data, skills: db.data.skills.filter((s) => s.id !== hunger) })
+    const decoded = decodeBuild(reduced, encodeBuild(db, build, [], null))
+    expect(decoded.missing).toEqual(['무기 스킬 1개'])
+    expect(decoded.build.weapon).toEqual({ type: 'db', id: gogma.id, groupSkillId: lordsSoul })
   })
 })
 

@@ -11,10 +11,11 @@ export interface Slot {
 export type EquipKey = 'weapon' | ArmorKind | 'talisman'
 export const EQUIP_KEYS: readonly EquipKey[] = ['weapon', ...ARMOR_KINDS, 'talisman']
 
+/** setSkillId/groupSkillId: 거극 아티어 무기에 붙은 시리즈/그룹 스킬 (각각 방어구 1부위, gogmaArtian.ts) */
 export type WeaponChoice =
-  | { type: 'db'; id: number }
-  /** DB에 없는 무기를 슬롯/스킬만 직접 입력 (예: 아티아 무기 보너스 반영) */
-  | { type: 'custom'; slots: SlotLevel[]; skills: SkillPoint[] }
+  | { type: 'db'; id: number; setSkillId?: number; groupSkillId?: number }
+  /** DB에 없는 무기를 슬롯/스킬만 직접 입력 (예: 아티어 무기 보너스 반영). 거극 아티어 스킬도 넣을 수 있다 */
+  | { type: 'custom'; slots: SlotLevel[]; skills: SkillPoint[]; setSkillId?: number; groupSkillId?: number }
 
 export interface ArmorChoice {
   id: number

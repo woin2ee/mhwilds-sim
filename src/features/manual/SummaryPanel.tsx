@@ -65,7 +65,14 @@ export function SummaryPanel({ summary }: { summary: BuildSummary }) {
               <SectionTitle>시리즈 · 그룹 스킬</SectionTitle>
               <ul className="divide-y divide-line">
                 {summary.bonuses.map((bonus) => (
-                  <BonusRow key={bonus.skillId} bonus={bonus} />
+                  <BonusRow
+                    key={bonus.skillId}
+                    bonus={bonus}
+                    fromWeapon={
+                      summary.equipment.weapon?.setSkillId === bonus.skillId ||
+                      summary.equipment.weapon?.groupSkillId === bonus.skillId
+                    }
+                  />
                 ))}
               </ul>
             </section>
@@ -183,7 +190,8 @@ function SkillRow({ total }: { total: SkillTotal }) {
   )
 }
 
-function BonusRow({ bonus }: { bonus: BonusTotal }) {
+/** fromWeapon: 거극 아티어 무기가 센 1부위가 들어 있다 */
+function BonusRow({ bonus, fromWeapon }: { bonus: BonusTotal; fromWeapon: boolean }) {
   const db = useDb()
   const skill = db.skills.get(bonus.skillId)
   const rank = bonus.level > 0 ? skill?.ranks.find((r) => r.level === bonus.level) : undefined
@@ -205,6 +213,7 @@ function BonusRow({ bonus }: { bonus: BonusTotal }) {
       <div className="shrink-0 text-right text-xs text-muted tabular-nums">
         <div className={cx(active && 'text-fg')}>{bonus.pieces}부위</div>
         <div>{bonus.nextPieces !== null ? `다음 ${bonus.nextPieces}부위` : '최대 단계'}</div>
+        {fromWeapon && <div>무기 포함</div>}
       </div>
     </li>
   )

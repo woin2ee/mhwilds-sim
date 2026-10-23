@@ -1,5 +1,6 @@
 import type { GameDb } from '../data/db'
 import { ELEMENTS, type ArmorKind, type Decoration, type Element, type SkillPoint } from '../data/types'
+import { gogmaSkillsOf } from './gogmaArtian'
 import { armorDefense, armorSlots } from './transcend'
 import type {
   ArmorChoice,
@@ -19,7 +20,7 @@ export interface ResolvedEquipment {
   slots: Slot[]
   defense: { base: number; max: number }
   resistances: Record<Element, number>
-  /** 방어구만: 시리즈/그룹 스킬 부위 수 계산용 */
+  /** 방어구·거극 아티어 무기: 시리즈/그룹 스킬 부위 수 계산용 (장비 하나 = 1부위) */
   setSkillId: number | null
   groupSkillId: number | null
 }
@@ -32,6 +33,7 @@ const NO_DEFENSE = { base: 0, max: 0 }
 
 export function resolveWeapon(db: GameDb, choice: WeaponChoice | null): ResolvedEquipment | null {
   if (!choice) return null
+  const { setSkillId, groupSkillId } = gogmaSkillsOf(db, choice)
   if (choice.type === 'custom') {
     return {
       key: 'weapon',
@@ -40,8 +42,8 @@ export function resolveWeapon(db: GameDb, choice: WeaponChoice | null): Resolved
       slots: choice.slots.map((level) => ({ kind: 'weapon', level })),
       defense: NO_DEFENSE,
       resistances: NO_RESISTANCE,
-      setSkillId: null,
-      groupSkillId: null,
+      setSkillId,
+      groupSkillId,
     }
   }
   const weapon = db.weapons.get(choice.id)
@@ -53,8 +55,8 @@ export function resolveWeapon(db: GameDb, choice: WeaponChoice | null): Resolved
     slots: weapon.slots.map((level) => ({ kind: 'weapon', level })),
     defense: { base: weapon.defenseBonus, max: weapon.defenseBonus },
     resistances: NO_RESISTANCE,
-    setSkillId: null,
-    groupSkillId: null,
+    setSkillId,
+    groupSkillId,
   }
 }
 

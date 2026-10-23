@@ -21,7 +21,7 @@ export interface PointRequirement {
 
 export interface BonusRequirement {
   skillId: number
-  /** 필요한 부위 수 */
+  /** 방어구로 채울 부위 수 (거극 아티어 무기가 센 1부위는 뺀 값) */
   pieces: number
 }
 
@@ -124,6 +124,8 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
   }
   if (merged.size === 0) return null
 
+  // 무기는 사용자가 고정한다. 거극 아티어 무기의 시리즈/그룹 스킬은 그 스킬을 방어구 1부위만큼 덜 찾게 한다
+  const resolvedWeapon = resolveWeapon(db, request.weapon.choice)
   const points: { skillId: number; need: number }[] = []
   const bonuses: BonusRequirement[] = []
   for (const [skillId, level] of merged) {
@@ -132,8 +134,9 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
       const pieces = Math.min(
         ...skill.ranks.filter((r) => r.level >= level && r.pieces !== undefined).map((r) => r.pieces!),
       )
-      if (!Number.isFinite(pieces) || pieces > ARMOR_KINDS.length) return null
-      bonuses.push({ skillId, pieces })
+      const fromWeapon = resolvedWeapon?.setSkillId === skillId || resolvedWeapon?.groupSkillId === skillId ? 1 : 0
+      if (!Number.isFinite(pieces) || pieces - fromWeapon > ARMOR_KINDS.length) return null
+      bonuses.push({ skillId, pieces: pieces - fromWeapon })
     } else {
       points.push({ skillId, need: level })
     }
@@ -191,7 +194,6 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
   const jointFill = joint ? makeFillers([...armorIdx, ...weaponIdx, ...bothIdx], ['armor', 'weapon']) : null
 
   // ---- 무기 (사용자가 고정) ----
-  const resolvedWeapon = resolveWeapon(db, request.weapon.choice)
   const weaponLevels = (resolvedWeapon?.slots ?? []).map((s) => s.level)
   const weapon = {
     present: resolvedWeapon !== null,

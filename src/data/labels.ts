@@ -1,4 +1,4 @@
-import type { ArmorKind, DecorationKind, Element, SkillKind, WeaponKind } from './types'
+import type { ArmorKind, DecorationKind, Element, Names, SkillKind, WeaponKind } from './types'
 
 export const ARMOR_KIND_LABEL: Record<ArmorKind, string> = {
   head: '머리',
@@ -40,6 +40,9 @@ export const SPECIAL_LABEL: Record<string, string> = {
   sleep: '수면',
   blast: '폭파',
 }
+
+/** 거극 아티어 무기 (데이터 이름에 없어서 목록 표시·검색어로 붙인다, core/gogmaArtian.ts) */
+export const GOGMA_ARTIAN_NAMES: Names = { ko: '거극 아티어', en: 'Gogma Artian', ja: '巨戟アーティア' }
 
 export const SKILL_KIND_LABEL: Record<SkillKind, string> = {
   armor: '방어구 스킬',

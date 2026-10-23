@@ -3,11 +3,13 @@ import { Combobox } from '../../components/Combobox'
 import { SkillChip } from '../../components/SkillChip'
 import { SlotList } from '../../components/SlotBadge'
 import { Segmented } from '../../components/ui'
+import { WeaponBonusSkills } from '../../components/WeaponBonusSkills'
 import type { SlotUsage } from '../../core/calc'
+import { customWeaponChoice, dbWeaponChoice, gogmaSkillsOf, isGogmaArtian } from '../../core/gogmaArtian'
 import type { WeaponChoice } from '../../core/types'
 import { nameOf } from '../../data/db'
 import { signed, skillName, skillPointsText } from '../../data/format'
-import { SPECIAL_LABEL, WEAPON_KIND_LABEL } from '../../data/labels'
+import { GOGMA_ARTIAN_NAMES, SPECIAL_LABEL, WEAPON_KIND_LABEL } from '../../data/labels'
 import { WEAPON_KINDS, type SkillKind, type SlotLevel, type Weapon, type WeaponKind } from '../../data/types'
 import { usePersistentState } from '../../lib/storage'
 import { useAppState, useDb } from '../../state/context'
@@ -45,6 +47,7 @@ function specialsText(weapon: Weapon): string {
 
 function statsText(weapon: Weapon): string {
   const parts = [`레어도 ${weapon.rarity}`, `공격 ${weapon.attack}`]
+  if (isGogmaArtian(weapon)) parts.unshift(nameOf(GOGMA_ARTIAN_NAMES))
   if (weapon.affinity) parts.push(`회심 ${signed(weapon.affinity)}%`)
   const specials = specialsText(weapon)
   if (specials) parts.push(specials)
@@ -70,7 +73,14 @@ export function WeaponRow({ usages, fill }: { usages: readonly SlotUsage[]; fill
     [db, kind],
   )
   const getSearchText = useCallback(
-    (w: Weapon) => [w.name.ko, w.name.en, w.name.ja, ...w.skills.map((p) => skillName(db, p.skillId))],
+    (w: Weapon) => [
+      w.name.ko,
+      w.name.en,
+      w.name.ja,
+      // 거극 아티어 무기는 이름에 '거극 아티어'가 없어서 따로 붙인다
+      ...(isGogmaArtian(w) ? Object.values(GOGMA_ARTIAN_NAMES) : []),
+      ...w.skills.map((p) => skillName(db, p.skillId)),
+    ],
     [db],
   )
   const renderOption = useCallback(
@@ -93,9 +103,9 @@ export function WeaponRow({ usages, fill }: { usages: readonly SlotUsage[]; fill
     setPreferredMode(next)
     if (next === mode) return
     if (next === 'custom') {
-      // 지금 고른 무기의 슬롯·스킬을 복사해서 시작 (아티아 무기 보너스 반영 등)
+      // 지금 고른 무기의 슬롯·스킬·거극 아티어 스킬을 복사해서 시작 (아티어 무기 보너스 반영 등)
       const custom: CustomWeapon = weapon
-        ? { type: 'custom', slots: [...weapon.slots], skills: weapon.skills.map((p) => ({ ...p })) }
+        ? customWeaponChoice([...weapon.slots], weapon.skills.map((p) => ({ ...p })), gogmaSkillsOf(db, choice))
         : EMPTY_CUSTOM
       setManualBuild((b) => refitDecorations(db, { ...b, weapon: custom }, 'weapon'))
     } else {
@@ -106,6 +116,12 @@ export function WeaponRow({ usages, fill }: { usages: readonly SlotUsage[]; fill
     setStoredKind(next)
     if (weapon && weapon.kind !== next) setManualBuild((b) => setWeapon(b, null))
   }
+  // 거극 아티어 무기끼리 바꾸면(격화 타입만 바꾸는 경우 등) 고른 시리즈·그룹 스킬을 그대로 둔다
+  const selectWeapon = (next: Weapon | null) =>
+    setManualBuild((b) => {
+      if (!next) return setWeapon(b, null)
+      return setWeapon(b, dbWeaponChoice(next.id, isGogmaArtian(next) ? gogmaSkillsOf(db, b.weapon) : undefined))
+    })
 
   return (
     <EquipmentRow equip="weapon">
@@ -130,7 +146,7 @@ export function WeaponRow({ usages, fill }: { usages: readonly SlotUsage[]; fill
             <Combobox
               items={weapons}
               value={weapon}
-              onChange={(w) => setManualBuild((b) => setWeapon(b, w ? { type: 'db', id: w.id } : null))}
+              onChange={selectWeapon}
               getKey={getKey}
               getLabel={getLabel}
               getSearchText={getSearchText}
@@ -144,6 +160,17 @@ export function WeaponRow({ usages, fill }: { usages: readonly SlotUsage[]; fill
             <MissingItem what="무기" onClear={() => setManualBuild((b) => setWeapon(b, null))} />
           )}
           {weapon && <WeaponInfo weapon={weapon} />}
+          {weapon && isGogmaArtian(weapon) && (
+            <WeaponBonusSkills
+              className="mt-2"
+              value={gogmaSkillsOf(db, choice)}
+              onChange={(skills) =>
+                setManualBuild((b) =>
+                  b.weapon?.type === 'db' ? { ...b, weapon: dbWeaponChoice(b.weapon.id, skills) } : b,
+                )
+              }
+            />
+          )}
         </>
       ) : (
         <CustomWeaponEditor
@@ -173,6 +200,7 @@ function WeaponInfo({ weapon }: { weapon: Weapon }) {
 }
 
 function CustomWeaponEditor({ weapon, onChange }: { weapon: CustomWeapon; onChange: (next: CustomWeapon) => void }) {
+  const db = useDb()
   // 슬롯은 항상 레벨 내림차순으로 저장한다 (DB 무기와 같은 규칙)
   const setSlot = (index: number, level: number) => {
     const slots = [0, 1, 2]
@@ -202,7 +230,14 @@ function CustomWeaponEditor({ weapon, onChange }: { weapon: CustomWeapon; onChan
         onChange={(skills) => onChange({ ...weapon, skills })}
         addPlaceholder="무기 스킬 추가"
       />
-      <p className="text-xs text-muted">DB에 없는 무기나 아티아 무기처럼 슬롯·스킬이 다른 무기를 직접 입력합니다.</p>
+      <WeaponBonusSkills
+        value={gogmaSkillsOf(db, weapon)}
+        onChange={(gogma) => onChange(customWeaponChoice(weapon.slots, weapon.skills, gogma))}
+      />
+      <p className="text-xs text-muted">
+        DB에 없는 무기나 아티어 무기처럼 슬롯·스킬이 다른 무기를 직접 입력합니다. 거극 아티어 무기는 '무기 선택'에서
+        '거극'으로 찾아 고를 수도 있습니다.
+      </p>
     </div>
   )
 }

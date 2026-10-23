@@ -1,5 +1,6 @@
 // 스킬 검색 조건 (localStorage 저장 형식)과 SearchRequest 변환
 import { resolveTalisman, resolveWeapon } from '../../core/equipment'
+import { customWeaponChoice, dbWeaponChoice, gogmaSkillsOf } from '../../core/gogmaArtian'
 import { hr100ArmorIds, isHr100Talisman } from '../../core/hunterRank'
 import type { ExcludeMode, SearchRequest, SearchSort, SearchTalisman } from '../../core/search/types'
 import type { CustomTalisman, TalismanRef, WeaponChoice } from '../../core/types'
@@ -21,6 +22,12 @@ export interface SearchConditions {
   weaponMode: WeaponMode
   weaponKind: WeaponKind
   weaponId: number | null
+  /**
+   * 거극 아티어 무기(또는 슬롯 직접 지정)에 붙은 시리즈/그룹 스킬.
+   * 거극 아티어가 아닌 무기를 고르거나 무기 미지정이면 요청에는 넣지 않고 조건에만 남겨 둔다
+   */
+  weaponSetSkillId: number | null
+  weaponGroupSkillId: number | null
   /** 슬롯 직접 지정: 3칸, 0 = 없음 */
   customWeaponSlots: number[]
   customWeaponSkills: SkillPoint[]
@@ -41,6 +48,8 @@ export const DEFAULT_CONDITIONS: SearchConditions = {
   weaponMode: 'none',
   weaponKind: 'great-sword',
   weaponId: null,
+  weaponSetSkillId: null,
+  weaponGroupSkillId: null,
   customWeaponSlots: [0, 0, 0],
   customWeaponSkills: [],
   talismanMode: 'auto',
@@ -66,16 +75,24 @@ export function normalizeConditions(stored: Partial<SearchConditions>): SearchCo
   // 예전 저장값 'deprioritize'(비선호 결과를 아래에 따로)는 같은 정렬에 섞어 표시하는 'mark' 로 바뀌었다
   if (cond.excludeMode !== 'exclude') cond.excludeMode = 'mark'
   if (!WEAPON_KINDS.includes(cond.weaponKind)) cond.weaponKind = DEFAULT_CONDITIONS.weaponKind
+  if (!Number.isInteger(cond.weaponSetSkillId)) cond.weaponSetSkillId = null
+  if (!Number.isInteger(cond.weaponGroupSkillId)) cond.weaponGroupSkillId = null
   const slots = Array.isArray(cond.customWeaponSlots) ? cond.customWeaponSlots : []
   cond.customWeaponSlots = [0, 1, 2].map((i) => Math.max(0, Math.min(3, Number(slots[i]) || 0)))
   return cond
 }
 
-export function weaponChoiceOf(cond: SearchConditions): WeaponChoice | null {
-  if (cond.weaponMode === 'db') return cond.weaponId === null ? null : { type: 'db', id: cond.weaponId }
+export function weaponChoiceOf(db: GameDb, cond: SearchConditions): WeaponChoice | null {
+  // 거극 아티어 스킬은 거극 아티어 무기나 슬롯 직접 지정일 때만 담는다 (gogmaSkillsOf 가 거른다)
+  const gogma = { setSkillId: cond.weaponSetSkillId ?? undefined, groupSkillId: cond.weaponGroupSkillId ?? undefined }
+  if (cond.weaponMode === 'db') {
+    if (cond.weaponId === null) return null
+    return dbWeaponChoice(cond.weaponId, gogmaSkillsOf(db, { type: 'db', id: cond.weaponId, ...gogma }))
+  }
   if (cond.weaponMode === 'custom') {
     const slots = cond.customWeaponSlots.filter((l) => l > 0).sort((a, b) => b - a) as SlotLevel[]
-    return { type: 'custom', slots, skills: cond.customWeaponSkills }
+    const skills = cond.customWeaponSkills
+    return customWeaponChoice(slots, skills, gogmaSkillsOf(db, { type: 'custom', slots, skills, ...gogma }))
   }
   return null
 }
@@ -119,7 +136,7 @@ export function buildRequest(
   cond: SearchConditions,
   customTalismans: readonly CustomTalisman[],
 ): SearchRequest {
-  const choice = weaponChoiceOf(cond)
+  const choice = weaponChoiceOf(db, cond)
   const weapon = resolveWeapon(db, choice)
   const talismans: SearchTalisman[] = []
   for (const ref of talismanRefsOf(db, cond, customTalismans)) {

@@ -4,6 +4,7 @@ import { ARMOR_KINDS, type GameData, type Skill, type SkillPoint } from '../../d
 import { armorByName, loadTestDb, skillIdByName } from '../../test/testDb'
 import { activeSkillLevels, computeBuild, missingRequirements, unwantedSkillsOf } from '../calc'
 import { resolveWeapon } from '../equipment'
+import { customWeaponChoice, dbWeaponChoice, type GogmaSkills } from '../gogmaArtian'
 import type { CustomTalisman, Slot, WeaponChoice } from '../types'
 import { runSearch } from './engine'
 import { resultToBuild } from './toBuild'
@@ -192,6 +193,53 @@ describe('runSearch', () => {
         expect(item.decorations.talisman[0]).not.toBeNull()
       }
       expect(runSearch(db, { ...r, talismans: fixedTalismans }).total).toBe(0)
+    })
+  })
+
+  describe('거극 아티어 무기', () => {
+    const hunger = sid('쇄인룡의 굶주림')
+    const lordsSoul = sid('주인의 혼')
+    const gogma = (skills?: GogmaSkills) => weaponOf(dbWeaponChoice(db.weaponByGameKey('great-sword', 87)!.id, skills))
+    /** 결과의 방어구 중 그 시리즈/그룹 스킬에 속한 부위 수 */
+    const armorPieces = (r: SearchRequest, item: SearchResultItem, skillId: number) => {
+      const { equipment } = computeBuild(db, resultToBuild(db, item, r))
+      return ARMOR_KINDS.filter((k) => [equipment[k]?.setSkillId, equipment[k]?.groupSkillId].includes(skillId)).length
+    }
+
+    it('무기에 붙은 시리즈 스킬만큼 방어구를 1부위 덜 찾는다', () => {
+      const required = [{ skillId: hunger, level: 2 }, ...req(['약점 특효', 3])]
+      const r = request({ required, weapon: gogma({ setSkillId: hunger, groupSkillId: null }), limit: 100 })
+      const res = runSearch(db, r)
+      verify(r, res)
+      const pieces = res.items.map((item) => armorPieces(r, item, hunger))
+      expect(Math.min(...pieces)).toBe(3)
+
+      const without = request({ required, weapon: gogma(), limit: 100 })
+      const plain = runSearch(db, without)
+      verify(without, plain)
+      expect(Math.min(...plain.items.map((item) => armorPieces(without, item, hunger)))).toBe(4)
+      expect(res.total).toBeGreaterThan(plain.total)
+    })
+
+    it('직접 입력 무기의 거극 아티어 스킬도 똑같이 센다', () => {
+      const required = [{ skillId: hunger, level: 2 }, ...req(['약점 특효', 3])]
+      const skills = { setSkillId: hunger, groupSkillId: null }
+      // 거극 아티어 무기는 슬롯 [3,3,3]·무기 스킬 없음·방어력 보너스 없음이라 같은 직접 입력 무기와 결과가 같다
+      const fromDb = runSearch(db, request({ required, weapon: gogma(skills) }))
+      const r = request({ required, weapon: weaponOf(customWeaponChoice([3, 3, 3], [], skills)) })
+      const res = runSearch(db, r)
+      verify(r, res)
+      expect(res.total).toBe(fromDb.total)
+    })
+
+    it('그룹 스킬도 1부위로 센다', () => {
+      const required = req(['주인의 혼', 1], ['약점 특효', 3])
+      // 남는 슬롯이 많은 앞쪽 결과는 3부위짜리라, 2부위 조합까지 보이게 넉넉히 받는다
+      const r = request({ required, weapon: gogma({ setSkillId: null, groupSkillId: lordsSoul }), limit: 2000 })
+      const res = runSearch(db, r)
+      verify(r, res)
+      expect(Math.min(...res.items.map((item) => armorPieces(r, item, lordsSoul)))).toBe(2)
+      expect(res.total).toBeGreaterThan(runSearch(db, request({ required, weapon: gogma() })).total)
     })
   })
 

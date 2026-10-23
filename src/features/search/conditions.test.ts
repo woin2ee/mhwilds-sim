@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { isGogmaArtian } from '../../core/gogmaArtian'
 import { hr100ArmorIds, isHr100Talisman } from '../../core/hunterRank'
 import type { CustomTalisman } from '../../core/types'
 import { loadTestDb, skillIdByName } from '../../test/testDb'
@@ -24,6 +25,40 @@ describe('검색 조건 → SearchRequest', () => {
     expect(c.excludeMode).toBe('mark')
     expect(c.useDecorations).toBe(true)
     expect(c.customWeaponSlots).toEqual([3, 0, 0])
+  })
+
+  it('거극 아티어 무기일 때만 고른 시리즈·그룹 스킬을 요청 무기에 담는다', () => {
+    const hunger = skillIdByName(db, '쇄인룡의 굶주림')
+    const lordsSoul = skillIdByName(db, '주인의 혼')
+    const gogma = db.weaponByGameKey('great-sword', 87)!
+    const other = db.data.weapons.find((w) => w.kind === 'great-sword' && !isGogmaArtian(w))!
+    const withSkills = { weaponMode: 'db', weaponSetSkillId: hunger, weaponGroupSkillId: lordsSoul } as const
+    expect(buildRequest(db, cond({ ...withSkills, weaponId: gogma.id }), []).weapon.choice).toEqual({
+      type: 'db',
+      id: gogma.id,
+      setSkillId: hunger,
+      groupSkillId: lordsSoul,
+    })
+    // 다른 무기를 고르면 조건에 남은 스킬은 요청에 넣지 않아, 스킬을 고른 적 없는 요청과 같다
+    const otherRequest = buildRequest(db, cond({ ...withSkills, weaponId: other.id }), [])
+    expect(otherRequest.weapon.choice).toEqual({ type: 'db', id: other.id })
+    const never = buildRequest(db, cond({ weaponMode: 'db', weaponId: other.id }), [])
+    expect(requestKey(otherRequest)).toBe(requestKey(never))
+  })
+
+  it('슬롯 직접 지정에도 거극 아티어 스킬을 담는다', () => {
+    const hunger = skillIdByName(db, '쇄인룡의 굶주림')
+    const c = cond({ weaponMode: 'custom', customWeaponSlots: [3, 0, 3], weaponSetSkillId: hunger })
+    expect(buildRequest(db, c, []).weapon.choice).toEqual({ type: 'custom', slots: [3, 3], skills: [], setSkillId: hunger })
+    // 무기 미지정이면 넣지 않는다
+    expect(buildRequest(db, cond({ weaponMode: 'none', weaponSetSkillId: hunger }), []).weapon.choice).toBeNull()
+  })
+
+  it('저장값의 거극 아티어 스킬이 정수가 아니면 비운다', () => {
+    const empty = { weaponSetSkillId: null, weaponGroupSkillId: null }
+    const stored = { required: [], excluded: [], weaponSetSkillId: '3', weaponGroupSkillId: 1.5 } as unknown
+    expect(normalizeConditions(stored as Partial<SearchConditions>)).toMatchObject(empty)
+    expect(normalizeConditions({ required: [], excluded: [] })).toMatchObject(empty)
   })
 
   it('예전 비선호 모드 저장값(deprioritize)은 mark 로 읽는다', () => {

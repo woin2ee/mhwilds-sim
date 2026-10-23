@@ -404,6 +404,11 @@ function EquipCell({
   const slots = summary.slots.filter((s) => s.key === equipKey)
   // 무기 자체 스킬은 비선호로 세지 않는다 (unwantedSkillsOf)
   const unwanted = new Set(equipKey === 'weapon' ? [] : unwantedSkillsOf(summary, item.excludedSkills ?? []))
+  // 거극 아티어 무기에 붙은 시리즈·그룹 스킬 (같은 무기라도 붙은 스킬이 다르면 다른 장비로 비교한다)
+  const bonusSkills =
+    equipKey === 'weapon'
+      ? [equipment.setSkillId, equipment.groupSkillId].filter((id): id is number => id !== null)
+      : []
   return (
     <div className="space-y-0.5">
       <p className="break-keep">
@@ -431,6 +436,9 @@ function EquipCell({
             </Fragment>
           ))}
         </p>
+      )}
+      {bonusSkills.length > 0 && (
+        <p className="text-xs text-accent">{bonusSkills.map((id) => skillName(db, id)).join(' · ')}</p>
       )}
     </div>
   )
