@@ -8,8 +8,8 @@ import { EQUIP_LABEL } from './labels'
 export function EquipmentRow({ equip, children }: { equip: EquipKey; children: ReactNode }) {
   return (
     <div className="grid gap-x-3 gap-y-1.5 py-3 first:pt-0 last:pb-0 sm:grid-cols-[3.5rem_minmax(0,1fr)]">
-      {/* 라벨이 위에 오는 좁은 화면에서는 아이콘을 글자 앞에, 왼쪽 칸이 생기면 글자 아래에 둔다 */}
-      <div className="flex items-center gap-1.5 text-sm font-semibold text-muted sm:flex-col-reverse sm:items-start sm:pt-2">
+      {/* 라벨이 위에 오는 좁은 화면에서는 아이콘을 글자 앞에, 왼쪽 칸이 생기면 글자 위에 둔다 (아이콘이 첫 입력 칸과 같은 높이) */}
+      <div className="flex items-center gap-1.5 text-sm font-semibold text-muted sm:flex-col sm:items-start sm:pt-1.5">
         <EquipIcon equip={equip} className="size-5 sm:size-6" />
         <span>{EQUIP_LABEL[equip]}</span>
       </div>
