@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
+import { TabIcon } from './components/TabIcon'
 import { ThemeSelect } from './components/ThemeSelect'
 import { ToastProvider } from './components/ToastProvider'
 import { Badge } from './components/ui'
@@ -45,11 +46,14 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'talismans', label: '내 호석' },
 ]
 
-/** 탭 메뉴. bar 는 휴대폰용(폭을 똑같이 나눈 밑줄 탭), pills 는 데스크톱 헤더용 */
+/**
+ * 탭 메뉴. bar 는 휴대폰용(폭을 똑같이 나눈 밑줄 탭), pills 는 데스크톱 헤더용.
+ * 아이콘은 pills 는 이름 옆, bar 는 이름 위 (휴대폰 폭에서 옆에 두면 '수동 세팅'이 넘친다)
+ */
 function TabNav({ variant, className }: { variant: 'bar' | 'pills'; className?: string }) {
   const { tab, setTab } = useAppState()
   return (
-    <nav className={cx('flex', variant === 'pills' && 'gap-1', className)} aria-label="메뉴">
+    <nav className={cx('flex', variant === 'pills' && 'shrink-0 gap-1', className)} aria-label="메뉴">
       {TABS.map((t) => (
         <button
           key={t.id}
@@ -57,16 +61,17 @@ function TabNav({ variant, className }: { variant: 'bar' | 'pills'; className?: 
           aria-current={tab === t.id ? 'page' : undefined}
           onClick={() => setTab(t.id)}
           className={cx(
-            'text-sm font-medium transition-colors',
-            variant === 'pills' && 'rounded-md px-3 py-1.5',
+            'flex items-center justify-center font-medium transition-colors',
+            variant === 'pills' && 'gap-1.5 rounded-md px-3 py-1.5 text-sm',
             variant === 'pills' && (tab === t.id ? 'bg-accent text-accent-fg' : 'text-muted hover:bg-surface-2 hover:text-fg'),
-            variant === 'bar' && 'relative h-11 flex-1',
+            variant === 'bar' && 'relative h-12 flex-1 flex-col gap-0.5 text-xs',
             variant === 'bar' &&
               (tab === t.id
                 ? 'font-semibold text-fg after:absolute after:inset-x-3 after:bottom-0 after:h-0.5 after:rounded-full after:bg-accent'
                 : 'text-muted'),
           )}
         >
+          <TabIcon tab={t.id} className={variant === 'pills' ? 'size-4' : 'size-5'} />
           {t.label}
         </button>
       ))}
