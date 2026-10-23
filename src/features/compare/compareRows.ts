@@ -1,6 +1,6 @@
 // 세팅 비교 창의 행 계산 (React 없이 실제 데이터로 테스트한다). 스킬 검색 결과·내 세팅 비교가 함께 쓴다
 import { unwantedSkillsOf, type BuildSummary } from '../../core/calc'
-import type { BuildState } from '../../core/types'
+import type { BuildState, EquipKey } from '../../core/types'
 import { nameOf, type GameDb } from '../../data/db'
 import type { SkillPoint } from '../../data/types'
 
@@ -33,6 +33,18 @@ export interface CompareTrayItem {
 /** 칸이 둘 이상이고 모든 칸의 값이 같은지. 칸이 하나면 비교할 게 없으니 같다고 보지 않는다 */
 export function allSame(values: readonly (string | number)[]): boolean {
   return values.length > 1 && values.every((v) => v === values[0])
+}
+
+/**
+ * 장비 행에서 칸끼리 같은 장비인지 가리는 키. 장식주 배치는 장식주·남는 슬롯 행에서 비교하므로 넣지 않는다.
+ * 방어구는 초월 여부 대신 초월을 반영한 슬롯을 본다: 레어도 7·8 은 초월해도 슬롯이 그대로라 칸이 똑같아 보이고
+ * 늘어난 방어력은 방어력 행에서 비교한다. 레어도 5·6 은 초월하면 슬롯이 늘어 칸이 달라 보이므로 다른 장비로 친다.
+ */
+export function equipmentKey(build: BuildState, summary: BuildSummary, key: EquipKey): string {
+  if (key === 'weapon') return JSON.stringify(build.weapon)
+  if (key === 'talisman') return JSON.stringify(build.talisman)
+  const choice = build.armor[key]
+  return JSON.stringify(choice && [choice.id, summary.equipment[key]?.slots.map((s) => s.level) ?? []])
 }
 
 /** 비교표의 한 칸 = 비교할 세팅 하나의 계산 결과 (+ 검색 결과면 그 검색의 원하는 스킬·비선호 스킬) */

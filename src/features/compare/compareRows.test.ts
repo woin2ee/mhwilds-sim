@@ -2,9 +2,19 @@ import { describe, expect, it } from 'vitest'
 import { activeSkillLevels, computeBuild } from '../../core/calc'
 import { runSearch } from '../../core/search/engine'
 import { resultToBuild } from '../../core/search/toBuild'
+import { armorSlots } from '../../core/transcend'
+import { emptyBuild } from '../../core/types'
+import type { ArmorPiece } from '../../data/types'
 import { loadTestDb, skillIdByName } from '../../test/testDb'
 import { DEFAULT_CONDITIONS, buildRequest, normalizeConditions } from '../search/conditions'
-import { allSame, decorationRows, skillRows, type CompareColumn, type SkillRowGroup } from './compareRows'
+import {
+  allSame,
+  decorationRows,
+  equipmentKey,
+  skillRows,
+  type CompareColumn,
+  type SkillRowGroup,
+} from './compareRows'
 
 const db = loadTestDb()
 const sid = (name: string) => skillIdByName(db, name)
@@ -85,6 +95,23 @@ describe('세팅 비교 행', () => {
     })
     const sizes = rows.map((r) => db.decorations.get(r.decorationId)!.size)
     expect(sizes).toEqual([...sizes].sort((x, y) => y - x))
+  })
+
+  it('장비: 초월 여부만 다른 같은 방어구는 슬롯이 그대로면 같은 장비, 장식주 배치는 보지 않는다', () => {
+    const keyOf = (piece: ArmorPiece, transcend: boolean, decorations: (number | null)[] = []) => {
+      const build = emptyBuild()
+      build.armor[piece.kind] = { id: piece.id, transcend }
+      build.decorations[piece.kind] = decorations
+      return equipmentKey(build, computeBuild(db, build), piece.kind)
+    }
+    // 레어도 7·8 은 초월해도 슬롯이 그대로라 칸이 똑같다 (늘어난 방어력은 방어력 행에서 비교)
+    const r8 = db.data.armor.find((a) => a.rarity === 8 && a.slots.length > 0)!
+    expect(keyOf(r8, true)).toBe(keyOf(r8, false))
+    const deco = db.data.decorations.find((d) => d.kind === 'armor' && d.size <= r8.slots[0])!
+    expect(keyOf(r8, false, [deco.id])).toBe(keyOf(r8, false))
+    // 레어도 5·6 은 초월하면 슬롯이 늘어 칸이 달라 보인다
+    const r5 = db.data.armor.find((a) => a.rarity === 5 && armorSlots(a, true).join() !== a.slots.join())!
+    expect(keyOf(r5, true)).not.toBe(keyOf(r5, false))
   })
 
   it('모든 칸이 같은지: 칸이 하나면 같다고 보지 않는다', () => {

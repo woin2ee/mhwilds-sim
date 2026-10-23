@@ -4,7 +4,7 @@ import { LevelPips } from '../../components/controls'
 import { SlotBadge, SlotList } from '../../components/SlotBadge'
 import { Badge, Button, Toggle } from '../../components/ui'
 import { computeBuild, unwantedSkillsOf, type BuildSummary, type SlotUsage } from '../../core/calc'
-import type { BuildState, CustomTalisman, EquipKey, Slot } from '../../core/types'
+import type { CustomTalisman, EquipKey, Slot } from '../../core/types'
 import { nameOf, type GameDb } from '../../data/db'
 import { signed, skillName, skillPointsText, skillTooltip, talismanName } from '../../data/format'
 import { ARMOR_KIND_LABEL, ELEMENT_LABEL, SLOT_KIND_LABEL } from '../../data/labels'
@@ -16,6 +16,7 @@ import {
   allSame,
   COMPARE_MAX,
   decorationRows,
+  equipmentKey,
   skillRows,
   type CompareColumn,
   type CompareItem,
@@ -233,12 +234,6 @@ const slotsKey = (slots: readonly Slot[]) =>
     .sort()
     .join(',')
 
-function choiceOf(build: BuildState, key: EquipKey) {
-  if (key === 'weapon') return build.weapon
-  if (key === 'talisman') return build.talisman
-  return build.armor[key]
-}
-
 const toCompareColumn = ({ item, summary }: Column): CompareColumn => ({
   summary,
   required: item.required ?? [],
@@ -291,8 +286,7 @@ function compareSections(
     rows: equipKeys.map((key) => ({
       key: `equip-${key}`,
       label: key === 'weapon' ? '무기' : key === 'talisman' ? '호석' : ARMOR_KIND_LABEL[key],
-      // 장식주를 어느 슬롯에 넣었는지는 장식주·남는 슬롯 행에서 비교하므로 장비만 본다
-      same: allSame(columns.map((c) => JSON.stringify(choiceOf(c.item.build, key)))),
+      same: allSame(columns.map((c) => equipmentKey(c.item.build, c.summary, key))),
       cells: columns.map((c) => (
         <EquipCell key={c.item.key} db={db} column={c} equipKey={key} customTalismans={customTalismans} />
       )),
