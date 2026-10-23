@@ -4,9 +4,10 @@ import type { EquipKey, Slot, TalismanRef, WeaponChoice } from '../types'
 
 /**
  * exclude: 비선호 스킬이 붙은 방어구·호석·장식주를 후보에서 아예 뺀다
- * deprioritize: 후보에는 넣되, 비선호 스킬이 들어간 결과는 deprioritized 목록(하단 '비선호 결과')으로 보낸다
+ * mark: 후보에 넣고 비선호 스킬이 들어간 결과도 같은 정렬로 섞는다 (화면은 그 스킬만 표시).
+ *       장식주는 비선호 스킬이 없는 것으로 먼저 채워 보고 안 될 때만 쓴다
  */
-export type ExcludeMode = 'exclude' | 'deprioritize'
+export type ExcludeMode = 'exclude' | 'mark'
 
 /** 결과 정렬 기준. 엔진은 이 기준으로 상위 limit 개를 고른다. */
 export type SearchSort = 'slots' | 'defense'
@@ -44,7 +45,7 @@ export interface SearchRequest {
   /** 후보에서 뺄 방어구 id */
   excludedArmorIds: number[]
   sort: SearchSort
-  /** preferred / deprioritized 각각 최대 반환 개수 */
+  /** 최대 반환 개수 */
   limit: number
 }
 
@@ -73,12 +74,10 @@ export interface SearchResultItem {
 }
 
 export interface SearchResponse {
-  preferred: SearchResultItem[]
-  /** excludeMode === 'deprioritize' 일 때 비선호 스킬이 포함된 결과 */
-  deprioritized: SearchResultItem[]
+  /** 정렬 기준 상위 limit 개. 비선호 스킬이 든 결과(unwantedSkills)도 같은 기준으로 섞여 있다 */
+  items: SearchResultItem[]
   /** limit 적용 전 찾은 개수 */
-  totalPreferred: number
-  totalDeprioritized: number
+  total: number
   /** 탐색 상한(시간/노드)에 걸려 중간에 멈췄는지 */
   truncated: boolean
   elapsedMs: number

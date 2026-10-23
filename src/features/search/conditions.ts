@@ -37,7 +37,7 @@ export interface SearchConditions {
 export const DEFAULT_CONDITIONS: SearchConditions = {
   required: [],
   excluded: [],
-  excludeMode: 'deprioritize',
+  excludeMode: 'mark',
   weaponMode: 'none',
   weaponKind: 'great-sword',
   weaponId: null,
@@ -63,6 +63,8 @@ export function isStoredConditions(value: unknown): value is Partial<SearchCondi
 /** 저장된 값에 빠진 필드를 기본값으로 채우고 잘못된 값을 걸러낸다 */
 export function normalizeConditions(stored: Partial<SearchConditions>): SearchConditions {
   const cond = { ...DEFAULT_CONDITIONS, ...stored }
+  // 예전 저장값 'deprioritize'(비선호 결과를 아래에 따로)는 같은 정렬에 섞어 표시하는 'mark' 로 바뀌었다
+  if (cond.excludeMode !== 'exclude') cond.excludeMode = 'mark'
   if (!WEAPON_KINDS.includes(cond.weaponKind)) cond.weaponKind = DEFAULT_CONDITIONS.weaponKind
   const slots = Array.isArray(cond.customWeaponSlots) ? cond.customWeaponSlots : []
   cond.customWeaponSlots = [0, 1, 2].map((i) => Math.max(0, Math.min(3, Number(slots[i]) || 0)))

@@ -21,9 +21,15 @@ const cond = (patch: Partial<SearchConditions>) => normalizeConditions({ ...DEFA
 describe('검색 조건 → SearchRequest', () => {
   it('저장된 값에 빠진 필드는 기본값으로 채우고 슬롯 값은 0~3으로 자른다', () => {
     const c = normalizeConditions({ required: [], excluded: [], customWeaponSlots: [5, -1] })
-    expect(c.excludeMode).toBe('deprioritize')
+    expect(c.excludeMode).toBe('mark')
     expect(c.useDecorations).toBe(true)
     expect(c.customWeaponSlots).toEqual([3, 0, 0])
+  })
+
+  it('예전 비선호 모드 저장값(deprioritize)은 mark 로 읽는다', () => {
+    const stored = { required: [], excluded: [], excludeMode: 'deprioritize' } as unknown as Partial<SearchConditions>
+    expect(normalizeConditions(stored).excludeMode).toBe('mark')
+    expect(normalizeConditions({ required: [], excluded: [], excludeMode: 'exclude' }).excludeMode).toBe('exclude')
   })
 
   it('장식주 없이 찾기는 요청에 그대로 넘기고, 바꾸면 요청 키가 달라진다', () => {

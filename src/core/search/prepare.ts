@@ -52,7 +52,7 @@ export interface TalismanClass {
 
 export interface Fillers {
   clean: DecoFiller
-  /** deprioritize 모드에서 비선호 장식주까지 허용하는 재시도용 */
+  /** mark 모드에서 비선호 장식주까지 허용하는 재시도용 */
   all: DecoFiller | null
   /** 이 채우기가 담당하는 요구 스킬 인덱스 */
   indices: number[]
@@ -182,7 +182,7 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
   }
   const makeFillers = (indices: number[], kinds: readonly SlotKind[]): Fillers => ({
     clean: makeFiller(indices, kinds, false),
-    all: request.excludeMode === 'deprioritize' ? makeFiller(indices, kinds, true) : null,
+    all: excludeMode ? null : makeFiller(indices, kinds, true),
     indices,
   })
   const joint = bothIdx.length > 0

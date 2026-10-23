@@ -36,7 +36,7 @@ const customs: SearchTalisman[] = [
 const base: SearchRequest = {
   required: [],
   excludedSkills: [],
-  excludeMode: 'deprioritize',
+  excludeMode: 'mark',
   weapon: weaponOf(null),
   talismans: [...fixed, ...customs],
   includeLowRank: false,
@@ -72,7 +72,7 @@ const CASES: [string, Partial<SearchRequest>][] = [
     },
   ],
   [
-    '비선호 2개 (deprioritize)',
+    '비선호 2개 (mark)',
     { required: req(['약점 특효', 5], ['도전자', 5], ['연격', 3]), excludedSkills: req(['공세', 1], ['체술', 1]).map((p) => p.skillId) },
   ],
   [
@@ -97,11 +97,9 @@ describe.skipIf(!process.env.BENCH)('search benchmark', () => {
       const r = { ...base, ...overrides }
       runSearch(db, r) // 워밍업 (JIT)
       const res = runSearch(db, r)
-      rows.push(
-        `| ${name} | ${res.elapsedMs.toFixed(0)} ms | ${res.totalPreferred} | ${res.totalDeprioritized} | ${res.truncated ? 'Y' : ''} |`,
-      )
+      rows.push(`| ${name} | ${res.elapsedMs.toFixed(0)} ms | ${res.total} | ${res.truncated ? 'Y' : ''} |`)
       expect(res.elapsedMs).toBeLessThan(25_000)
     }
-    console.log(['| 조건 | 시간 | 결과 | 비선호 | 상한 |', '|---|---:|---:|---:|---|', ...rows].join('\n'))
+    console.log(['| 조건 | 시간 | 결과 | 상한 |', '|---|---:|---:|---|', ...rows].join('\n'))
   }, 600_000)
 })

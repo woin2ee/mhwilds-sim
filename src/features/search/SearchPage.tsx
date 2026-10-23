@@ -28,11 +28,11 @@ import { TalismanCondition } from './TalismanCondition'
 import { WeaponCondition } from './WeaponCondition'
 
 const EXCLUDE_MODE_OPTIONS: { value: ExcludeMode; label: string }[] = [
-  { value: 'deprioritize', label: '아래에 따로 표시' },
+  { value: 'mark', label: '표시만' },
   { value: 'exclude', label: '아예 제외' },
 ]
 const EXCLUDE_MODE_HELP: Record<ExcludeMode, string> = {
-  deprioritize: '비선호 스킬이 들어간 조합은 결과 맨 아래 ‘비선호 결과’로 따로 모아요.',
+  mark: '비선호 스킬이 든 조합도 같은 순서로 보여 주고, 결과에서 그 스킬에만 표시해요. 장식주로는 되도록 넣지 않아요.',
   exclude: '비선호 스킬이 붙은 방어구·호석·장식주를 후보에서 아예 빼고 찾아요.',
 }
 
@@ -246,7 +246,7 @@ export function SearchPage() {
             )}
             <p className="text-sm text-muted">
               원하는 스킬 {request.required.length}개 · 비선호 {request.excludedSkills.length}개
-              {request.excludedSkills.length > 0 && ` (${cond.excludeMode === 'exclude' ? '제외' : '아래에 표시'})`} · 호석
+              {request.excludedSkills.length > 0 && ` (${cond.excludeMode === 'exclude' ? '제외' : '표시만'})`} · 호석
               후보 {request.talismans.length}개{cond.excludeHr100 && ' · HR 100 장비 제외'}
               {!request.useDecorations && ' · 장식주 없이'}
             </p>

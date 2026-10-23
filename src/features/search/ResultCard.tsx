@@ -64,7 +64,7 @@ function skillChips(db: GameDb, summary: BuildSummary, request: SearchRequest): 
   for (const s of summary.skills) {
     if (requiredIds.has(s.skillId) || s.level === 0) continue
     const chip: ChipInfo = { skillId: s.skillId, name: skillName(db, s.skillId), level: s.level, maxLevel: s.maxLevel, tone: 'extra' }
-    if (unwanted.has(s.skillId)) unwantedChips.push({ ...chip, tone: 'unwanted' })
+    if (unwanted.has(s.skillId)) unwantedChips.push({ ...chip, tone: 'unwanted', title: '비선호 스킬' })
     else extra.push(chip)
   }
   const bonuses: ChipInfo[] = []
@@ -239,13 +239,11 @@ export function ResultCard({
   item,
   request,
   index,
-  deprioritized = false,
   exclude,
 }: {
   item: SearchResultItem
   request: SearchRequest
   index: number
-  deprioritized?: boolean
   exclude: ExcludeControl
 }) {
   const { db, customTalismans, openInManual } = useAppState()
@@ -316,20 +314,10 @@ export function ResultCard({
 
   const weapon = summary.equipment.weapon
   return (
-    <article
-      className={cx(
-        'space-y-2.5 rounded-lg border bg-surface p-3',
-        // 비선호 결과는 왼쪽 빨간 띠와 배지로 일반 결과와 구분한다
-        deprioritized ? 'border-bad/40 border-l-4 border-l-bad' : 'border-line',
-      )}
-    >
+    // 비선호 스킬이 든 결과도 카드 자체는 똑같이 두고, 그 스킬 칩·붙은 부위·장식주에만 표시한다
+    <article className="space-y-2.5 rounded-lg border border-line bg-surface p-3">
       <header className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
         <span className="text-xs font-semibold text-muted">#{index}</span>
-        {deprioritized && (
-          <span className="rounded border border-bad/40 bg-bad/10 px-1.5 py-px text-[11px] font-medium text-bad">
-            비선호
-          </span>
-        )}
         <span className="text-sm">
           방어력 <span className="font-semibold tabular-nums">{summary.defense.max}</span>
         </span>

@@ -19,25 +19,16 @@ function PagedCards({
   items,
   request,
   exclude,
-  deprioritized = false,
 }: {
   items: SearchResultItem[]
   request: SearchRequest
   exclude: ExcludeControl
-  deprioritized?: boolean
 }) {
   const [shown, setShown] = useState(PAGE_SIZE)
   return (
     <div className="space-y-2.5">
       {items.slice(0, shown).map((item, i) => (
-        <ResultCard
-          key={item.id}
-          item={item}
-          request={request}
-          index={i + 1}
-          deprioritized={deprioritized}
-          exclude={exclude}
-        />
+        <ResultCard key={item.id} item={item} request={request} index={i + 1} exclude={exclude} />
       ))}
       {items.length > shown && (
         <Button className="w-full" onClick={() => setShown((n) => n + PAGE_SIZE)}>
@@ -53,7 +44,7 @@ function emptyHints(request: SearchRequest, hasWeaponSkill: boolean): string[] {
   const hints = ['원하는 스킬의 레벨을 낮추거나 스킬 수를 줄여 보세요.']
   if (!request.useDecorations) hints.unshift('‘장식주 없이 찾기’를 끄면 모자란 스킬을 장식주로 채워요.')
   if (request.excludedSkills.length > 0 && request.excludeMode === 'exclude') {
-    hints.push('비선호 스킬을 ‘아래에 따로 표시’로 바꾸거나 줄여 보세요.')
+    hints.push('비선호 스킬을 ‘표시만’으로 바꾸거나 줄여 보세요.')
   }
   if (!request.includeLowRank) hints.push('‘하위 랭크 방어구 포함’을 켜 보세요.')
   // 초월·무기 슬롯은 장식주를 넣을 자리만 늘리므로 장식주 없이 찾을 때는 도움이 안 된다
@@ -78,15 +69,13 @@ export function ResultList({
   exclude: ExcludeControl
 }) {
   const db = useDb()
-  const { preferred, deprioritized } = response
-  const [showDeprioritized, setShowDeprioritized] = useState(preferred.length === 0)
-  const variantTotal = useMemo(() => preferred.reduce((n, item) => n + item.variantCount, 0), [preferred])
+  const { items } = response
+  const variantTotal = useMemo(() => items.reduce((n, item) => n + item.variantCount, 0), [items])
   const hasWeaponSkill = request.required.some((r) => db.skills.get(r.skillId)?.kind === 'weapon')
-  const deprioritizedTotal = Math.max(response.totalDeprioritized, deprioritized.length)
   // 탐색 상한에 걸리면 전체 개수는 '최소' 개수다
   const atLeast = response.truncated ? ' 이상' : ''
 
-  if (preferred.length === 0 && deprioritized.length === 0) {
+  if (items.length === 0) {
     return (
       <EmptyState>
         <p className="mb-2 font-medium text-fg">조건을 만족하는 조합이 없어요.</p>
@@ -103,11 +92,11 @@ export function ResultList({
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="text-sm">
-          <span className="font-semibold">결과 {formatCount(preferred.length)}건</span>
-          {response.totalPreferred > preferred.length && (
+          <span className="font-semibold">결과 {formatCount(items.length)}건</span>
+          {response.total > items.length && (
             <span className="text-muted">
               {' '}
-              (전체 {formatCount(response.totalPreferred)}건{atLeast} 중 상위)
+              (전체 {formatCount(response.total)}건{atLeast} 중 상위)
             </span>
           )}
           <span className="ml-2 text-xs text-muted">
@@ -125,33 +114,7 @@ export function ResultList({
         </p>
       )}
 
-      {preferred.length > 0 ? (
-        <PagedCards items={preferred} request={request} exclude={exclude} />
-      ) : (
-        <p className="rounded-md border border-line bg-surface px-3 py-2 text-sm text-muted">
-          비선호 스킬 없이 조건을 만족하는 조합은 없어요. 아래 비선호 결과를 확인하세요.
-        </p>
-      )}
-
-      {deprioritized.length > 0 && (
-        <section className="space-y-2.5 pt-2">
-          <button
-            type="button"
-            aria-expanded={showDeprioritized}
-            onClick={() => setShowDeprioritized((v) => !v)}
-            className="flex w-full items-center justify-between rounded-md border border-bad/40 bg-bad/5 px-3 py-2 text-left text-sm"
-          >
-            <span>
-              <span className="font-semibold text-bad">
-                비선호 결과 {formatCount(deprioritizedTotal)}건{atLeast}
-              </span>
-              <span className="text-muted"> (비선호 스킬 포함)</span>
-            </span>
-            <span className="text-muted">{showDeprioritized ? '접기 ▴' : '펼치기 ▾'}</span>
-          </button>
-          {showDeprioritized && <PagedCards items={deprioritized} request={request} exclude={exclude} deprioritized />}
-        </section>
-      )}
+      <PagedCards items={items} request={request} exclude={exclude} />
     </div>
   )
 }

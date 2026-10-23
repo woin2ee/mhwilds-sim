@@ -1,13 +1,14 @@
-/** 정렬 키: primary → secondary 가 클수록, 같으면 먼저 찾은(seq 작은) 쪽이 앞 */
+/** 정렬 키: primary → secondary → tertiary 가 클수록, 같으면 먼저 찾은(seq 작은) 쪽이 앞 */
 export interface Ranked {
   primary: number
   secondary: number
+  tertiary: number
   seq: number
 }
 
 /** a 가 b 보다 앞이면 양수 */
 export function compareRanked(a: Ranked, b: Ranked): number {
-  return a.primary - b.primary || a.secondary - b.secondary || b.seq - a.seq
+  return a.primary - b.primary || a.secondary - b.secondary || a.tertiary - b.tertiary || b.seq - a.seq
 }
 
 /** 상위 capacity 개만 유지하는 최소 힙 (heap[0] = 현재 가장 뒤쪽 항목) */
@@ -20,10 +21,10 @@ export class TopK<T extends Ranked> {
   }
 
   /** 이 키가 들어갈 수 있는지 (항목을 만들기 전에 확인용) */
-  accepts(primary: number, secondary: number, seq: number): boolean {
+  accepts(primary: number, secondary: number, tertiary: number, seq: number): boolean {
     if (this.heap.length < this.capacity) return true
     if (this.capacity === 0) return false
-    return compareRanked({ primary, secondary, seq }, this.heap[0]) > 0
+    return compareRanked({ primary, secondary, tertiary, seq }, this.heap[0]) > 0
   }
 
   push(entry: T): void {

@@ -31,16 +31,7 @@ export interface EngineHooks {
 export function runSearch(db: GameDb, request: SearchRequest, hooks: EngineHooks = {}): SearchResponse {
   const started = performance.now()
   const prepared = prepare(db, request)
-  if (!prepared) {
-    return {
-      preferred: [],
-      deprioritized: [],
-      totalPreferred: 0,
-      totalDeprioritized: 0,
-      truncated: false,
-      elapsedMs: performance.now() - started,
-    }
-  }
+  if (!prepared) return { items: [], total: 0, truncated: false, elapsedMs: performance.now() - started }
   const searcher = new Searcher(db, request, prepared, hooks, started)
   searcher.run()
   return searcher.response()
@@ -76,10 +67,8 @@ class Searcher {
   private talismanPosition = 0
   private weaponResult: FillResult | null = null
 
-  private readonly preferred: TopK<Leaf>
-  private readonly deprioritized: TopK<Leaf>
-  private totalPreferred = 0
-  private totalDeprioritized = 0
+  private readonly results: TopK<Leaf>
+  private total = 0
   private seq = 0
   private leaves = 0
   private nodes = 0
@@ -96,9 +85,7 @@ class Searcher {
     this.points = new Int32Array(prepared.required.length)
     this.bonusPieces = new Int32Array(prepared.bonuses.length)
     this.chosen = new Int32Array(prepared.kinds.length)
-    const limit = Math.max(1, Math.floor(request.limit) || DEFAULT_RESULT_LIMIT)
-    this.preferred = new TopK<Leaf>(limit)
-    this.deprioritized = new TopK<Leaf>(limit)
+    this.results = new TopK<Leaf>(Math.max(1, Math.floor(request.limit) || DEFAULT_RESULT_LIMIT))
   }
 
   run(): void {
@@ -123,10 +110,8 @@ class Searcher {
 
   response(): SearchResponse {
     return {
-      preferred: this.preferred.sorted().map((leaf) => this.materialize(leaf, 'p')),
-      deprioritized: this.deprioritized.sorted().map((leaf) => this.materialize(leaf, 'd')),
-      totalPreferred: this.totalPreferred,
-      totalDeprioritized: this.totalDeprioritized,
+      items: this.results.sorted().map((leaf) => this.materialize(leaf)),
+      total: this.total,
       truncated: this.stopped,
       elapsedMs: performance.now() - this.started,
     }
@@ -214,12 +199,21 @@ class Searcher {
     const bySlots = this.request.sort !== 'defense'
     const primary = bySlots ? score : defense
     const secondary = bySlots ? defense : score
+    // 비선호 스킬이 든 결과도 같은 기준으로 섞고, 정렬 기준이 같을 때만 없는 쪽을 앞에 둔다
+    const tertiary = unwanted ? 0 : 1
     const seq = this.seq++
-    const heap = unwanted ? this.deprioritized : this.preferred
-    if (unwanted) this.totalDeprioritized++
-    else this.totalPreferred++
-    if (heap.accepts(primary, secondary, seq)) {
-      heap.push({ primary, secondary, seq, talisman: this.talismanIndex, chosen: this.chosen.slice(), armorFill, weaponFill })
+    this.total++
+    if (this.results.accepts(primary, secondary, tertiary, seq)) {
+      this.results.push({
+        primary,
+        secondary,
+        tertiary,
+        seq,
+        talisman: this.talismanIndex,
+        chosen: this.chosen.slice(),
+        armorFill,
+        weaponFill,
+      })
     }
   }
 
@@ -233,11 +227,11 @@ class Searcher {
     if (!force && now - this.lastProgress < PROGRESS_INTERVAL_MS) return
     this.lastProgress = now
     const ratio = (this.talismanPosition + done / total) / this.p.talismans.length
-    this.hooks.onProgress({ ratio: Math.min(1, ratio), found: this.totalPreferred + this.totalDeprioritized })
+    this.hooks.onProgress({ ratio: Math.min(1, ratio), found: this.total })
   }
 
   /** 상위 결과를 실제 장비·장식주 배치로 바꾸고 computeBuild 로 최종 값을 계산한다 */
-  private materialize(leaf: Leaf, category: 'p' | 'd'): SearchResultItem {
+  private materialize(leaf: Leaf): SearchResultItem {
     const { classes, kinds, talismans, weapon, customTalismans, excluded } = this.p
     const talisman = talismans[leaf.talisman]
     const build = emptyBuild()
@@ -270,7 +264,7 @@ class Searcher {
 
     const summary = computeBuild(this.db, build, customTalismans)
     return {
-      id: `${category}${leaf.talisman}-${leaf.chosen.join('.')}`,
+      id: `${leaf.talisman}-${leaf.chosen.join('.')}`,
       armor,
       talismans: talisman.members.map((m) => m.ref),
       decorations: build.decorations,

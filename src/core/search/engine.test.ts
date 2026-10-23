@@ -34,7 +34,7 @@ function request(overrides: Partial<SearchRequest>): SearchRequest {
   return {
     required: [],
     excludedSkills: [],
-    excludeMode: 'deprioritize',
+    excludeMode: 'mark',
     weapon: weaponOf(null),
     talismans: fixedTalismans,
     includeLowRank: false,
@@ -66,10 +66,8 @@ function verifyItem(
 
 /** 응답의 모든 결과(+ 앞쪽 몇 개의 대체 방어구/호석)를 재검증 */
 function verify(r: SearchRequest, res: SearchResponse, customs: CustomTalisman[] = []) {
-  const all = [...res.preferred.map((i) => [i, false] as const), ...res.deprioritized.map((i) => [i, true] as const)]
-  for (const [item, deprioritized] of all) {
+  for (const item of res.items) {
     const summary = verifyItem(r, item, customs)
-    expect(item.unwantedSkills.length > 0).toBe(deprioritized)
     expect(slotKey(summary.freeSlots)).toEqual(slotKey(item.freeSlots))
     expect(summary.defense.max).toBe(item.defense)
     const levels = activeSkillLevels(summary)
@@ -83,23 +81,21 @@ function verify(r: SearchRequest, res: SearchResponse, customs: CustomTalisman[]
     }
     item.talismans.slice(1, 4).forEach((_, i) => verifyItem(r, item, customs, { talismanIndex: i + 1 }))
   }
-  expect(res.preferred.length).toBeLessThanOrEqual(r.limit)
-  expect(res.deprioritized.length).toBeLessThanOrEqual(r.limit)
-  expect(res.totalPreferred).toBeGreaterThanOrEqual(res.preferred.length)
-  expect(res.totalDeprioritized).toBeGreaterThanOrEqual(res.deprioritized.length)
-  expect(new Set(all.map(([i]) => i.id)).size).toBe(all.length)
+  expect(res.items.length).toBeLessThanOrEqual(r.limit)
+  expect(res.total).toBeGreaterThanOrEqual(res.items.length)
+  expect(new Set(res.items.map((i) => i.id)).size).toBe(res.items.length)
 }
 
 describe('runSearch', () => {
   it('요구 스킬이 없으면 빈 결과', () => {
     const res = runSearch(db, request({}))
-    expect(res).toMatchObject({ preferred: [], deprioritized: [], totalPreferred: 0, truncated: false })
+    expect(res).toMatchObject({ items: [], total: 0, truncated: false })
   })
 
   it('방어구 스킬 검색 결과가 모두 computeBuild 재검증을 통과한다', () => {
     const r = request({ required: req(['약점 특효', 5], ['도전자', 3], ['회피 성능', 2]), limit: 40 })
     const res = runSearch(db, r)
-    expect(res.preferred.length).toBe(40)
+    expect(res.items.length).toBe(40)
     verify(r, res)
   })
 
@@ -107,9 +103,9 @@ describe('runSearch', () => {
     const setSkill = sid('쇄인룡의 굶주림')
     const r = request({ required: [{ skillId: setSkill, level: 2 }, ...req(['약점 특효', 3])] })
     const res = runSearch(db, r)
-    expect(res.preferred.length).toBeGreaterThan(0)
+    expect(res.items.length).toBeGreaterThan(0)
     verify(r, res)
-    for (const item of res.preferred) {
+    for (const item of res.items) {
       const summary = computeBuild(db, resultToBuild(db, item, r))
       expect(summary.bonuses.find((b) => b.skillId === setSkill)?.pieces).toBeGreaterThanOrEqual(4)
     }
@@ -118,7 +114,7 @@ describe('runSearch', () => {
   it('그룹 스킬: 3부위 이상', () => {
     const r = request({ required: req(['주인의 혼', 1], ['약점 특효', 3]) })
     const res = runSearch(db, r)
-    expect(res.preferred.length).toBeGreaterThan(0)
+    expect(res.items.length).toBeGreaterThan(0)
     verify(r, res)
   })
 
@@ -129,25 +125,32 @@ describe('runSearch', () => {
     it('exclude 모드: 방어구·호석·장식주 어디에도 비선호 스킬이 없다', () => {
       const r = request({ required, excludedSkills, excludeMode: 'exclude' })
       const res = runSearch(db, r)
-      expect(res.preferred.length).toBeGreaterThan(0)
-      expect(res.deprioritized).toEqual([])
-      expect(res.totalDeprioritized).toBe(0)
+      expect(res.items.length).toBeGreaterThan(0)
+      expect(res.items.every((i) => i.unwantedSkills.length === 0)).toBe(true)
       verify(r, res)
-      for (const item of res.preferred) {
+      for (const item of res.items) {
         for (const ids of Object.values(item.armor)) {
           for (const id of ids) expect(db.armor.get(id)!.skills.some((s) => excludedSkills.includes(s.skillId))).toBe(false)
         }
       }
     })
 
-    it('deprioritize 모드: 깨끗한 결과와 비선호 결과를 나누고, 깨끗한 결과 수는 exclude 모드와 같다', () => {
-      const r = request({ required, excludedSkills, excludeMode: 'deprioritize' })
+    it('mark 모드: 비선호 스킬이 든 결과도 같은 정렬에 섞고, 정렬 기준이 같으면 없는 쪽이 앞', () => {
+      const r = request({ required, excludedSkills, excludeMode: 'mark' })
       const res = runSearch(db, r)
       const excluded = runSearch(db, { ...r, excludeMode: 'exclude' })
-      expect(res.totalDeprioritized).toBeGreaterThan(0)
-      expect(res.deprioritized.every((i) => i.unwantedSkills.includes(excludedSkills[0]))).toBe(true)
-      expect(res.totalPreferred).toBe(excluded.totalPreferred)
       verify(r, res)
+      // exclude 모드가 후보에서 뺀 방어구·호석으로 만든 조합까지 센다
+      expect(res.total).toBeGreaterThan(excluded.total)
+      const unwanted = res.items.filter((i) => i.unwantedSkills.length > 0)
+      expect(unwanted.length).toBeGreaterThan(0)
+      expect(unwanted.every((i) => i.unwantedSkills.includes(excludedSkills[0]))).toBe(true)
+      const key = (i: SearchResultItem) => [slotScore(i.freeSlots), i.defense, i.unwantedSkills.length > 0 ? 0 : 1]
+      const keys = res.items.map(key)
+      expect(keys).toEqual([...keys].sort((a, b) => b[0] - a[0] || b[1] - a[1] || b[2] - a[2]))
+      // 비선호 스킬이 없는 결과 중 1등은 exclude 모드의 1등과 같은 값이다
+      const clean = res.items.find((i) => i.unwantedSkills.length === 0)!
+      expect(key(clean)).toEqual(key(excluded.items[0]))
     })
 
     it('무기 자체 스킬은 비선호로 세지 않는다', () => {
@@ -156,8 +159,8 @@ describe('runSearch', () => {
       const r = request({ required, weapon: weaponOf(choice), excludedSkills: [sid('집중')] })
       const res = runSearch(db, r)
       const plain = runSearch(db, { ...r, excludedSkills: [] })
-      expect(res.totalDeprioritized).toBe(0)
-      expect(res.totalPreferred).toBe(plain.totalPreferred)
+      expect(res.items.every((i) => i.unwantedSkills.length === 0)).toBe(true)
+      expect(res.total).toBe(plain.total)
       verify(r, res)
     })
   })
@@ -166,9 +169,9 @@ describe('runSearch', () => {
     it('무기 슬롯 장식주로 무기 스킬을 채운다', () => {
       const r = request({ required: req(['공격', 5], ['약점 특효', 2]), weapon: weaponOf({ type: 'db', id: 71 }) }) // 앙길바인 [3,3,3]
       const res = runSearch(db, r)
-      expect(res.preferred.length).toBeGreaterThan(0)
+      expect(res.items.length).toBeGreaterThan(0)
       verify(r, res)
-      expect(runSearch(db, { ...r, weapon: weaponOf(null) }).totalPreferred).toBe(0)
+      expect(runSearch(db, { ...r, weapon: weaponOf(null) }).total).toBe(0)
     })
 
     it('사용자 호석의 무기 슬롯까지 사용한다', () => {
@@ -182,34 +185,34 @@ describe('runSearch', () => {
         talismans: [...fixedTalismans, t.search],
       })
       const res = runSearch(db, r)
-      expect(res.preferred.length).toBeGreaterThan(0)
+      expect(res.items.length).toBeGreaterThan(0)
       verify(r, res, [t.custom])
-      for (const item of res.preferred) {
+      for (const item of res.items) {
         expect(item.talismans[0]).toEqual({ type: 'custom', id: 'weapon-slot' })
         expect(item.decorations.talisman[0]).not.toBeNull()
       }
-      expect(runSearch(db, { ...r, talismans: fixedTalismans }).totalPreferred).toBe(0)
+      expect(runSearch(db, { ...r, talismans: fixedTalismans }).total).toBe(0)
     })
   })
 
   it('방어구 초월: 초월 슬롯으로만 가능한 조합을 찾는다', () => {
     const highRarity = db.data.armor.filter((a) => a.rarity >= 7).map((a) => a.id)
     const r = request({ required: req(['약점 특효', 5], ['도전자', 5]), excludedArmorIds: highRarity, talismans: [] })
-    expect(runSearch(db, r).totalPreferred).toBe(0)
+    expect(runSearch(db, r).total).toBe(0)
     const transcended = { ...r, transcend: true }
     const res = runSearch(db, transcended)
-    expect(res.preferred.length).toBeGreaterThan(0)
+    expect(res.items.length).toBeGreaterThan(0)
     verify(transcended, res)
   })
 
   it('도움이 되는 사용자 호석을 사용한다', () => {
     const t = custom('we-burst', [['약점 특효', 2], ['연격', 1]], [{ kind: 'armor', level: 3 }])
     const r = request({ required: req(['약점 특효', 5], ['도전자', 5], ['연격', 5]), talismans: [] })
-    expect(runSearch(db, r).totalPreferred).toBe(0)
+    expect(runSearch(db, r).total).toBe(0)
     const withCustom = { ...r, talismans: [...fixedTalismans, t.search] }
     const res = runSearch(db, withCustom)
-    expect(res.preferred.length).toBeGreaterThan(0)
-    expect(res.preferred[0].talismans[0]).toEqual({ type: 'custom', id: 'we-burst' })
+    expect(res.items.length).toBeGreaterThan(0)
+    expect(res.items[0].talismans[0]).toEqual({ type: 'custom', id: 'we-burst' })
     verify(withCustom, res, [t.custom])
   })
 
@@ -218,24 +221,24 @@ describe('runSearch', () => {
       required: req(['약점 특효', 5], ['도전자', 5], ['연격', 5], ['힘의 해방', 5], ['앙심', 5], ['완전 충전', 5], ['공세', 5]),
     })
     const res = runSearch(db, impossible)
-    expect(res.totalPreferred + res.totalDeprioritized).toBe(0)
+    expect(res.total).toBe(0)
     expect(res.truncated).toBe(false)
     expect(res.elapsedMs).toBeLessThan(3000)
     // 특정 무기에만 붙는 스킬: 무기 없이 검색하면 얻을 방법이 없다
-    expect(runSearch(db, request({ required: req(['암흑', 1], ['약점 특효', 1]) })).totalPreferred).toBe(0)
+    expect(runSearch(db, request({ required: req(['암흑', 1], ['약점 특효', 1]) })).total).toBe(0)
   })
 
   it('limit 과 정렬 기준을 지킨다', () => {
     const base = request({ required: req(['약점 특효', 3], ['회피 성능', 2]), limit: 10 })
     const bySlots = runSearch(db, base)
-    expect(bySlots.preferred).toHaveLength(10)
-    const scores = bySlots.preferred.map((i) => slotScore(i.freeSlots))
+    expect(bySlots.items).toHaveLength(10)
+    const scores = bySlots.items.map((i) => slotScore(i.freeSlots))
     expect(scores).toEqual([...scores].sort((a, b) => b - a))
 
     const byDefense = runSearch(db, { ...base, sort: 'defense' })
-    const defenses = byDefense.preferred.map((i) => i.defense)
+    const defenses = byDefense.items.map((i) => i.defense)
     expect(defenses).toEqual([...defenses].sort((a, b) => b - a))
-    expect(defenses[0]).toBeGreaterThanOrEqual(Math.max(...bySlots.preferred.map((i) => i.defense)))
+    expect(defenses[0]).toBeGreaterThanOrEqual(Math.max(...bySlots.items.map((i) => i.defense)))
     verify(base, bySlots)
     verify({ ...base, sort: 'defense' }, byDefense)
   })
@@ -244,7 +247,7 @@ describe('runSearch', () => {
     const r = request({ required: req(['약점 특효', 1]) })
     const limited = runSearch(db, r, { limits: { maxLeaves: 100 } })
     expect(limited.truncated).toBe(true)
-    expect(limited.totalPreferred).toBeLessThanOrEqual(100)
+    expect(limited.total).toBeLessThanOrEqual(100)
     verify(r, limited)
 
     let calls = 0
@@ -290,37 +293,37 @@ describe('runSearch', () => {
       const r = noDeco({ required: req(['약점 특효', 5], ['도전자', 5]), talismans: [], limit: 10_000 })
       const res = runSearch(db, r)
       expect(res.truncated).toBe(false)
-      expect(res.preferred).toHaveLength(res.totalPreferred)
-      expect(res.preferred.reduce((n, item) => n + item.variantCount, 0)).toBe(countArmorOnlyCombos(r.required))
+      expect(res.items).toHaveLength(res.total)
+      expect(res.items.reduce((n, item) => n + item.variantCount, 0)).toBe(countArmorOnlyCombos(r.required))
     })
 
     it('장식주를 하나도 쓰지 않고 슬롯은 모두 남긴다', () => {
       const r = noDeco({ required: req(['약점 특효', 5], ['도전자', 5]), weapon: weaponOf({ type: 'db', id: 71 }) }) // 앙길바인 [3,3,3]
       const res = runSearch(db, r)
-      expect(res.preferred).toHaveLength(r.limit)
+      expect(res.items).toHaveLength(r.limit)
       verify(r, res)
-      for (const item of res.preferred) {
+      for (const item of res.items) {
         expect(Object.values(item.decorations).flat().every((id) => id === null)).toBe(true)
         const summary = computeBuild(db, resultToBuild(db, item, r))
         expect(summary.freeSlots).toHaveLength(summary.slots.length)
       }
-      const scores = res.preferred.map((i) => slotScore(i.freeSlots))
+      const scores = res.items.map((i) => slotScore(i.freeSlots))
       expect(scores).toEqual([...scores].sort((a, b) => b - a))
     })
 
     it('장식주가 있어야 채워지는 조건은 결과가 없다', () => {
       const r = noDeco({ required: req(['약점 특효', 5], ['도전자', 5], ['연격', 3]), talismans: [] })
-      expect(runSearch(db, r).totalPreferred).toBe(0)
-      expect(runSearch(db, { ...r, useDecorations: true }).totalPreferred).toBeGreaterThan(0)
+      expect(runSearch(db, r).total).toBe(0)
+      expect(runSearch(db, { ...r, useDecorations: true }).total).toBeGreaterThan(0)
     })
 
     it('무기 스킬은 무기 자체 스킬로만 센다', () => {
       const weapon = weaponOf({ type: 'db', id: 6 }) // 허무의 활Ⅰ: 집중 Lv2, 슬롯 [1]
       const r = noDeco({ required: req(['집중', 2], ['약점 특효', 5], ['도전자', 5]), weapon })
       const res = runSearch(db, r)
-      expect(res.preferred.length).toBeGreaterThan(0)
+      expect(res.items.length).toBeGreaterThan(0)
       verify(r, res)
-      expect(runSearch(db, { ...r, required: req(['집중', 3], ['약점 특효', 5], ['도전자', 5]) }).totalPreferred).toBe(0)
+      expect(runSearch(db, { ...r, required: req(['집중', 3], ['약점 특효', 5], ['도전자', 5]) }).total).toBe(0)
     })
   })
 
@@ -328,7 +331,7 @@ describe('runSearch', () => {
     const excludedPiece = armorByName(db, '슈바르카그리브γ')
     const r = request({ required: req(['약점 특효', 4]), excludedArmorIds: [excludedPiece.id], limit: 100 })
     const res = runSearch(db, r)
-    for (const item of res.preferred) {
+    for (const item of res.items) {
       for (const ids of Object.values(item.armor)) {
         expect(ids).not.toContain(excludedPiece.id)
         for (const id of ids) expect(db.armor.get(id)!.rank).toBe('high')
@@ -417,7 +420,7 @@ describe('일반화된 경로 (합성 데이터)', () => {
         { skillId: 3, level: 3 },
       ],
       excludedSkills: [],
-      excludeMode: 'deprioritize',
+      excludeMode: 'mark',
       weapon: { choice: { type: 'db', id: 1 }, skills: [], slots: [2, 1] },
       talismans: [],
       includeLowRank: false,
@@ -428,8 +431,8 @@ describe('일반화된 경로 (합성 데이터)', () => {
       limit: 10,
     }
     const res = runSearch(synthetic, r)
-    expect(res.preferred.length).toBeGreaterThan(0)
-    for (const item of res.preferred) {
+    expect(res.items.length).toBeGreaterThan(0)
+    for (const item of res.items) {
       const summary = computeBuild(synthetic, resultToBuild(synthetic, item, r))
       expect(missingRequirements(summary, r.required)).toEqual([])
       expect(summary.slots.every((s) => s.valid)).toBe(true)

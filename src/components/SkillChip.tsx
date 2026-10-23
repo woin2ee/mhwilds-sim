@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { cx } from '../lib/cx'
 
 /**
- * required: 원하는 스킬 (충족) / missing: 원하는 스킬 (미달) / unwanted: 비선호 스킬
+ * required: 원하는 스킬 (충족) / missing: 원하는 스킬 (미달) / unwanted: 비선호 스킬 (금지 표시도 붙는다)
  * bonus: 시리즈·그룹 스킬 / extra: 그 외 추가 스킬 / neutral: 기본
  */
 export type SkillTone = 'required' | 'missing' | 'unwanted' | 'bonus' | 'extra' | 'neutral'
@@ -14,6 +14,24 @@ const TONE: Record<SkillTone, string> = {
   bonus: 'border-accent/50 bg-accent/10 text-accent',
   extra: 'border-line bg-surface-2 text-muted',
   neutral: 'border-line bg-surface-2 text-fg',
+}
+
+/** 비선호 표시. 빨강만으로는 색각에 따라 초록(원하는 스킬)과 헷갈릴 수 있어 모양으로도 구분한다 */
+function BanIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2.5}
+      strokeLinecap="round"
+      aria-hidden
+      className="size-3 shrink-0"
+    >
+      <circle cx="12" cy="12" r="9" />
+      <path d="m5.6 5.6 12.8 12.8" />
+    </svg>
+  )
 }
 
 export function SkillChip({
@@ -50,6 +68,7 @@ export function SkillChip({
   )
   const content = (
     <>
+      {tone === 'unwanted' && <BanIcon />}
       <span>{name}</span>
       {level !== undefined && (
         <span className="font-semibold tabular-nums">
