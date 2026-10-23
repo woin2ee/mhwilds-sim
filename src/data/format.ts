@@ -1,5 +1,5 @@
 // 화면 공용 표시 문자열 도우미
-import type { CustomTalisman, TalismanRef } from '../core/types'
+import type { CustomTalisman, TalismanChoice } from '../core/types'
 import { nameOf, type GameDb } from './db'
 import type { Skill, SkillPoint } from './types'
 
@@ -24,8 +24,9 @@ export function skillPointsText(db: GameDb, points: readonly SkillPoint[], separ
   return points.map((p) => `${skillName(db, p.skillId)} ${p.level}`).join(separator)
 }
 
-export function talismanName(db: GameDb, ref: TalismanRef | null, customTalismans: readonly CustomTalisman[]): string {
+export function talismanName(db: GameDb, ref: TalismanChoice | null, customTalismans: readonly CustomTalisman[]): string {
   if (!ref) return '없음'
+  if (ref.type === 'inline') return ref.talisman.name || '세팅 전용 호석'
   if (ref.type === 'custom') return customTalismans.find((t) => t.id === ref.id)?.name || '내 호석'
   const talisman = db.talismans.get(ref.id)
   return talisman ? nameOf(talisman.name) : '알 수 없는 호석'

@@ -415,6 +415,9 @@ function EquipCell({
       <p className="break-keep">
         {name}
         {piece && <span className="ml-1 text-[11px] text-muted">R{piece.rarity}</span>}
+        {equipKey === 'talisman' && item.build.talisman?.type === 'inline' && (
+          <span className="ml-1 text-[11px] text-muted">세팅 전용</span>
+        )}
       </p>
       {slots.length > 0 && (
         <span className="flex flex-wrap gap-0.5">

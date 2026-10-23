@@ -7,7 +7,7 @@ import type {
   CustomTalisman,
   EquipKey,
   Slot,
-  TalismanRef,
+  TalismanChoice,
   WeaponChoice,
 } from './types'
 
@@ -77,16 +77,16 @@ export function resolveArmor(db: GameDb, kind: ArmorKind, choice: ArmorChoice | 
 
 export function resolveTalisman(
   db: GameDb,
-  ref: TalismanRef | null,
+  ref: TalismanChoice | null,
   customTalismans: readonly CustomTalisman[],
 ): ResolvedEquipment | null {
   if (!ref) return null
-  if (ref.type === 'custom') {
-    const talisman = customTalismans.find((t) => t.id === ref.id)
+  if (ref.type !== 'fixed') {
+    const talisman = ref.type === 'inline' ? ref.talisman : customTalismans.find((t) => t.id === ref.id)
     if (!talisman) return null
     return {
       key: 'talisman',
-      name: talisman.name || '내 호석',
+      name: talisman.name || (ref.type === 'inline' ? '세팅 전용 호석' : '내 호석'),
       skills: talisman.skills,
       slots: talisman.slots,
       defense: NO_DEFENSE,

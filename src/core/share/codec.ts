@@ -2,9 +2,17 @@
 import type { GameDb } from '../../data/db'
 import { ARMOR_KIND_LABEL } from '../../data/labels'
 import { ARMOR_KINDS, WEAPON_KINDS, type SkillPoint, type SlotLevel } from '../../data/types'
-import { EQUIP_KEYS, emptyBuild, type BuildState, type CustomTalisman, type Slot, type WeaponChoice } from '../types'
+import {
+  EQUIP_KEYS,
+  emptyBuild,
+  type BuildState,
+  type CustomTalisman,
+  type Slot,
+  type TalismanChoice,
+  type WeaponChoice,
+} from '../types'
 import { ByteReader, ByteWriter, INVALID_CODE, fromBase64Url, toBase64Url } from './binary'
-import { ShareCodeError, type DecodedBuild, type TalismanDraft } from './types'
+import { ShareCodeError, type DecodedBuild } from './types'
 
 export const FORMAT_VERSION = 1
 const MAX_SLOTS = 3
@@ -47,7 +55,7 @@ export function encodeBuild(
     w.zz(set.gameId)
   }
 
-  writeTalisman(w, db, build, customTalismans)
+  writeTalisman(w, db, build.talisman, customTalismans)
 
   for (const key of EQUIP_KEYS) {
     const ids = (build.decorations?.[key] ?? []).slice(0, MAX_DECORATION_SLOTS)
@@ -85,10 +93,9 @@ function writeWeapon(w: ByteWriter, db: GameDb, choice: WeaponChoice | null): vo
 function writeTalisman(
   w: ByteWriter,
   db: GameDb,
-  build: BuildState,
+  ref: TalismanChoice | null,
   customTalismans: readonly CustomTalisman[],
 ): void {
-  const ref = build.talisman
   if (ref?.type === 'fixed') {
     const talisman = db.talismans.get(ref.id)
     if (talisman) {
@@ -97,8 +104,9 @@ function writeTalisman(
       w.u8(clampLevel(talisman.level))
       return
     }
-  } else if (ref?.type === 'custom') {
-    const talisman = customTalismans.find((t) => t.id === ref.id)
+  } else if (ref) {
+    // 내 호석과 세팅 전용 호석은 똑같이 내용을 담는다
+    const talisman = ref.type === 'inline' ? ref.talisman : customTalismans.find((t) => t.id === ref.id)
     if (talisman) {
       w.u8(TALISMAN_CUSTOM)
       w.str(talisman.name)
@@ -164,7 +172,6 @@ export function decodeBuild(db: GameDb, code: string): DecodedBuild {
     else missing.armor.push(`${ARMOR_KIND_LABEL[kind]} 방어구`)
   }
 
-  let talisman: TalismanDraft | null = null
   const talismanTag = r.u8()
   if (talismanTag === TALISMAN_FIXED) {
     const charmGameId = r.zz()
@@ -187,8 +194,8 @@ export function decodeBuild(db: GameDb, code: string): DecodedBuild {
       if (level === 0 || kind > 1) throw new ShareCodeError(INVALID_CODE)
       slots.push({ kind: kind === 1 ? 'weapon' : 'armor', level: level as SlotLevel })
     }
-    talisman = { name, rarity: rarity || null, skills: skills.points, slots }
-    build.talisman = { type: 'custom', id: '' }
+    // 내 호석에 넣지 않고 세팅 전용 호석으로 꺼낸다 (linkTalisman 이 같은 내 호석에 연결)
+    build.talisman = { type: 'inline', talisman: { name, rarity: rarity || null, skills: skills.points, slots } }
   } else if (talismanTag !== TALISMAN_NONE) {
     throw new ShareCodeError(INVALID_CODE)
   }
@@ -221,7 +228,7 @@ export function decodeBuild(db: GameDb, code: string): DecodedBuild {
   if (missing.talisman) notes.push('호석')
   if (missing.talismanSkills) notes.push(`호석 스킬 ${missing.talismanSkills}개`)
   if (missing.decorations) notes.push(`장식주 ${missing.decorations}개`)
-  return { name: name || null, build, talisman, missing: notes }
+  return { name: name || null, build, missing: notes }
 }
 
 function readSlotLevels(r: ByteReader): SlotLevel[] {

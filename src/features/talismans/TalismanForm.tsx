@@ -1,11 +1,9 @@
 import { useState, type FormEvent } from 'react'
 import { Button } from '../../components/ui'
-import type { CustomTalisman, Slot, SlotKind } from '../../core/types'
+import type { CustomTalisman, Slot, SlotKind, TalismanDraft } from '../../core/types'
 import type { SkillKind, SlotLevel } from '../../data/types'
 import { SelectBox, SlotLevelSelect } from '../../components/controls'
 import { SkillPointEditor } from '../../components/SkillPointEditor'
-
-export type TalismanDraft = Omit<CustomTalisman, 'id'>
 
 const TALISMAN_SKILL_KINDS: SkillKind[] = ['armor', 'weapon']
 const MAX_SKILLS = 3

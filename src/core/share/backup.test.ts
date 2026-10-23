@@ -1,12 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { fillDecorations, seededRandom } from '../../test/builds'
-import { armorByName, decorationIdByName, loadTestDb, skillIdByName } from '../../test/testDb'
+import { armorByName, loadTestDb, skillIdByName } from '../../test/testDb'
 import { computeBuild } from '../calc'
 import type { SavedBuild } from '../savedBuilds'
 import { emptyBuild, type BuildState, type CustomTalisman } from '../types'
 import { toBase64Url } from './binary'
 import {
-  attachTalisman,
   createBackup,
   decodeBackupCode,
   decodeBuild,
@@ -15,7 +14,6 @@ import {
   extractShareCode,
   hasBackupCode,
   importBackup,
-  sameTalisman,
   ShareCodeError,
   type BackupFile,
 } from './index'
@@ -68,42 +66,6 @@ function makeSavedBuilds(): SavedBuild[] {
 
 const roundTripJson = (file: BackupFile): unknown => JSON.parse(JSON.stringify(file))
 const summary = (build: BuildState, talismans: readonly CustomTalisman[]) => computeBuild(db, build, talismans)
-
-describe('attachTalisman', () => {
-  it('내용이 같으면 이름·슬롯 순서가 달라도 재사용하고 장식주 위치를 맞춘다', () => {
-    const build = emptyBuild()
-    build.talisman = { type: 'custom', id: used.id }
-    const weaponDeco = decorationIdByName(db, '독주【1】')
-    const armorDeco = decorationIdByName(db, '내수주【1】')
-    build.decorations.talisman = [weaponDeco, armorDeco]
-    const decoded = decodeBuild(db, encodeBuild(db, build, [used], null))
-
-    const mine: CustomTalisman = { ...used, id: 'mine', name: '다른 이름', slots: [...used.slots].reverse() }
-    expect(sameTalisman(mine, used)).toBe(true)
-    const attached = attachTalisman(decoded, [unused, mine], counter('new'))
-    expect(attached.added).toBeNull()
-    expect(attached.customTalismans).toHaveLength(2)
-    expect(attached.build.talisman).toEqual({ type: 'custom', id: 'mine' })
-    expect(attached.build.decorations.talisman).toEqual([armorDeco, weaponDeco])
-    expect(summary(attached.build, [mine]).slots.every((s) => s.valid)).toBe(true)
-  })
-
-  it('내용이 다르면 새로 추가 (이름이 비면 기본 이름)', () => {
-    const build = emptyBuild()
-    build.talisman = { type: 'custom', id: 'x' }
-    const nameless: CustomTalisman = { ...used, id: 'x', name: '' }
-    const decoded = decodeBuild(db, encodeBuild(db, build, [nameless], null))
-    const attached = attachTalisman(decoded, [unused], counter('new'))
-    expect(attached.added).toMatchObject({ id: 'new-1', name: '공유받은 호석', skills: used.skills, slots: used.slots })
-    expect(attached.customTalismans.map((t) => t.id)).toEqual(['unused', 'new-1'])
-  })
-
-  it('호석 내용 없이 자리표시자만 있으면 호석을 비운다', () => {
-    const build = { ...emptyBuild(), talisman: { type: 'custom' as const, id: '' } }
-    const attached = attachTalisman({ name: null, build, talisman: null, missing: [] }, [], counter('new'))
-    expect(attached.build.talisman).toBeNull()
-  })
-})
 
 describe('백업', () => {
   const savedBuilds = makeSavedBuilds()
@@ -158,6 +120,23 @@ describe('백업', () => {
     const result = importBackup(db, file, { savedBuilds: [existing], customTalismans: [myUsed] }, counter('id'))
     expect(result).toMatchObject({ addedBuilds: 2, addedTalismans: 1, skippedBuilds: 1 })
     expect(result.customTalismans.map((t) => t.id)).toEqual(['my-used', 'id-1'])
+  })
+
+  it('세팅의 세팅 전용 호석은 내 호석에 넣지 않고 세팅에 그대로 담는다', () => {
+    const shared = {
+      ...emptyBuild(),
+      talisman: { type: 'inline' as const, talisman: { name: '받은 호석', rarity: 7, skills: [{ skillId: attack, level: 1 }], slots: [] } },
+    }
+    const file = createBackup(db, [saved('d', '공유받은 세팅', shared)], [used])
+    expect(file.talismans.map((t) => t.name)).toEqual(['쓰는 호석'])
+    const result = importBackup(db, roundTripJson(file), { savedBuilds: [], customTalismans: [] }, counter('id'))
+    expect(result).toMatchObject({ addedBuilds: 1, addedTalismans: 1, skippedBuilds: 0 })
+    expect(result.customTalismans.map((t) => t.name)).toEqual(['쓰는 호석'])
+    expect(result.savedBuilds[0].build.talisman).toEqual(shared.talisman)
+    // 그사이 같은 호석을 내 호석에 넣었다면 그 호석에 연결한다
+    const mine: CustomTalisman = { ...shared.talisman.talisman, id: 'mine', name: '내 이름' }
+    const linked = importBackup(db, roundTripJson(file), { savedBuilds: [], customTalismans: [mine] }, counter('id'))
+    expect(linked.savedBuilds[0].build.talisman).toEqual({ type: 'custom', id: 'mine' })
   })
 
   it('호석 스킬은 게임 내부 id 로 찾는다 (MHDB id 가 바뀌어도 복원)', () => {

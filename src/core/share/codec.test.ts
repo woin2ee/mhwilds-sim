@@ -3,18 +3,11 @@ import { GameDb } from '../../data/db'
 import { WEAPON_KINDS } from '../../data/types'
 import { fillDecorations, pick, seededRandom } from '../../test/builds'
 import { armorByName, decorationIdByName, loadTestDb, skillIdByName } from '../../test/testDb'
+import { linkTalisman } from '../buildUpdates'
 import { computeBuild } from '../calc'
-import { emptyBuild, type BuildState, type CustomTalisman, type WeaponChoice } from '../types'
+import { emptyBuild, type BuildState, type CustomTalisman, type TalismanChoice, type WeaponChoice } from '../types'
 import { fromBase64Url, toBase64Url } from './binary'
-import {
-  attachTalisman,
-  decodeBuild,
-  encodeBuild,
-  extractShareCode,
-  ShareCodeError,
-  shareUrl,
-  type DecodedBuild,
-} from './index'
+import { decodeBuild, encodeBuild, extractShareCode, ShareCodeError, shareUrl, type DecodedBuild } from './index'
 
 const db = loadTestDb()
 const attack = skillIdByName(db, '공격')
@@ -34,12 +27,17 @@ const talismanA: CustomTalisman = {
   ],
 }
 const customTalismans = [talismanA]
+/** 내 호석에 없는 호석 (공유받은 세팅의 호석) */
+const sharedTalisman: TalismanChoice = {
+  type: 'inline',
+  talisman: { name: '받은 호석', rarity: 7, skills: [{ skillId: weakness, level: 2 }], slots: [{ kind: 'armor', level: 3 }] },
+}
 
 function roundTrip(build: BuildState, name: string | null, talismans: readonly CustomTalisman[] = customTalismans) {
   const code = encodeBuild(db, build, talismans, name)
   const decoded = decodeBuild(db, code)
-  const attached = attachTalisman(decoded, talismans, () => 'unexpected-new-id')
-  return { code, decoded, attached }
+  const linked = linkTalisman(decoded.build, talismans)
+  return { code, decoded, linked }
 }
 
 function expectOnlyShareCodeError(run: () => unknown): void {
@@ -66,45 +64,45 @@ describe('공유 코드 왕복', () => {
         { type: 'custom', slots: [3, 2], skills: [{ skillId: attack, level: 3 }] },
       ]
       build.weapon = weapons[i % weapons.length]
-      build.talisman = [
+      const talismans: (TalismanChoice | null)[] = [
         null,
-        { type: 'fixed' as const, id: pick(db.data.talismans, rand).id },
-        { type: 'custom' as const, id: talismanA.id },
-      ][i % 3]
+        { type: 'fixed', id: pick(db.data.talismans, rand).id },
+        { type: 'custom', id: talismanA.id },
+        sharedTalisman,
+      ]
+      build.talisman = talismans[i % talismans.length]
       build = fillDecorations(db, build, customTalismans, rand)
       const name = i % 5 === 0 ? null : `${set.name.ko} 세팅 ${i}`
 
-      const { decoded, attached } = roundTrip(build, name)
+      const { decoded, linked } = roundTrip(build, name)
       expect(decoded.missing).toEqual([])
       expect(decoded.name).toBe(name)
-      expect(attached.added).toBeNull()
-      expect(attached.build).toEqual(build)
-      expect(computeBuild(db, attached.build, customTalismans)).toEqual(computeBuild(db, build, customTalismans))
+      expect(linked).toEqual(build)
+      expect(computeBuild(db, linked, customTalismans)).toEqual(computeBuild(db, build, customTalismans))
     })
   })
 
   it('빈 세팅', () => {
-    const { decoded, attached } = roundTrip(emptyBuild(), null)
-    expect(decoded).toMatchObject({ name: null, talisman: null, missing: [] })
-    expect(attached.build).toEqual(emptyBuild())
+    const { decoded, linked } = roundTrip(emptyBuild(), null)
+    expect(decoded).toMatchObject({ name: null, missing: [] })
+    expect(linked).toEqual(emptyBuild())
   })
 
-  it('직접 입력 호석은 내용까지 담기고, 내 호석에 없으면 새로 추가된다', () => {
+  it('직접 입력 호석은 내용까지 담기고, 세팅 전용 호석으로 꺼내 내 호석에 넣지 않는다', () => {
     const build = emptyBuild()
     build.talisman = { type: 'custom', id: talismanA.id }
     const code = encodeBuild(db, build, customTalismans, null)
     const decoded = decodeBuild(db, code)
-    expect(decoded.talisman).toEqual({
-      name: talismanA.name,
-      rarity: talismanA.rarity,
-      skills: talismanA.skills,
-      slots: talismanA.slots,
+    expect(decoded.build.talisman).toEqual({
+      type: 'inline',
+      talisman: { name: talismanA.name, rarity: talismanA.rarity, skills: talismanA.skills, slots: talismanA.slots },
     })
-    expect(decoded.build.talisman).toEqual({ type: 'custom', id: '' })
-    const attached = attachTalisman(decoded, [], () => 'new-id')
-    expect(attached.added).toMatchObject({ id: 'new-id', name: talismanA.name })
-    expect(attached.customTalismans).toHaveLength(1)
-    expect(attached.build.talisman).toEqual({ type: 'custom', id: 'new-id' })
+    // 내 호석 없이도 같은 계산 결과, 같은 공유 코드
+    expect(computeBuild(db, decoded.build, [])).toEqual(computeBuild(db, build, customTalismans))
+    expect(encodeBuild(db, decoded.build, [], null)).toBe(code)
+    // 내용이 같은 내 호석이 없으면 세팅 전용 그대로, 있으면 그 호석에 연결
+    expect(linkTalisman(decoded.build, [])).toBe(decoded.build)
+    expect(linkTalisman(decoded.build, customTalismans).talisman).toEqual({ type: 'custom', id: talismanA.id })
   })
 
   it('이름은 60바이트에서 글자 경계로 자른다 (한글·이모지)', () => {
@@ -217,7 +215,7 @@ describe('현재 데이터에 없는 항목', () => {
     expect(decoded.build.armor.head).toBeNull()
     expect(decoded.build.armor.legs).toEqual({ id: legs.id, transcend: false })
     expect(decoded.build.decorations.legs).toEqual([null, null])
-    expect(decoded.talisman?.skills).toEqual([{ skillId: weakness, level: 1 }])
+    expect(decoded.build.talisman).toMatchObject({ type: 'inline', talisman: { skills: [{ skillId: weakness, level: 1 }] } })
   })
 
   it('직접 입력 무기의 없는 스킬은 개수로 적는다', () => {

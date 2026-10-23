@@ -62,7 +62,9 @@ function variantIn(db: GameDb, item: SearchResultItem, request: SearchRequest, e
   }
   const talisman = entry.build.talisman
   if (talisman) {
-    const index = item.talismans.findIndex((t) => t.type === talisman.type && t.id === talisman.id)
+    // 검색 결과의 호석은 제작 호석·내 호석뿐이라 세팅 전용 호석은 맞는 결과가 없다
+    const index =
+      talisman.type === 'inline' ? -1 : item.talismans.findIndex((t) => t.type === talisman.type && t.id === talisman.id)
     if (index < 0) return null
     if (index > 0) variant.talismanIndex = index
   } else if (item.talismans.length > 0) {

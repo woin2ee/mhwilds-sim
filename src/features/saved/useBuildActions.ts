@@ -1,13 +1,7 @@
 import { useCallback } from 'react'
-import { isEmptyBuild } from '../../core/buildUpdates'
+import { isEmptyBuild, linkTalisman } from '../../core/buildUpdates'
 import { newSavedBuild, type SavedBuild } from '../../core/savedBuilds'
-import {
-  attachTalisman,
-  decodeBuild,
-  extractShareCode,
-  ShareCodeError,
-  type DecodedBuild,
-} from '../../core/share'
+import { decodeBuild, extractShareCode, ShareCodeError, type DecodedBuild } from '../../core/share'
 import type { BuildState } from '../../core/types'
 import type { GameDb } from '../../data/db'
 import { requestPersistentStorage } from '../../lib/storage'
@@ -50,41 +44,34 @@ export function useConfirmReplaceManual(): () => boolean {
   }, [manualBuild, manualSourceId, savedBuilds])
 }
 
-/** 공유 코드에서 꺼낸 세팅을 수동 세팅으로 열거나 내 세팅에 저장한다 (직접 입력 호석은 내 호석에 연결) */
+/**
+ * 공유 코드에서 꺼낸 세팅을 수동 세팅으로 열거나 내 세팅에 저장한다. 직접 입력 호석은 내용이 같은 내 호석에 연결하고,
+ * 없으면 세팅 전용 호석으로 둔다 (내 호석에는 넣지 않는다)
+ */
 export function useDecodedBuildActions() {
-  const { customTalismans, setCustomTalismans, setSavedBuilds, openInManual } = useAppState()
+  const { customTalismans, setSavedBuilds, openInManual } = useAppState()
   const confirmReplace = useConfirmReplaceManual()
   const toast = useToast()
-
-  const attach = useCallback(
-    (decoded: DecodedBuild): BuildState => {
-      // 직접 입력 호석이 없어도 항상 거친다 (자리표시자 정리)
-      const result = attachTalisman(decoded, customTalismans, () => crypto.randomUUID())
-      if (result.added) setCustomTalismans(result.customTalismans)
-      return result.build
-    },
-    [customTalismans, setCustomTalismans],
-  )
 
   const open = useCallback(
     (decoded: DecodedBuild): boolean => {
       if (!confirmReplace()) return false
-      openInManual(attach(decoded))
+      openInManual(linkTalisman(decoded.build, customTalismans))
       toast('수동 세팅에서 열었어요')
       return true
     },
-    [attach, confirmReplace, openInManual, toast],
+    [customTalismans, confirmReplace, openInManual, toast],
   )
 
   const save = useCallback(
     (decoded: DecodedBuild): SavedBuild => {
-      const saved = newSavedBuild(attach(decoded), decoded.name ?? '공유받은 세팅')
+      const saved = newSavedBuild(linkTalisman(decoded.build, customTalismans), decoded.name ?? '공유받은 세팅')
       setSavedBuilds((list) => [saved, ...list])
       void requestPersistentStorage()
       toast(`내 세팅에 저장했어요 · ${saved.name}`)
       return saved
     },
-    [attach, setSavedBuilds, toast],
+    [customTalismans, setSavedBuilds, toast],
   )
 
   return { open, save }

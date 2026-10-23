@@ -1,20 +1,16 @@
 // 세팅 저장·공유 계약. 형식 명세는 docs/DESIGN.md §8.
 import type { SavedBuild } from '../savedBuilds'
-import type { BuildState, CustomTalisman } from '../types'
-
-/** 직접 입력 호석의 내용 (id 제외). 공유 코드·백업에 담긴다. */
-export type TalismanDraft = Omit<CustomTalisman, 'id'>
+import type { BuildState, CustomTalisman, TalismanDraft } from '../types'
 
 /** 공유 코드에서 꺼낸 세팅 */
 export interface DecodedBuild {
   /** 코드에 들어 있던 세팅 이름 */
   name: string | null
   /**
-   * 꺼낸 세팅. 직접 입력 호석이 들어 있으면 build.talisman 은 { type: 'custom', id: '' } 자리표시자이고,
-   * attachTalisman() 으로 내 호석과 연결해야 한다.
+   * 꺼낸 세팅. 직접 입력 호석은 세팅 전용 호석({ type: 'inline' })으로 들어 있다.
+   * 열거나 저장할 때 linkTalisman() 으로 내용이 같은 내 호석에 연결한다 (없으면 세팅 전용 그대로).
    */
   build: BuildState
-  talisman: TalismanDraft | null
   /** 현재 데이터에서 찾지 못해 비운 항목 (예: '머리 방어구', '장식주 2개') */
   missing: string[]
 }
@@ -51,6 +47,7 @@ export interface BackupImportResult {
   savedBuilds: SavedBuild[]
   customTalismans: CustomTalisman[]
   addedBuilds: number
+  /** 백업의 내 호석 중 새로 더한 수 (세팅에 든 세팅 전용 호석은 내 호석에 넣지 않는다) */
   addedTalismans: number
   /** 이름과 내용이 같은 세팅이 이미 있어 건너뛴 수 */
   skippedBuilds: number

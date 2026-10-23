@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { emptyBuild } from './types'
-import { loadTestDb } from '../test/testDb'
+import { emptyBuild, type BuildState, type CustomTalisman } from './types'
+import { decorationIdByName, loadTestDb, skillIdByName } from '../test/testDb'
+import { computeBuild } from './calc'
 import {
   clearDecorations,
+  detachTalisman,
   fitDecorations,
   hasAnyDecoration,
   isEmptyBuild,
+  linkTalisman,
   refitDecorations,
+  sameTalisman,
   setArmor,
   setDecoration,
   setTalisman,
@@ -46,5 +50,69 @@ describe('buildUpdates', () => {
     expect(Object.values(clearDecorations(b).decorations).every((d) => d.length === 0)).toBe(true)
     expect(isEmptyBuild(emptyBuild())).toBe(true)
     expect(isEmptyBuild(setTalisman(emptyBuild(), { type: 'fixed', id: 1 }))).toBe(false)
+  })
+})
+
+describe('세팅 전용 호석 ↔ 내 호석', () => {
+  const mine: CustomTalisman = {
+    id: 'mine',
+    name: '내 감정 호석',
+    rarity: 8,
+    skills: [
+      { skillId: skillIdByName(db, '공격'), level: 2 },
+      { skillId: skillIdByName(db, '약점 특효'), level: 1 },
+    ],
+    slots: [
+      { kind: 'weapon', level: 1 },
+      { kind: 'armor', level: 1 },
+    ],
+  }
+  const other: CustomTalisman = { ...mine, id: 'other', skills: [{ skillId: skillIdByName(db, '약점 특효'), level: 2 }] }
+  const weaponDeco = decorationIdByName(db, '독주【1】')
+  const armorDeco = decorationIdByName(db, '내수주【1】')
+
+  /** 공유받은 세팅처럼 같은 내용을 다른 이름·슬롯 순서로 담은 세팅 전용 호석 */
+  function sharedBuild(): BuildState {
+    const build = emptyBuild()
+    const { rarity, skills, slots } = mine
+    build.talisman = { type: 'inline', talisman: { name: '받은 이름', rarity, skills: [...skills].reverse(), slots: [...slots].reverse() } }
+    build.decorations.talisman = [armorDeco, weaponDeco]
+    return build
+  }
+
+  it('sameTalisman: 이름·레어도·순서는 보지 않고 스킬·슬롯 구성만 본다', () => {
+    const inline = sharedBuild().talisman
+    expect(inline?.type === 'inline' && sameTalisman(inline.talisman, mine)).toBe(true)
+    expect(sameTalisman({ ...mine, rarity: null }, mine)).toBe(true)
+    expect(sameTalisman(other, mine)).toBe(false)
+    expect(sameTalisman({ ...mine, slots: [{ kind: 'armor', level: 1 }] }, mine)).toBe(false)
+  })
+
+  it('linkTalisman: 내용이 같은 내 호석이 있으면 그 호석을 가리키고 장식주 위치를 맞춘다', () => {
+    const linked = linkTalisman(sharedBuild(), [other, mine])
+    expect(linked.talisman).toEqual({ type: 'custom', id: 'mine' })
+    expect(linked.decorations.talisman).toEqual([weaponDeco, armorDeco])
+    expect(computeBuild(db, linked, [mine]).slots.every((s) => s.valid)).toBe(true)
+  })
+
+  it('linkTalisman: 같은 내 호석이 없으면 세팅 전용 그대로 (내 호석에 넣지 않는다)', () => {
+    const build = sharedBuild()
+    expect(linkTalisman(build, [other])).toBe(build)
+    const fixed = setTalisman(emptyBuild(), { type: 'fixed', id: db.data.talismans[0].id })
+    expect(linkTalisman(fixed, [mine])).toBe(fixed)
+  })
+
+  it('detachTalisman: 지우는 내 호석을 쓰던 세팅만 같은 내용의 세팅 전용 호석으로 바꾸고, 계산 결과는 그대로', () => {
+    const build = setDecoration(setDecoration(setTalisman(emptyBuild(), { type: 'custom', id: 'mine' }), 'talisman', 0, weaponDeco), 'talisman', 1, armorDeco)
+    const detached = detachTalisman(build, mine)
+    expect(detached.talisman).toEqual({
+      type: 'inline',
+      talisman: { name: mine.name, rarity: mine.rarity, skills: mine.skills, slots: mine.slots },
+    })
+    expect(detached.decorations).toBe(build.decorations)
+    expect(computeBuild(db, detached, [])).toEqual(computeBuild(db, build, [mine]))
+    expect(detachTalisman(build, other)).toBe(build)
+    // 다시 내 호석에 넣으면 원래 세팅으로 돌아온다
+    expect(linkTalisman(detached, [mine])).toEqual(build)
   })
 })

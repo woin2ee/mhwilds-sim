@@ -2,37 +2,41 @@ import { useCallback, useMemo } from 'react'
 import { Combobox } from '../../components/Combobox'
 import { SkillChip } from '../../components/SkillChip'
 import { SlotList } from '../../components/SlotBadge'
-import { Button } from '../../components/ui'
+import { Badge, Button } from '../../components/ui'
 import type { SlotUsage } from '../../core/calc'
-import type { Slot, TalismanRef } from '../../core/types'
+import type { CustomTalisman, Slot, TalismanChoice } from '../../core/types'
 import { nameOf } from '../../data/db'
 import { skillName, skillPointsText } from '../../data/format'
 import type { SkillPoint } from '../../data/types'
+import { newId } from '../../lib/id'
 import { useAppState } from '../../state/context'
-import { setDecoration, setTalisman } from '../../core/buildUpdates'
+import { useToast } from '../../state/toast'
+import { linkTalisman, sameTalisman, setDecoration, setTalisman } from '../../core/buildUpdates'
 import { DecorationSlots } from './DecorationSlots'
 import { EquipmentRow, MissingItem } from './EquipmentRow'
 import type { DecorationFill } from './useDecorationFill'
 
 interface TalismanOption {
   key: string
-  ref: TalismanRef
+  ref: TalismanChoice
   name: string
-  group: '내 호석' | '제작 호석'
+  group: '세팅 전용' | '내 호석' | '제작 호석'
   rarity: number | null
   skills: readonly SkillPoint[]
   slots: readonly Slot[]
   searchText: string[]
 }
 
-const refKey = (ref: TalismanRef) => `${ref.type}:${ref.id}`
+const refKey = (ref: TalismanChoice) => (ref.type === 'inline' ? 'inline' : `${ref.type}:${ref.id}`)
 const getKey = (o: TalismanOption) => o.key
 const getLabel = (o: TalismanOption) => o.name
 const getSearchText = (o: TalismanOption) => o.searchText
 const groupBy = (o: TalismanOption) => o.group
 
 export function TalismanRow({ usages, fill }: { usages: readonly SlotUsage[]; fill: DecorationFill }) {
-  const { db, manualBuild: build, setManualBuild, customTalismans, setTab } = useAppState()
+  const { db, manualBuild: build, setManualBuild, customTalismans, setCustomTalismans, setTab } = useAppState()
+  const toast = useToast()
+  const inline = build.talisman?.type === 'inline' ? build.talisman : null
 
   const options = useMemo<TalismanOption[]>(() => {
     const skillNames = (points: readonly SkillPoint[]) =>
@@ -40,8 +44,24 @@ export function TalismanRow({ usages, fill }: { usages: readonly SlotUsage[]; fi
         const skill = db.skills.get(p.skillId)
         return skill ? [skill.name.ko, skill.name.en] : []
       })
+    // 세팅 전용 호석은 내 호석 목록에 없으니 이 세팅에 든 동안만 보여 준다
+    const own: TalismanOption[] = []
+    if (inline) {
+      const { name, rarity, skills, slots } = inline.talisman
+      const label = name || '세팅 전용 호석'
+      own.push({
+        key: refKey(inline),
+        ref: inline,
+        name: label,
+        group: '세팅 전용',
+        rarity,
+        skills,
+        slots,
+        searchText: [label, ...skillNames(skills)],
+      })
+    }
     const custom = customTalismans.map((t, i): TalismanOption => {
-      const ref: TalismanRef = { type: 'custom', id: t.id }
+      const ref: TalismanChoice = { type: 'custom', id: t.id }
       const name = t.name || `호석 ${i + 1}`
       return {
         key: refKey(ref),
@@ -57,7 +77,7 @@ export function TalismanRow({ usages, fill }: { usages: readonly SlotUsage[]; fi
     const fixed = [...db.data.talismans]
       .sort((a, b) => a.name.ko.localeCompare(b.name.ko, 'ko') || a.level - b.level)
       .map((t): TalismanOption => {
-        const ref: TalismanRef = { type: 'fixed', id: t.id }
+        const ref: TalismanChoice = { type: 'fixed', id: t.id }
         return {
           key: refKey(ref),
           ref,
@@ -69,12 +89,26 @@ export function TalismanRow({ usages, fill }: { usages: readonly SlotUsage[]; fi
           searchText: [t.name.ko, t.name.en, t.name.ja, ...skillNames(t.skills)],
         }
       })
-    return [...custom, ...fixed]
-  }, [db, customTalismans])
+    return [...own, ...custom, ...fixed]
+  }, [db, customTalismans, inline])
 
   const ref = build.talisman ?? null
   const currentKey = ref ? refKey(ref) : null
   const current = currentKey ? (options.find((o) => o.key === currentKey) ?? null) : null
+
+  // 가지고 있는 호석이면 내 호석에 넣고 세팅이 그 호석을 가리키게 한다 (내용이 같은 내 호석이 있으면 그것으로)
+  const addToMine = () => {
+    if (!inline) return
+    const same = customTalismans.find((t) => sameTalisman(t, inline.talisman))
+    const mine: CustomTalisman = same ?? {
+      ...inline.talisman,
+      id: newId(),
+      name: inline.talisman.name.trim() || `호석 ${customTalismans.length + 1}`,
+    }
+    if (!same) setCustomTalismans((list) => [...list, mine])
+    setManualBuild((b) => linkTalisman(b, [mine]))
+    toast(same ? `내 호석에 같은 호석이 있어 그 호석으로 바꿨어요 · ${mine.name}` : `내 호석에 추가했어요 · ${mine.name}`)
+  }
 
   const renderOption = useCallback(
     (o: TalismanOption) => (
@@ -119,6 +153,20 @@ export function TalismanRow({ usages, fill }: { usages: readonly SlotUsage[]; fi
           what={ref.type === 'custom' ? '내 호석(삭제됨)' : '호석'}
           onClear={() => setManualBuild((b) => setTalisman(b, null))}
         />
+      )}
+      {inline && (
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+          <Badge>세팅 전용</Badge>
+          <span>내 호석에 없는 호석이라 이 세팅에만 담겨 있어요.</span>
+          <Button
+            size="sm"
+            variant="ghost"
+            title="가지고 있는 호석이면 내 호석에 넣어 스킬 검색에도 써요"
+            onClick={addToMine}
+          >
+            내 호석에 추가
+          </Button>
+        </div>
       )}
       {current && (current.skills.length > 0 || current.slots.length > 0) && (
         <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">

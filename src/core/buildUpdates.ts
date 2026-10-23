@@ -7,7 +7,8 @@ import {
   type CustomTalisman,
   type EquipKey,
   type Slot,
-  type TalismanRef,
+  type TalismanChoice,
+  type TalismanDraft,
   type WeaponChoice,
 } from './types'
 import type { GameDb } from '../data/db'
@@ -49,8 +50,60 @@ export function setArmor(build: BuildState, kind: ArmorKind, choice: ArmorChoice
   return withDecorations({ ...build, armor: { ...build.armor, [kind]: choice } }, kind, [])
 }
 
-export function setTalisman(build: BuildState, talisman: TalismanRef | null): BuildState {
+export function setTalisman(build: BuildState, talisman: TalismanChoice | null): BuildState {
   return withDecorations({ ...build, talisman }, 'talisman', [])
+}
+
+const slotKey = (slot: Slot) => `${slot.kind}:${slot.level}`
+
+function contentKey(talisman: TalismanDraft): string {
+  const skills = talisman.skills.map((p) => `${p.skillId}:${p.level}`).sort()
+  const slots = talisman.slots.map(slotKey).sort()
+  return `${skills.join(',')}|${slots.join(',')}`
+}
+
+/** 이름·id·레어도를 빼고 스킬·슬롯 구성이 같은 호석인지 (순서 무시) */
+export function sameTalisman(a: TalismanDraft, b: TalismanDraft): boolean {
+  return contentKey(a) === contentKey(b)
+}
+
+/**
+ * 세팅 전용 호석과 내용이 같은 내 호석이 있으면 그 호석을 가리키게 바꾼다 (슬롯 순서가 다르면 장식주 위치를 맞춘다).
+ * 없으면 그대로 둔다. 내 호석에 새로 넣지는 않는다 (공유받은 세팅을 보기만 해도 내 호석이 늘지 않게).
+ */
+export function linkTalisman(build: BuildState, customTalismans: readonly CustomTalisman[]): BuildState {
+  const choice = build.talisman
+  if (choice?.type !== 'inline') return build
+  const mine = customTalismans.find((t) => sameTalisman(t, choice.talisman))
+  if (!mine) return build
+  const decorations = remapDecorations(choice.talisman.slots, mine.slots, build.decorations.talisman ?? [])
+  return withDecorations({ ...build, talisman: { type: 'custom', id: mine.id } }, 'talisman', decorations)
+}
+
+/** 내 호석을 지울 때: 그 호석을 쓰는 세팅은 같은 내용의 세팅 전용 호석으로 바꿔 그대로 둔다 (슬롯 순서도 같다) */
+export function detachTalisman(build: BuildState, talisman: CustomTalisman): BuildState {
+  const choice = build.talisman
+  if (choice?.type !== 'custom' || choice.id !== talisman.id) return build
+  const { name, rarity, skills, slots } = talisman
+  return { ...build, talisman: { type: 'inline', talisman: { name, rarity, skills, slots } } }
+}
+
+/** 슬롯 순서가 다른 같은 호석으로 옮길 때 장식주 위치를 맞춘다 */
+function remapDecorations(
+  from: readonly Slot[],
+  to: readonly Slot[],
+  decorations: readonly (number | null)[],
+): (number | null)[] {
+  if (from.length === to.length && from.every((slot, i) => slotKey(slot) === slotKey(to[i]))) return [...decorations]
+  const result: (number | null)[] = to.map(() => null)
+  const used = to.map(() => false)
+  from.forEach((slot, i) => {
+    const j = to.findIndex((target, k) => !used[k] && slotKey(target) === slotKey(slot))
+    if (j < 0) return
+    used[j] = true
+    result[j] = decorations[i] ?? null
+  })
+  return result
 }
 
 export function setDecoration(

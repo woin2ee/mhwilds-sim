@@ -2,23 +2,18 @@ import { useState } from 'react'
 import { SkillChip } from '../../components/SkillChip'
 import { SlotList } from '../../components/SlotBadge'
 import { Badge, Button, EmptyState, Panel } from '../../components/ui'
-import type { CustomTalisman } from '../../core/types'
+import type { BuildState, CustomTalisman, TalismanDraft } from '../../core/types'
 import { skillName } from '../../data/format'
+import { newId } from '../../lib/id'
 import { useAppState, useDb } from '../../state/context'
-import { fitDecorations, setTalisman } from '../../core/buildUpdates'
+import { detachTalisman, fitDecorations } from '../../core/buildUpdates'
 import { BackupTabLink } from '../saved/BackupPage'
-import { TalismanForm, type TalismanDraft } from './TalismanForm'
+import { TalismanForm } from './TalismanForm'
 
-function newId(): string {
-  // crypto.randomUUID 는 보안 컨텍스트(https, localhost)에서만 있다
-  return typeof crypto.randomUUID === 'function'
-    ? crypto.randomUUID()
-    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
-}
-
-/** 내 호석(감정 호석 등) 등록·수정·삭제 */
+/** 내 호석(감정 호석 등) 등록·수정·삭제. 실제로 가진 호석만 둔다 (공유받은 세팅의 호석은 그 세팅에만 담긴다) */
 export function TalismanManager() {
-  const { db, customTalismans, setCustomTalismans, setManualBuild } = useAppState()
+  const { db, customTalismans, setCustomTalismans, manualBuild, setManualBuild, savedBuilds, setSavedBuilds } =
+    useAppState()
   const [editing, setEditing] = useState<string | 'new' | null>(null)
 
   const add = (draft: TalismanDraft) => {
@@ -38,11 +33,20 @@ export function TalismanManager() {
   }
 
   const remove = (talisman: CustomTalisman, index: number) => {
-    if (!window.confirm(`'${talisman.name || `호석 ${index + 1}`}'을(를) 삭제할까요?`)) return
+    // 이 호석을 쓰던 세팅은 깨뜨리지 않고 같은 내용의 세팅 전용 호석으로 바꿔 둔다
+    const uses = (build: BuildState) => detachTalisman(build, talisman) !== build
+    const usedBuilds = savedBuilds.filter((s) => uses(s.build)).length
+    const places = [usedBuilds > 0 && `내 세팅 ${usedBuilds}개`, uses(manualBuild) && '수동 세팅'].filter(Boolean)
+    const note = places.length > 0 ? `\n이 호석을 쓰는 ${places.join('와 ')}에는 세팅 전용 호석으로 남아요.` : ''
+    if (!window.confirm(`'${talisman.name || `호석 ${index + 1}`}'을(를) 삭제할까요?${note}`)) return
     setCustomTalismans((list) => list.filter((t) => t.id !== talisman.id))
-    setManualBuild((b) =>
-      b.talisman?.type === 'custom' && b.talisman.id === talisman.id ? setTalisman(b, null) : b,
+    setSavedBuilds((list) =>
+      list.map((s) => {
+        const build = detachTalisman(s.build, talisman)
+        return build === s.build ? s : { ...s, build }
+      }),
     )
+    setManualBuild((b) => detachTalisman(b, talisman))
     if (editing === talisman.id) setEditing(null)
   }
 
@@ -60,7 +64,8 @@ export function TalismanManager() {
       >
         <p className="mb-4 text-sm leading-relaxed text-muted">
           감정 호석처럼 직접 얻은 호석을 등록하면 <span className="text-fg">수동 세팅</span>과{' '}
-          <span className="text-fg">스킬 검색</span>에서 사용할 수 있어요. 등록한 호석은 이 브라우저에만 저장되니, 가끔{' '}
+          <span className="text-fg">스킬 검색</span>에서 사용할 수 있어요. 공유받은 세팅의 호석은 여기에 넣지 않고 그
+          세팅에만 담아요. 등록한 호석은 이 브라우저에만 저장되니, 가끔{' '}
           <BackupTabLink /> 탭에서 내 세팅과 함께 내보내 두세요.
         </p>
 

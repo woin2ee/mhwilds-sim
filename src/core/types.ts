@@ -34,10 +34,19 @@ export interface CustomTalisman {
   slots: Slot[]
 }
 
+/** 직접 입력 호석의 내용 (id 제외). 세팅 전용 호석·공유 코드·백업에 담긴다. */
+export type TalismanDraft = Omit<CustomTalisman, 'id'>
+
+/**
+ * 세팅의 호석. 제작 호석·내 호석은 id 로 가리키고, 내 호석에 없는 호석(공유받은 세팅의 호석 등)은
+ * 내용을 세팅에 그대로 담는다 ('세팅 전용 호석'). 내 호석 목록에는 실제로 가진 호석만 둔다.
+ */
+export type TalismanChoice = TalismanRef | { type: 'inline'; talisman: TalismanDraft }
+
 export interface BuildState {
   weapon: WeaponChoice | null
   armor: Record<ArmorKind, ArmorChoice | null>
-  talisman: TalismanRef | null
+  talisman: TalismanChoice | null
   /** 장비 칸별 슬롯 인덱스 → 장식주 id. 인덱스는 resolve 된 장비의 slots 순서를 따른다. */
   decorations: Record<EquipKey, (number | null)[]>
 }

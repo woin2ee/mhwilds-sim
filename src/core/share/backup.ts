@@ -1,11 +1,11 @@
 // 백업 만들기/가져오기 (DESIGN.md §8.3). 파일과 백업 코드가 같은 BackupFile 을 담는다.
 import type { GameDb } from '../../data/db'
 import type { SkillPoint, SlotLevel } from '../../data/types'
+import { linkTalisman, sameTalisman } from '../buildUpdates'
 import type { SavedBuild } from '../savedBuilds'
-import type { BuildState, CustomTalisman, Slot } from '../types'
+import type { BuildState, CustomTalisman, Slot, TalismanDraft } from '../types'
 import { decodeBuild, encodeBuild } from './codec'
-import { attachTalisman, sameTalisman } from './talisman'
-import { ShareCodeError, type BackupFile, type BackupImportResult, type TalismanDraft } from './types'
+import { ShareCodeError, type BackupFile, type BackupImportResult } from './types'
 
 const INVALID_BACKUP = '올바른 백업 파일이 아니에요'
 
@@ -52,7 +52,7 @@ export function importBackup(
   const missing: string[] = []
 
   // 1) 호석: 내용이 같은 호석은 재사용
-  let customTalismans = [...current.customTalismans]
+  const customTalismans = [...current.customTalismans]
   let addedTalismans = 0
   for (const entry of file.talismans) {
     const { draft, dropped } = restoreTalisman(db, entry)
@@ -62,7 +62,7 @@ export function importBackup(
     addedTalismans++
   }
 
-  // 2) 세팅: 이름과 내용(코드)이 같으면 건너뜀
+  // 2) 세팅: 이름과 내용(코드)이 같으면 건너뜀. 세팅의 직접 입력 호석은 같은 내 호석에 연결하고, 없으면 세팅 전용으로 둔다
   const savedBuilds = [...current.savedBuilds]
   const seen = new Set(savedBuilds.map((s) => buildKey(db, s.name, s.build, customTalismans)))
   let addedBuilds = 0
@@ -76,10 +76,8 @@ export function importBackup(
       missing.push(`세팅 '${entry.name}': 코드를 읽을 수 없음`)
       continue
     }
-    const attached = attachTalisman(decoded, customTalismans, createId)
-    customTalismans = attached.customTalismans
-    if (attached.added) addedTalismans++
-    const key = buildKey(db, entry.name, attached.build, customTalismans)
+    const build = linkTalisman(decoded.build, customTalismans)
+    const key = buildKey(db, entry.name, build, customTalismans)
     if (seen.has(key)) {
       skippedBuilds++
       continue
@@ -90,7 +88,7 @@ export function importBackup(
       id: createId(),
       name: entry.name,
       memo: entry.memo,
-      build: attached.build,
+      build,
       createdAt: entry.createdAt,
       updatedAt: entry.updatedAt,
     })
