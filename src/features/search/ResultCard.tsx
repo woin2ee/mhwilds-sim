@@ -15,10 +15,12 @@ import { ARMOR_KIND_LABEL } from '../../data/labels'
 import { ARMOR_KINDS, type ArmorKind, type SkillPoint } from '../../data/types'
 import { cx } from '../../lib/cx'
 import { useAppState } from '../../state/context'
+import { useToast } from '../../state/toast'
+import { COMPARE_MAX } from '../compare/compareRows'
 import { SaveBuildDialog } from '../saved/SaveBuildDialog'
+import { buildKey, isAlternative, type CompareEntry, type ResultVariant } from './compareList'
 import { bonusRankLabel, formatCount } from './format'
 
-type Variant = Partial<Record<ArmorKind, number>> & { talismanIndex?: number }
 type Expandable = ArmorKind | 'talisman'
 
 /** 결과 카드에서 비선호 스킬을 바로 넣고 빼는 데 쓰는 지금 검색 조건 (결과를 만든 요청과 다를 수 있다) */
@@ -28,6 +30,17 @@ export interface ExcludeControl {
   /** 지금 조건의 원하는 스킬 (꺼 둔 것 포함). 비선호로 넣을 수 없다 */
   required: readonly SkillPoint[]
   onChange: (excluded: number[]) => void
+}
+
+/** 결과 카드를 비교 목록에 넣고 빼기. 카드는 지금 보이는 세팅(대체 방어구 선택 포함)을 넣는다 */
+export interface CompareControl {
+  /** 이 세팅(buildKey)이 비교 목록에 있는지 */
+  has: (key: string) => boolean
+  /** 비교 목록이 꽉 찼는지 (COMPARE_MAX) */
+  full: boolean
+  /** 몇 번째 검색인지(seq)는 검색 화면이 채운다 */
+  add: (entry: Omit<CompareEntry, 'seq'>) => void
+  remove: (key: string) => void
 }
 
 interface ChipInfo {
@@ -240,14 +253,17 @@ export function ResultCard({
   request,
   index,
   exclude,
+  compare,
 }: {
   item: SearchResultItem
   request: SearchRequest
   index: number
   exclude: ExcludeControl
+  compare: CompareControl
 }) {
   const { db, customTalismans, openInManual } = useAppState()
-  const [variant, setVariant] = useState<Variant>({})
+  const toast = useToast()
+  const [variant, setVariant] = useState<ResultVariant>({})
   const [open, setOpen] = useState<Expandable | null>(null)
   const [saving, setSaving] = useState(false)
   /** 비선호 넣기/빼기를 연 추가 스킬 칩 */
@@ -255,6 +271,14 @@ export function ResultCard({
 
   const build = useMemo(() => resultToBuild(db, item, request, variant), [db, item, request, variant])
   const summary = useMemo(() => computeBuild(db, build, customTalismans), [db, build, customTalismans])
+  // 대체 방어구를 바꾸면 다른 세팅이라 비교 목록에 없는 것으로 보인다 (대체 방어구끼리도 비교할 수 있다)
+  const compareKey = useMemo(() => buildKey(build), [build])
+  const compared = compare.has(compareKey)
+  const toggleCompare = () => {
+    if (compared) compare.remove(compareKey)
+    else if (compare.full) toast(`비교는 ${COMPARE_MAX}개까지 할 수 있어요. 비교 목록에서 하나를 빼 주세요.`)
+    else compare.add({ key: compareKey, build, request, index, variant: isAlternative(item, variant) })
+  }
   const chips = useMemo(() => skillChips(db, summary, request), [db, summary, request])
   // 대체 방어구로 바꿔 그 스킬이 없어지면 닫힌 것으로 본다
   const pickedChip = chips.find((c) => c.skillId === picked && c.tone === 'extra')
@@ -314,8 +338,13 @@ export function ResultCard({
 
   const weapon = summary.equipment.weapon
   return (
-    // 비선호 스킬이 든 결과도 카드 자체는 똑같이 두고, 그 스킬 칩·붙은 부위·장식주에만 표시한다
-    <article className="space-y-2.5 rounded-lg border border-line bg-surface p-3">
+    // 비선호 스킬이 든 결과도 카드 자체는 똑같이 두고, 그 스킬 칩·붙은 부위·장식주에만 표시한다. 비교 목록에 넣은 카드는 강조 테두리
+    <article
+      className={cx(
+        'space-y-2.5 rounded-lg border bg-surface p-3',
+        compared ? 'border-accent ring-1 ring-accent' : 'border-line',
+      )}
+    >
       <header className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
         <span className="text-xs font-semibold text-muted">#{index}</span>
         <span className="text-sm">
@@ -326,6 +355,15 @@ export function ResultCard({
         </span>
         {item.variantCount > 1 && <Badge>방어구 조합 {formatCount(item.variantCount)}개</Badge>}
         <div className="ml-auto flex gap-1.5">
+          <Button
+            size="sm"
+            variant={compared ? 'primary' : 'ghost'}
+            aria-pressed={compared}
+            title={compared ? '비교 목록에서 빼기' : '비교 목록에 넣기'}
+            onClick={toggleCompare}
+          >
+            {compared ? '✓ 비교' : '비교'}
+          </Button>
           <Button size="sm" variant="ghost" onClick={() => setSaving(true)}>
             저장
           </Button>

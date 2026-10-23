@@ -21,11 +21,18 @@ import {
   requestKey,
   type SearchConditions,
 } from './conditions'
+import { CompareDialog } from '../compare/CompareDialog'
+import { COMPARE_MAX } from '../compare/compareRows'
+import { CompareTray } from '../compare/CompareTray'
 import { formatCount } from './format'
 import { ExcludedSkills, RequiredSkills } from './RequiredSkills'
+import type { CompareControl } from './ResultCard'
+import { ResultCompareActions } from './ResultCompareActions'
 import { ResultList } from './ResultList'
 import { TalismanCondition } from './TalismanCondition'
 import { WeaponCondition } from './WeaponCondition'
+import { compareItemOf, compareTrayItemOf } from './compareList'
+import { useCompareList } from './useCompareList'
 
 const EXCLUDE_MODE_OPTIONS: { value: ExcludeMode; label: string }[] = [
   { value: 'mark', label: '표시만' },
@@ -73,6 +80,14 @@ export function SearchPage() {
   const [error, setError] = useState<string | null>(null)
   const [pane, setPane] = useState<Pane>('conditions')
   const showPane = useScrollMemory(pane, setPane)
+  const {
+    entries: compareEntries,
+    add: addCompare,
+    remove: removeCompare,
+    clear: clearCompare,
+    relink: relinkCompare,
+  } = useCompareList(db)
+  const [comparing, setComparing] = useState(false)
 
   useEffect(
     () => () => {
@@ -98,7 +113,9 @@ export function SearchPage() {
           if (runningRef.current !== running) return
           runningRef.current = null
           setProgress(null)
-          setResult({ seq: ++seqRef.current, request: req, response })
+          const seq = ++seqRef.current
+          setResult({ seq, request: req, response })
+          relinkCompare(seq, req, response)
         })
         .catch((err: unknown) => {
           if (runningRef.current !== running) return
@@ -107,7 +124,7 @@ export function SearchPage() {
           if (!(err instanceof SearchCancelledError)) setError(err instanceof Error ? err.message : String(err))
         })
     },
-    [db],
+    [db, relinkCompare],
   )
 
   const onSortChange = (sort: SearchSort) => {
@@ -119,6 +136,20 @@ export function SearchPage() {
   const currentKey = useMemo(() => requestKey(request), [request])
   const resultKey = useMemo(() => (result ? requestKey(result.request) : null), [result])
   const stale = resultKey !== null && resultKey !== currentKey
+  const resultSeq = result?.seq ?? 0
+  const compare = useMemo<CompareControl>(
+    () => ({
+      has: (key) => compareEntries.some((e) => e.key === key),
+      full: compareEntries.length >= COMPARE_MAX,
+      add: (entry) => addCompare({ ...entry, seq: resultSeq }),
+      remove: removeCompare,
+    }),
+    [compareEntries, addCompare, removeCompare, resultSeq],
+  )
+  const compareItems = useMemo(
+    () => compareEntries.map((entry) => compareItemOf(entry, resultSeq)),
+    [compareEntries, resultSeq],
+  )
   const isWeaponSkill = (skillId: number) => db.skills.get(skillId)?.kind === 'weapon'
   const weaponSkillWithoutWeapon =
     request.useDecorations &&
@@ -297,12 +328,34 @@ export function SearchPage() {
               response={result.response}
               onSortChange={onSortChange}
               exclude={{ excluded: cond.excluded, required: cond.required, onChange: (excluded) => patch({ excluded }) }}
+              compare={compare}
             />
           </div>
         ) : (
           !running && <EmptyState>원하는 스킬을 고르고 검색을 눌러 주세요.</EmptyState>
         )}
+
+        {/* 데스크톱: 결과를 스크롤하는 동안 화면 아래에 떠 있는 비교 목록. 휴대폰·태블릿은 아래 바의 '비교' 버튼 */}
+        {compareEntries.length > 0 && (
+          <CompareTray
+            items={compareEntries.map((entry) => compareTrayItemOf(entry, resultSeq))}
+            onOpen={() => setComparing(true)}
+            onRemove={removeCompare}
+            onClear={clearCompare}
+            className="max-lg:hidden"
+          />
+        )}
       </div>
+
+      <CompareDialog
+        open={comparing && compareEntries.length > 0}
+        onClose={() => setComparing(false)}
+        title="결과 비교"
+        items={compareItems}
+        onRemove={removeCompare}
+        onClear={clearCompare}
+        renderActions={(item) => <ResultCompareActions item={item} onClose={() => setComparing(false)} />}
+      />
 
       {/* 휴대폰·태블릿: 조건/결과 전환 + 검색. 검색하면 결과 패널로 넘어간다 */}
       <MobileBar progress={running ? progress.ratio : null}>
@@ -313,6 +366,11 @@ export function SearchPage() {
           ariaLabel="보기 전환"
           className="shrink-0"
         />
+        {compareEntries.length > 0 && (
+          <Button className="shrink-0" onClick={() => setComparing(true)}>
+            비교 {compareEntries.length}
+          </Button>
+        )}
         {running ? (
           <Button className="ml-auto min-w-24" onClick={() => runningRef.current?.cancel()}>
             취소

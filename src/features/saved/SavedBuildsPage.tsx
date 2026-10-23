@@ -5,6 +5,9 @@ import { cx } from '../../lib/cx'
 import { matchesQuery } from '../../lib/text'
 import { useAppState } from '../../state/context'
 import { useToast } from '../../state/toast'
+import { CompareDialog } from '../compare/CompareDialog'
+import { COMPARE_MAX, type CompareItem } from '../compare/compareRows'
+import { CompareTray } from '../compare/CompareTray'
 import { formatDateTime } from './backupFile'
 import { BackupTabLink } from './BackupPage'
 import { BuildPreview } from './BuildPreview'
@@ -22,6 +25,9 @@ export function SavedBuildsPage() {
   const [importOpen, setImportOpen] = useState(false)
   const [shareTarget, setShareTarget] = useState<SavedBuild | null>(null)
   const [editTarget, setEditTarget] = useState<SavedBuild | null>(null)
+  /** 비교할 세팅 id (넣은 순서). 지운 세팅은 빠진다. 브라우저에 저장하지 않는다 */
+  const [compareIds, setCompareIds] = useState<string[]>([])
+  const [comparing, setComparing] = useState(false)
 
   const list = useMemo(
     () =>
@@ -31,10 +37,35 @@ export function SavedBuildsPage() {
     [savedBuilds, query],
   )
 
-  const load = (saved: SavedBuild) => {
-    if (!confirmReplace()) return
+  const compared = useMemo(
+    () => compareIds.flatMap((id) => savedBuilds.find((s) => s.id === id) ?? []),
+    [compareIds, savedBuilds],
+  )
+  const compareItems = useMemo(
+    () =>
+      compared.map(
+        (saved): CompareItem => ({
+          key: saved.id,
+          title: saved.name,
+          badges: saved.id === manualSourceId ? ['수동 세팅에서 사용 중'] : [],
+          build: saved.build,
+        }),
+      ),
+    [compared, manualSourceId],
+  )
+  const removeCompare = (id: string) => setCompareIds((ids) => ids.filter((x) => x !== id))
+  const toggleCompare = (saved: SavedBuild) => {
+    if (compared.some((s) => s.id === saved.id)) removeCompare(saved.id)
+    else if (compared.length >= COMPARE_MAX) toast(`비교는 ${COMPARE_MAX}개까지 할 수 있어요. 비교 목록에서 하나를 빼 주세요.`)
+    // 지운 세팅의 id 는 이때 정리한다
+    else setCompareIds(() => [...compared.map((s) => s.id), saved.id])
+  }
+
+  const load = (saved: SavedBuild): boolean => {
+    if (!confirmReplace()) return false
     openInManual(saved.build, saved.id)
     toast(`수동 세팅에서 열었어요 · ${saved.name}`)
+    return true
   }
   const duplicate = (saved: SavedBuild) => {
     setSavedBuilds((all) => [newSavedBuild(saved.build, `${saved.name} (복사)`.slice(0, NAME_MAX), saved.memo), ...all])
@@ -79,12 +110,15 @@ export function SavedBuildsPage() {
       ) : list.length === 0 ? (
         <EmptyState>‘{query}’에 맞는 세팅이 없어요.</EmptyState>
       ) : (
-        <div className="grid gap-3 lg:grid-cols-2">
+        // grid-cols-1(minmax(0,1fr)): 칸 폭을 화면에 묶어야 긴 이름(truncate)이 카드를 화면 밖으로 밀지 않는다
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
           {list.map((saved) => (
             <SavedBuildCard
               key={saved.id}
               saved={saved}
               active={saved.id === manualSourceId}
+              compared={compareIds.includes(saved.id)}
+              onToggleCompare={() => toggleCompare(saved)}
               onLoad={() => load(saved)}
               onShare={() => setShareTarget(saved)}
               onEdit={() => setEditTarget(saved)}
@@ -94,6 +128,42 @@ export function SavedBuildsPage() {
           ))}
         </div>
       )}
+
+      {/* 스크롤하는 동안 화면 아래에 떠 있는 비교 목록 (이 화면은 아래 조작 바가 없어 모든 폭에서 쓴다) */}
+      {compared.length > 0 && (
+        <CompareTray
+          items={compared.map((saved) => ({ key: saved.id, label: saved.name }))}
+          onOpen={() => setComparing(true)}
+          onRemove={removeCompare}
+          onClear={() => setCompareIds([])}
+        />
+      )}
+      <CompareDialog
+        open={comparing && compared.length > 0}
+        onClose={() => setComparing(false)}
+        title="세팅 비교"
+        items={compareItems}
+        onRemove={removeCompare}
+        onClear={() => setCompareIds([])}
+        renderActions={(item) => {
+          const saved = compared.find((s) => s.id === item.key)
+          return (
+            saved && (
+              <Button
+                size="sm"
+                variant="primary"
+                className="max-sm:w-full"
+                onClick={() => {
+                  // 수동 세팅 탭으로 옮겨 가므로 닫는다 (바꿀지 묻는 창에서 취소하면 그대로 둔다)
+                  if (load(saved)) setComparing(false)
+                }}
+              >
+                불러오기
+              </Button>
+            )
+          )
+        }}
+      />
 
       <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} />
       <EditSavedDialog target={editTarget} onClose={() => setEditTarget(null)} />
@@ -107,6 +177,8 @@ export function SavedBuildsPage() {
 function SavedBuildCard({
   saved,
   active,
+  compared,
+  onToggleCompare,
   onLoad,
   onShare,
   onEdit,
@@ -115,6 +187,9 @@ function SavedBuildCard({
 }: {
   saved: SavedBuild
   active: boolean
+  /** 비교 목록에 넣은 세팅 */
+  compared: boolean
+  onToggleCompare: () => void
   onLoad: () => void
   onShare: () => void
   onEdit: () => void
@@ -122,7 +197,12 @@ function SavedBuildCard({
   onDelete: () => void
 }) {
   return (
-    <article className={cx('space-y-3 rounded-lg border bg-surface p-3', active ? 'border-accent/60' : 'border-line')}>
+    <article
+      className={cx(
+        'space-y-3 rounded-lg border bg-surface p-3',
+        compared ? 'border-accent ring-1 ring-accent' : active ? 'border-accent/60' : 'border-line',
+      )}
+    >
       <header className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="flex items-center gap-2 text-sm font-semibold">
@@ -131,9 +211,20 @@ function SavedBuildCard({
           </h3>
           {saved.memo && <p className="mt-0.5 text-xs whitespace-pre-line text-muted">{saved.memo}</p>}
         </div>
-        <span className="shrink-0 text-[11px] text-muted" title={`만든 날 ${formatDateTime(saved.createdAt)}`}>
-          {formatDateTime(saved.updatedAt)}
-        </span>
+        <div className="flex shrink-0 items-center gap-2">
+          <span className="text-[11px] text-muted" title={`만든 날 ${formatDateTime(saved.createdAt)}`}>
+            {formatDateTime(saved.updatedAt)}
+          </span>
+          <Button
+            size="sm"
+            variant={compared ? 'primary' : 'ghost'}
+            aria-pressed={compared}
+            title={compared ? '비교 목록에서 빼기' : '비교 목록에 넣기'}
+            onClick={onToggleCompare}
+          >
+            {compared ? '✓ 비교' : '비교'}
+          </Button>
+        </div>
       </header>
       <BuildPreview build={saved.build} maxSkills={10} />
       <div className="flex flex-wrap gap-1.5">

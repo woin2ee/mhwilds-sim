@@ -3,7 +3,7 @@ import { Button, EmptyState, Segmented } from '../../components/ui'
 import type { SearchRequest, SearchResponse, SearchResultItem, SearchSort } from '../../core/search/types'
 import { useDb } from '../../state/context'
 import { formatCount } from './format'
-import { ResultCard, type ExcludeControl } from './ResultCard'
+import { ResultCard, type CompareControl, type ExcludeControl } from './ResultCard'
 
 const PAGE_SIZE = 30
 const SORT_OPTIONS: { value: SearchSort; label: string }[] = [
@@ -19,16 +19,18 @@ function PagedCards({
   items,
   request,
   exclude,
+  compare,
 }: {
   items: SearchResultItem[]
   request: SearchRequest
   exclude: ExcludeControl
+  compare: CompareControl
 }) {
   const [shown, setShown] = useState(PAGE_SIZE)
   return (
     <div className="space-y-2.5">
       {items.slice(0, shown).map((item, i) => (
-        <ResultCard key={item.id} item={item} request={request} index={i + 1} exclude={exclude} />
+        <ResultCard key={item.id} item={item} request={request} index={i + 1} exclude={exclude} compare={compare} />
       ))}
       {items.length > shown && (
         <Button className="w-full" onClick={() => setShown((n) => n + PAGE_SIZE)}>
@@ -61,12 +63,14 @@ export function ResultList({
   response,
   onSortChange,
   exclude,
+  compare,
 }: {
   request: SearchRequest
   response: SearchResponse
   onSortChange: (sort: SearchSort) => void
   /** 추가 스킬 칩에서 비선호 스킬을 넣고 뺄 때 쓰는 지금 검색 조건 */
   exclude: ExcludeControl
+  compare: CompareControl
 }) {
   const db = useDb()
   const { items } = response
@@ -114,7 +118,7 @@ export function ResultList({
         </p>
       )}
 
-      <PagedCards items={items} request={request} exclude={exclude} />
+      <PagedCards items={items} request={request} exclude={exclude} compare={compare} />
     </div>
   )
 }
