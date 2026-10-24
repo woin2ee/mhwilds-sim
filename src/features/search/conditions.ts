@@ -5,7 +5,14 @@ import { hr100ArmorIds, isHr100Talisman } from '../../core/hunterRank'
 import type { ExcludeMode, SearchRequest, SearchSort, SearchTalisman } from '../../core/search/types'
 import type { CustomTalisman, TalismanRef, WeaponChoice } from '../../core/types'
 import type { GameDb } from '../../data/db'
-import { WEAPON_KINDS, type FixedTalisman, type SkillPoint, type SlotLevel, type WeaponKind } from '../../data/types'
+import {
+  WEAPON_KINDS,
+  type FixedTalisman,
+  type SkillKind,
+  type SkillPoint,
+  type SlotLevel,
+  type WeaponKind,
+} from '../../data/types'
 
 export type WeaponMode = 'none' | 'db' | 'custom'
 export type TalismanMode = 'auto' | 'custom-only' | 'fixed' | 'none'
@@ -82,6 +89,53 @@ export function normalizeConditions(stored: Partial<SearchConditions>): SearchCo
   return cond
 }
 
+/**
+ * 원하는 스킬 목록은 스킬 종류로 묶어 스킬 선택 상자(SkillSelect)와 같은 방어구 → 무기 → 시리즈 → 그룹 순서로 보여 주고,
+ * 순서는 묶음 안에서만 바꾼다
+ */
+export const REQUIRED_KIND_ORDER: readonly SkillKind[] = ['armor', 'weapon', 'set', 'group']
+
+/** 묶음 자리. 데이터에 없는 스킬은 맨 뒤 */
+function groupRank(db: GameDb, skillId: number): number {
+  const skill = db.skills.get(skillId)
+  return skill ? REQUIRED_KIND_ORDER.indexOf(skill.kind) : REQUIRED_KIND_ORDER.length
+}
+
+/** 묶음 순서로 늘어놓는다. 묶음 안에서는 원래 순서를 지킨다 (정렬은 안정적) */
+export function sortRequired<T extends SkillPoint>(db: GameDb, required: readonly T[]): T[] {
+  return [...required].sort((a, b) => groupRank(db, a.skillId) - groupRank(db, b.skillId))
+}
+
+/** skillId 를 같은 묶음 안의 to 번째로 옮긴다. 묶음 밖 자리는 묶음 처음·끝으로 자른다 */
+export function moveRequired<T extends SkillPoint>(
+  db: GameDb,
+  required: readonly T[],
+  skillId: number,
+  to: number,
+): T[] {
+  const sorted = sortRequired(db, required)
+  const from = sorted.findIndex((r) => r.skillId === skillId)
+  if (from < 0) return sorted
+  const rank = groupRank(db, skillId)
+  const start = sorted.findIndex((r) => groupRank(db, r.skillId) === rank)
+  const count = sorted.filter((r) => groupRank(db, r.skillId) === rank).length
+  const [moved] = sorted.splice(from, 1)
+  sorted.splice(start + Math.max(0, Math.min(count - 1, to)), 0, moved)
+  return sorted
+}
+
+/**
+ * 결과를 만든 요청의 원하는 스킬을 order(지금 조건) 순서로 늘어놓는다. 순서만 바꾸면 다시 검색하지 않아도 되므로
+ * (requestKey) 결과 칩이 바로 지금 순서를 따르게 한다. order 에 없는 스킬은 원래 순서대로 맨 뒤.
+ * 순서가 이미 같으면 같은 요청 객체를 돌려준다 (결과 카드가 다시 계산하지 않게)
+ */
+export function withRequiredOrder(request: SearchRequest, order: readonly SkillPoint[]): SearchRequest {
+  const index = new Map(order.map((r, i) => [r.skillId, i]))
+  const rank = (r: SkillPoint) => index.get(r.skillId) ?? order.length
+  const required = [...request.required].sort((a, b) => rank(a) - rank(b))
+  return required.every((r, i) => r === request.required[i]) ? request : { ...request, required }
+}
+
 export function weaponChoiceOf(db: GameDb, cond: SearchConditions): WeaponChoice | null {
   // 거극 아티어 스킬은 거극 아티어 무기나 슬롯 직접 지정일 때만 담는다 (gogmaSkillsOf 가 거른다)
   const gogma = { setSkillId: cond.weaponSetSkillId ?? undefined, groupSkillId: cond.weaponGroupSkillId ?? undefined }
@@ -144,8 +198,9 @@ export function buildRequest(
     if (resolved) talismans.push({ ref, skills: resolved.skills, slots: resolved.slots })
   }
   return {
-    // off 를 떼어 내야 껐다 다시 켠 요청이 처음 요청과 같은 키가 된다
-    required: cond.required
+    // off 를 떼어 내야 껐다 다시 켠 요청이 처음 요청과 같은 키가 된다.
+    // 순서는 원하는 스킬 목록과 같은 묶음 순서 (결과 카드의 원하는 스킬 칩·세팅 기본 이름이 따른다)
+    required: sortRequired(db, cond.required)
       .filter((r) => !r.off && db.skills.has(r.skillId) && r.level > 0)
       .map(({ skillId, level }) => ({ skillId, level })),
     excludedSkills: cond.excluded.filter((id) => db.skills.has(id)),
@@ -165,7 +220,8 @@ export function buildRequest(
   }
 }
 
-/** 정렬만 다른 요청인지 비교할 때 쓰는 키 */
+/** 정렬이나 원하는 스킬 순서만 다른 요청인지 비교할 때 쓰는 키 (원하는 스킬 순서는 결과 칩 순서만 바꾼다) */
 export function requestKey(request: SearchRequest): string {
-  return JSON.stringify({ ...request, sort: undefined })
+  const required = [...request.required].sort((a, b) => a.skillId - b.skillId)
+  return JSON.stringify({ ...request, required, sort: undefined })
 }

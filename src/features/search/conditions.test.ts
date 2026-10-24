@@ -2,8 +2,18 @@ import { describe, expect, it } from 'vitest'
 import { isGogmaArtian } from '../../core/gogmaArtian'
 import { hr100ArmorIds, isHr100Talisman } from '../../core/hunterRank'
 import type { CustomTalisman } from '../../core/types'
+import type { SkillPoint } from '../../data/types'
 import { loadTestDb, skillIdByName } from '../../test/testDb'
-import { DEFAULT_CONDITIONS, buildRequest, normalizeConditions, requestKey, type SearchConditions } from './conditions'
+import {
+  DEFAULT_CONDITIONS,
+  buildRequest,
+  moveRequired,
+  normalizeConditions,
+  requestKey,
+  sortRequired,
+  withRequiredOrder,
+  type SearchConditions,
+} from './conditions'
 
 const db = loadTestDb()
 const myTalisman: CustomTalisman = {
@@ -147,5 +157,52 @@ describe('검색 조건 → SearchRequest', () => {
     expect(request(true).required).toEqual([{ skillId: crit, level: 2 }])
     expect(requestKey(request(true))).not.toBe(requestKey(request()))
     expect(requestKey(request(false))).toBe(requestKey(request()))
+  })
+})
+
+describe('원하는 스킬 묶음·순서', () => {
+  const weakness = skillIdByName(db, '약점 특효') // 방어구 스킬
+  const evade = skillIdByName(db, '회피 성능') // 방어구 스킬
+  const constitution = skillIdByName(db, '체술') // 방어구 스킬
+  const attack = skillIdByName(db, '공격') // 무기 스킬
+  const crit = skillIdByName(db, '간파') // 무기 스킬
+  const hunger = skillIdByName(db, '쇄인룡의 굶주림') // 시리즈 스킬
+  const lordsSoul = skillIdByName(db, '주인의 혼') // 그룹 스킬
+  const points = (...ids: number[]) => ids.map((skillId) => ({ skillId, level: 1 }))
+  const ids = (list: readonly SkillPoint[]) => list.map((p) => p.skillId)
+
+  it('방어구 → 무기 → 시리즈 → 그룹 순서로 묶고 묶음 안에서는 넣은 순서를 지킨다 (요청도 같은 순서)', () => {
+    const mixed = points(attack, lordsSoul, weakness, crit, hunger, evade, 999999)
+    const grouped = [weakness, evade, attack, crit, hunger, lordsSoul]
+    // 데이터에 없는 스킬은 맨 뒤
+    expect(ids(sortRequired(db, mixed))).toEqual([...grouped, 999999])
+    expect(ids(buildRequest(db, cond({ required: mixed }), []).required)).toEqual(grouped)
+  })
+
+  it('같은 묶음 안에서만 옮기고, 묶음 밖 자리는 묶음 처음·끝으로 자른다', () => {
+    // 저장값이 묶음 순서가 아니어도 묶음 순서로 정리해서 옮긴다
+    const list = points(attack, weakness, crit, evade, constitution)
+    expect(ids(moveRequired(db, list, constitution, 0))).toEqual([constitution, weakness, evade, attack, crit])
+    expect(ids(moveRequired(db, list, weakness, 1))).toEqual([evade, weakness, constitution, attack, crit])
+    expect(ids(moveRequired(db, list, attack, 1))).toEqual([weakness, evade, constitution, crit, attack])
+    expect(ids(moveRequired(db, list, weakness, 9))).toEqual([evade, constitution, weakness, attack, crit])
+    expect(ids(moveRequired(db, list, crit, -1))).toEqual([weakness, evade, constitution, crit, attack])
+    // 꺼 둔 표시는 그대로 따라간다
+    const off = moveRequired(db, [{ skillId: weakness, level: 5, off: true }, ...points(evade)], weakness, 1)
+    expect(off).toEqual([{ skillId: evade, level: 1 }, { skillId: weakness, level: 5, off: true }])
+  })
+
+  it('원하는 스킬 순서만 다른 요청은 같은 키이고, 결과 요청을 지금 순서로 늘어놓는다', () => {
+    const before = buildRequest(db, cond({ required: points(weakness, evade, attack) }), [])
+    const after = buildRequest(db, cond({ required: points(evade, weakness, attack) }), [])
+    expect(requestKey(after)).toBe(requestKey(before))
+    expect(ids(withRequiredOrder(before, after.required).required)).toEqual([evade, weakness, attack])
+    // 지금 조건에 없는 스킬은 원래 순서대로 맨 뒤
+    expect(ids(withRequiredOrder(before, points(attack)).required)).toEqual([attack, weakness, evade])
+    // 순서가 같으면 같은 요청 객체 (결과 카드가 다시 계산하지 않게)
+    expect(withRequiredOrder(before, before.required)).toBe(before)
+    // 레벨이 다르면 다른 키
+    const higher = buildRequest(db, cond({ required: [...points(evade, weakness), { skillId: attack, level: 2 }] }), [])
+    expect(requestKey(higher)).not.toBe(requestKey(before))
   })
 })

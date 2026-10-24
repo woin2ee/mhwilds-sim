@@ -19,6 +19,7 @@ import {
   isStoredConditions,
   normalizeConditions,
   requestKey,
+  withRequiredOrder,
   type SearchConditions,
 } from './conditions'
 import { CompareDialog } from '../compare/CompareDialog'
@@ -136,6 +137,12 @@ export function SearchPage() {
   const currentKey = useMemo(() => requestKey(request), [request])
   const resultKey = useMemo(() => (result ? requestKey(result.request) : null), [result])
   const stale = resultKey !== null && resultKey !== currentKey
+  // 원하는 스킬 순서만 바꾸면 다시 검색하지 않아도 되므로(requestKey) 결과 칩이 바로 지금 순서를 따르게 한다
+  // (순서가 같으면 결과 요청을 그대로 넘겨 결과 카드가 다시 계산하지 않는다)
+  const shownRequest = useMemo(
+    () => result && withRequiredOrder(result.request, request.required),
+    [result, request.required],
+  )
   const resultSeq = result?.seq ?? 0
   const compare = useMemo<CompareControl>(
     () => ({
@@ -324,7 +331,7 @@ export function SearchPage() {
           <div className={running ? 'pointer-events-none opacity-60' : undefined}>
             <ResultList
               key={result.seq}
-              request={result.request}
+              request={shownRequest ?? result.request}
               response={result.response}
               onSortChange={onSortChange}
               exclude={{ excluded: cond.excluded, required: cond.required, onChange: (excluded) => patch({ excluded }) }}
