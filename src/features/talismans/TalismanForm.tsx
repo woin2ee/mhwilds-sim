@@ -17,11 +17,14 @@ function normalizeSlots(slots: readonly Slot[]): Slot[] {
 export function TalismanForm({
   initial,
   defaultName,
+  namePlaceholder = defaultName,
   onSave,
   onCancel,
 }: {
   initial?: CustomTalisman
+  /** 이름을 비워 두면 쓰는 이름 */
   defaultName: string
+  namePlaceholder?: string
   onSave: (draft: TalismanDraft) => void
   onCancel: () => void
 }) {
@@ -55,7 +58,7 @@ export function TalismanForm({
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder={defaultName}
+            placeholder={namePlaceholder}
             maxLength={40}
             className="h-9 rounded-md border border-line bg-surface-2 px-2.5 text-sm text-fg placeholder:text-muted focus:border-accent focus:outline-none pointer-coarse:h-10"
           />

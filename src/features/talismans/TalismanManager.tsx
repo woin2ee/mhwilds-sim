@@ -8,6 +8,7 @@ import { newId } from '../../lib/id'
 import { useAppState, useDb } from '../../state/context'
 import { detachTalisman, fitDecorations } from '../../core/buildUpdates'
 import { BackupTabLink } from '../saved/BackupPage'
+import { PhotoImportDialog } from './PhotoImportDialog'
 import { TalismanForm } from './TalismanForm'
 
 /** 내 호석(감정 호석 등) 등록·수정·삭제. 실제로 가진 호석만 둔다 (공유받은 세팅의 호석은 그 세팅에만 담긴다) */
@@ -15,6 +16,7 @@ export function TalismanManager() {
   const { db, customTalismans, setCustomTalismans, manualBuild, setManualBuild, savedBuilds, setSavedBuilds } =
     useAppState()
   const [editing, setEditing] = useState<string | 'new' | null>(null)
+  const [photoOpen, setPhotoOpen] = useState(false)
 
   const add = (draft: TalismanDraft) => {
     setCustomTalismans((list) => [...list, { ...draft, id: newId() }])
@@ -55,17 +57,23 @@ export function TalismanManager() {
       <Panel
         title={`내 호석 ${customTalismans.length}개`}
         actions={
-          editing !== 'new' && (
-            <Button size="sm" variant="primary" onClick={() => setEditing('new')}>
-              + 호석 추가
+          <>
+            <Button size="sm" onClick={() => setPhotoOpen(true)}>
+              사진으로 추가
             </Button>
-          )
+            {editing !== 'new' && (
+              <Button size="sm" variant="primary" onClick={() => setEditing('new')}>
+                + 호석 추가
+              </Button>
+            )}
+          </>
         }
       >
         <p className="mb-4 text-sm leading-relaxed text-muted">
           감정 호석처럼 직접 얻은 호석을 등록하면 <span className="text-fg">수동 세팅</span>과{' '}
-          <span className="text-fg">스킬 검색</span>에서 사용할 수 있어요. 공유받은 세팅의 호석은 여기에 넣지 않고 그
-          세팅에만 담아요. 등록한 호석은 이 브라우저에만 저장되니, 가끔{' '}
+          <span className="text-fg">스킬 검색</span>에서 사용할 수 있어요. 게임 스크린샷이 있으면{' '}
+          <span className="text-fg">사진으로 추가</span>로 스킬·슬롯을 읽어 한 번에 넣을 수 있어요. 공유받은 세팅의
+          호석은 여기에 넣지 않고 그 세팅에만 담아요. 등록한 호석은 이 브라우저에만 저장되니, 가끔{' '}
           <BackupTabLink /> 탭에서 내 세팅과 함께 내보내 두세요.
         </p>
 
@@ -76,7 +84,9 @@ export function TalismanManager() {
         )}
 
         {customTalismans.length === 0 ? (
-          editing !== 'new' && <EmptyState>등록한 호석이 없습니다. '+ 호석 추가'로 등록해 보세요.</EmptyState>
+          editing !== 'new' && (
+            <EmptyState>등록한 호석이 없습니다. '사진으로 추가'나 '+ 호석 추가'로 등록해 보세요.</EmptyState>
+          )
         ) : (
           <ul className="divide-y divide-line">
             {customTalismans.map((talisman, index) => (
@@ -101,6 +111,7 @@ export function TalismanManager() {
           </ul>
         )}
       </Panel>
+      <PhotoImportDialog open={photoOpen} onClose={() => setPhotoOpen(false)} />
     </div>
   )
 }

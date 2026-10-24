@@ -6,7 +6,7 @@
 - **스킬 검색**: 원하는 스킬을 만족하는 방어구 조합 검색
 - **비선호 스킬 제외**: 원하지 않는 스킬이 붙은 조합을 빼거나 결과 하단으로 분리
 - **내 세팅**: 세팅을 브라우저에 저장해 목록으로 관리, 공유 링크·코드로 주고받기, 백업 내보내기/가져오기(복사·붙여넣기용 백업 코드 또는 파일)
-- **내 호석**: 감정 호석을 등록해 세팅·검색에 사용
+- **내 호석**: 감정 호석을 등록해 세팅·검색에 사용 (게임 스크린샷을 올리면 스킬·슬롯을 읽어 등록)
 
 설계와 게임 규칙 정리는 [docs/DESIGN.md](docs/DESIGN.md) 를 참고하세요.
 
@@ -33,6 +33,8 @@ npm run data:update  # MHDB 에서 게임 데이터 갱신 → public/data/wilds
 - 게임 데이터: [MHDB](https://docs.wilds.mhdb.io) — 게임 파일에서 추출한 데이터
   ([mhdb-wilds-data](https://github.com/LartTyler/mhdb-wilds-data), GPL-3.0).
   `scripts/build-data.mjs` 가 시뮬레이터에 쓰는 값만 골라 `public/data/wilds.json` 으로 변환합니다.
+- 스크린샷 글자 인식: [tesseract.js](https://github.com/naptha/tesseract.js)(Apache-2.0)와 한국어 학습 데이터
+  ([tessdata](https://github.com/tesseract-ocr/tessdata_best), Apache-2.0)를 사이트에 함께 올려 브라우저 안에서만 씁니다.
 - 이 사이트는 캡콤의 지식재산을 이용한 비공식 팬메이드(2차 창작) 도구이며, 캡콤과 관련이 없습니다.
   [캡콤 2차 창작 가이드라인](https://www.capcom-games.com/ko-kr/fan-content-guidelines/)에 따라
   영리 목적으로 운영하지 않으며, 게임에서 추출한 이미지·아이콘·로고를 사용하지 않습니다.

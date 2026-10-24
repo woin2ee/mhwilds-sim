@@ -41,7 +41,11 @@ export function Dialog({
   return (
     <dialog
       ref={ref}
-      onClose={onClose}
+      // React 는 close 이벤트도 컴포넌트 트리로 올려 보내서, 안에 든 다른 <dialog>(터치 기기의 선택 시트 등)가 닫혀도
+      // 여기로 온다. 자기가 닫힐 때만 받는다
+      onClose={(e) => {
+        if (e.target === ref.current) onClose()
+      }}
       // 바깥(배경) 클릭으로 닫기
       onClick={(e) => {
         if (e.target === ref.current) onClose()
