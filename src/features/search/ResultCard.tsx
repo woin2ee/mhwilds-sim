@@ -10,16 +10,16 @@ import type { SearchRequest, SearchResultItem } from '../../core/search/types'
 import { armorDefense, canTranscend } from '../../core/transcend'
 import type { EquipKey } from '../../core/types'
 import { nameOf, type GameDb } from '../../data/db'
-import { skillName, skillPointsText, skillTooltip, talismanName } from '../../data/format'
+import { skillName, skillPointsText, talismanName } from '../../data/format'
 import { ARMOR_KIND_LABEL } from '../../data/labels'
-import { ARMOR_KINDS, type ArmorKind, type SkillPoint } from '../../data/types'
+import { ARMOR_KINDS, type ArmorKind, type Skill, type SkillPoint } from '../../data/types'
 import { cx } from '../../lib/cx'
 import { useAppState } from '../../state/context'
 import { useToast } from '../../state/toast'
 import { COMPARE_MAX } from '../compare/compareRows'
 import { SaveBuildDialog } from '../saved/SaveBuildDialog'
 import { buildKey, isAlternative, type CompareEntry, type ResultVariant } from './compareList'
-import { bonusRankLabel, formatCount } from './format'
+import { formatCount } from './format'
 
 type Expandable = ArmorKind | 'talisman'
 
@@ -49,12 +49,14 @@ interface ChipInfo {
   level: number
   maxLevel?: number
   tone: SkillTone
-  title?: string
+  /** 시리즈·그룹 스킬의 부위 수 */
+  pieces?: number
 }
 
 /** 요구 스킬 → 비선호 → 시리즈/그룹 → 그 외 순서의 스킬 칩 */
 function skillChips(db: GameDb, summary: BuildSummary, request: SearchRequest): ChipInfo[] {
   const levels = activeSkillLevels(summary)
+  const pieces = new Map(summary.bonuses.map((b) => [b.skillId, b.pieces]))
   const requiredIds = new Set(request.required.map((r) => r.skillId))
   const unwanted = new Set(unwantedSkillsOf(summary, request.excludedSkills))
   const required: ChipInfo[] = []
@@ -69,7 +71,7 @@ function skillChips(db: GameDb, summary: BuildSummary, request: SearchRequest): 
       level,
       maxLevel: bonus ? undefined : skill.maxLevel,
       tone: level >= r.level ? 'required' : 'missing',
-      title: bonus ? bonusRankLabel(skill, level) : skillTooltip(skill, level),
+      pieces: pieces.get(r.skillId),
     })
   }
   const unwantedChips: ChipInfo[] = []
@@ -77,20 +79,13 @@ function skillChips(db: GameDb, summary: BuildSummary, request: SearchRequest): 
   for (const s of summary.skills) {
     if (requiredIds.has(s.skillId) || s.level === 0) continue
     const chip: ChipInfo = { skillId: s.skillId, name: skillName(db, s.skillId), level: s.level, maxLevel: s.maxLevel, tone: 'extra' }
-    if (unwanted.has(s.skillId)) unwantedChips.push({ ...chip, tone: 'unwanted', title: '비선호 스킬' })
+    if (unwanted.has(s.skillId)) unwantedChips.push({ ...chip, tone: 'unwanted' })
     else extra.push(chip)
   }
   const bonuses: ChipInfo[] = []
   for (const b of summary.bonuses) {
     if (requiredIds.has(b.skillId) || b.level === 0) continue
-    const rank = db.skills.get(b.skillId)?.ranks.find((r) => r.level === b.level)
-    bonuses.push({
-      skillId: b.skillId,
-      name: skillName(db, b.skillId),
-      level: b.level,
-      tone: 'bonus',
-      title: rank?.name ? `${nameOf(rank.name)} (${b.pieces}부위)` : undefined,
-    })
+    bonuses.push({ skillId: b.skillId, name: skillName(db, b.skillId), level: b.level, tone: 'bonus', pieces: b.pieces })
   }
   return [...required, ...unwantedChips, ...bonuses, ...extra]
 }
@@ -206,15 +201,61 @@ function AlternativeList({
   )
 }
 
-/** 추가 스킬 칩을 누르면 칩 목록 아래에 뜨는 비선호 스킬 넣기/빼기 */
+/** 스킬 칩을 누르면 칩 목록 아래에 뜨는 스킬 효과. 추가 스킬(회색)이면 비선호 스킬 넣기/빼기가 아래에 붙는다 */
+function SkillDetail({
+  chip,
+  skill,
+  request,
+  exclude,
+}: {
+  chip: ChipInfo
+  skill: Skill
+  request: SearchRequest
+  exclude: ExcludeControl
+}) {
+  const rank = skill.ranks.find((r) => r.level === chip.level)
+  const bonus = skill.kind === 'set' || skill.kind === 'group'
+  return (
+    <div className="space-y-1.5 rounded-md border border-line bg-surface-2 px-2.5 py-1.5 text-xs">
+      {bonus ? (
+        // 시리즈·그룹 스킬은 스킬 설명이 없고 단계마다 이름·효과가 있다
+        <div className="space-y-0.5">
+          <p>
+            <span className="font-medium">{chip.name}</span>
+            <span className="text-muted"> · </span>
+            {rank ? (rank.name ? nameOf(rank.name) : `${chip.level}단계`) : '미발동'}
+            {chip.pieces !== undefined && <span className="text-muted"> ({chip.pieces}부위)</span>}
+          </p>
+          {rank?.description && <p>{rank.description}</p>}
+        </div>
+      ) : (
+        // 레벨 효과만으로는 뜻이 안 통하는 스킬이 많아(예: 완충 'Lv1 스킬 효과 발동') 스킬 설명을 먼저 둔다
+        <div className="space-y-0.5">
+          <p>
+            <span className="font-medium">{chip.name}</span>
+            {skill.description && <span className="text-muted"> · </span>}
+            {skill.description}
+          </p>
+          {rank?.description && rank.description !== skill.description && (
+            <p>
+              <span className="text-muted">Lv{chip.level}</span> {rank.description}
+            </p>
+          )}
+        </div>
+      )}
+      {chip.tone === 'unwanted' && <p className="text-muted">비선호 스킬이에요.</p>}
+      {chip.tone === 'extra' && <UnwantedAction skillId={chip.skillId} request={request} exclude={exclude} />}
+    </div>
+  )
+}
+
+/** 추가 스킬의 효과 아래에 붙는 비선호 스킬 넣기/빼기 */
 function UnwantedAction({
   skillId,
-  name,
   request,
   exclude,
 }: {
   skillId: number
-  name: string
   request: SearchRequest
   exclude: ExcludeControl
 }) {
@@ -229,11 +270,8 @@ function UnwantedAction({
   const add = () => exclude.onChange([...exclude.excluded, skillId])
   const remove = () => exclude.onChange(exclude.excluded.filter((id) => id !== skillId))
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-md border border-line bg-surface-2 px-2.5 py-1.5 text-xs">
-      <p className="min-w-0 flex-1">
-        <span className="font-medium">{name}</span>
-        <span className="text-muted"> · {message}</span>
-      </p>
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-line pt-1.5">
+      <p className="min-w-0 flex-1 text-muted">{message}</p>
       {!required &&
         (excluded ? (
           <Button size="sm" variant="ghost" onClick={remove}>
@@ -266,7 +304,7 @@ export function ResultCard({
   const [variant, setVariant] = useState<ResultVariant>({})
   const [open, setOpen] = useState<Expandable | null>(null)
   const [saving, setSaving] = useState(false)
-  /** 비선호 넣기/빼기를 연 추가 스킬 칩 */
+  /** 효과를 연 스킬 칩 */
   const [picked, setPicked] = useState<number | null>(null)
 
   const build = useMemo(() => resultToBuild(db, item, request, variant), [db, item, request, variant])
@@ -281,7 +319,8 @@ export function ResultCard({
   }
   const chips = useMemo(() => skillChips(db, summary, request), [db, summary, request])
   // 대체 방어구로 바꿔 그 스킬이 없어지면 닫힌 것으로 본다
-  const pickedChip = chips.find((c) => c.skillId === picked && c.tone === 'extra')
+  const pickedChip = chips.find((c) => c.skillId === picked)
+  const pickedSkill = pickedChip && db.skills.get(pickedChip.skillId)
   const unwanted = useMemo(() => unwantedSources(summary, request.excludedSkills), [summary, request.excludedSkills])
   const unwantedText = (key: EquipKey) => {
     const points = unwanted.byEquip.get(key)
@@ -442,7 +481,8 @@ export function ResultCard({
 
       <div className="flex flex-wrap gap-1 pointer-coarse:gap-1.5">
         {chips.map((chip) => {
-          // 추가 스킬(회색)은 눌러서 비선호 스킬에 넣고 뺀다. 넣은 칩은 다시 검색할 때까지 빨강으로 둔다
+          // 칩을 누르면 아래에 스킬 효과가 열린다 (툴팁은 휴대폰에서 못 본다). 추가 스킬(회색)은 거기서 비선호 스킬에
+          // 넣고 빼며, 넣은 칩은 다시 검색할 때까지 빨강으로 둔다
           const extra = chip.tone === 'extra'
           const pending =
             extra && exclude.excluded.includes(chip.skillId) && !request.excludedSkills.includes(chip.skillId)
@@ -453,16 +493,16 @@ export function ResultCard({
               level={chip.level}
               maxLevel={chip.maxLevel}
               tone={pending ? 'unwanted' : chip.tone}
-              title={extra ? '눌러서 비선호 스킬에 넣거나 빼기' : chip.title}
-              onClick={extra ? () => setPicked((id) => (id === chip.skillId ? null : chip.skillId)) : undefined}
-              expanded={extra ? picked === chip.skillId : undefined}
+              title={extra ? '눌러서 스킬 효과 보기 · 비선호 스킬에 넣거나 빼기' : '눌러서 스킬 효과 보기'}
+              onClick={() => setPicked((id) => (id === chip.skillId ? null : chip.skillId))}
+              expanded={picked === chip.skillId}
             />
           )
         })}
       </div>
 
-      {pickedChip && (
-        <UnwantedAction skillId={pickedChip.skillId} name={pickedChip.name} request={request} exclude={exclude} />
+      {pickedChip && pickedSkill && (
+        <SkillDetail chip={pickedChip} skill={pickedSkill} request={request} exclude={exclude} />
       )}
 
       {saving && (
