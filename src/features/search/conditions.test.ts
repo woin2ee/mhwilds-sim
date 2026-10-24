@@ -2,16 +2,19 @@ import { describe, expect, it } from 'vitest'
 import { isGogmaArtian } from '../../core/gogmaArtian'
 import { hr100ArmorIds, isHr100Talisman } from '../../core/hunterRank'
 import type { CustomTalisman } from '../../core/types'
-import type { SkillPoint } from '../../data/types'
+import type { SkillKind, SkillPoint } from '../../data/types'
 import { loadTestDb, skillIdByName } from '../../test/testDb'
 import {
   DEFAULT_CONDITIONS,
+  applyRequiredLayout,
   buildRequest,
-  moveRequired,
   normalizeConditions,
   requestKey,
+  requiredLayout,
   sortRequired,
   withRequiredOrder,
+  type RequiredDivider,
+  type RequiredItem,
   type SearchConditions,
 } from './conditions'
 
@@ -199,17 +202,77 @@ describe('원하는 스킬 묶음·순서', () => {
     expect(ids(buildRequest(db, cond({ required: mixed }), []).required)).toEqual(grouped)
   })
 
-  it('같은 묶음 안에서만 옮기고, 묶음 밖 자리는 묶음 처음·끝으로 자른다', () => {
-    // 저장값이 묶음 순서가 아니어도 묶음 순서로 정리해서 옮긴다
-    const list = points(attack, weakness, crit, evade, constitution)
-    expect(ids(moveRequired(db, list, constitution, 0))).toEqual([constitution, weakness, evade, attack, crit])
-    expect(ids(moveRequired(db, list, weakness, 1))).toEqual([evade, weakness, constitution, attack, crit])
-    expect(ids(moveRequired(db, list, attack, 1))).toEqual([weakness, evade, constitution, crit, attack])
-    expect(ids(moveRequired(db, list, weakness, 9))).toEqual([evade, constitution, weakness, attack, crit])
-    expect(ids(moveRequired(db, list, crit, -1))).toEqual([weakness, evade, constitution, crit, attack])
-    // 꺼 둔 표시는 그대로 따라간다
-    const off = moveRequired(db, [{ skillId: weakness, level: 5, off: true }, ...points(evade)], weakness, 1)
-    expect(off).toEqual([{ skillId: evade, level: 1 }, { skillId: weakness, level: 5, off: true }])
+  const earplugs = skillIdByName(db, '귀마개') // 방어구 스킬
+  const line = (id: string, kind: SkillKind, index: number): RequiredDivider => ({ id, kind, index })
+  /** 줄 모양: 스킬은 스킬 id, 구분선은 구분선 id */
+  const shape = (items: readonly RequiredItem[]) =>
+    items.map((item) => (item.type === 'skill' ? item.required.skillId : item.divider.id))
+
+  it('구분선은 묶음 안 자리(위에 있는 스킬 수)에 놓고, 자리가 스킬 수를 넘으면 맨 아래, 스킬이 없는 묶음의 구분선은 뺀다', () => {
+    const required = points(attack, weakness, evade, constitution)
+    const dividers = [line('a', 'armor', 1), line('b', 'armor', 9), line('w', 'weapon', 0), line('s', 'set', 0)]
+    expect(shape(requiredLayout(db, required, dividers, 'armor'))).toEqual([weakness, 'a', evade, constitution, 'b'])
+    expect(shape(requiredLayout(db, required, dividers, 'weapon'))).toEqual(['w', attack])
+    expect(requiredLayout(db, required, dividers, 'set')).toEqual([])
+  })
+
+  it('줄을 옮기거나 지우면 그 묶음의 스킬 순서와 구분선 자리를 다시 세고, 다른 묶음은 그대로 둔다', () => {
+    // 저장값이 묶음 순서가 아니어도 묶음 순서로 정리한다
+    const required = points(attack, weakness, crit, evade, constitution)
+    const dividers = [line('w', 'weapon', 1), line('a', 'armor', 1)]
+    const layout = requiredLayout(db, required, dividers, 'armor') // 약점 특효 / 회피 성능, 체술
+    // 체술을 구분선 위로: 약점 특효, 체술 / 회피 성능
+    const moved = applyRequiredLayout(db, required, dividers, 'armor', [layout[0], layout[3], layout[1], layout[2]])
+    expect(ids(moved.required)).toEqual([weakness, constitution, evade, attack, crit])
+    expect(moved.requiredDividers).toContainEqual(line('a', 'armor', 2))
+    expect(shape(requiredLayout(db, moved.required, moved.requiredDividers, 'armor'))).toEqual([
+      weakness,
+      constitution,
+      'a',
+      evade,
+    ])
+    expect(shape(requiredLayout(db, moved.required, moved.requiredDividers, 'weapon'))).toEqual([attack, 'w', crit])
+    // 구분선 위 스킬을 지우면 구분선이 한 칸 올라간다
+    const removed = applyRequiredLayout(db, required, dividers, 'armor', layout.slice(1))
+    expect(shape(requiredLayout(db, removed.required, removed.requiredDividers, 'armor'))).toEqual([
+      'a',
+      evade,
+      constitution,
+    ])
+    // 꺼 둔 표시·고정은 그대로 따라간다
+    const marked = [{ skillId: weakness, level: 5, off: true, locked: true }, ...points(evade)]
+    const swapped = applyRequiredLayout(db, marked, [], 'armor', requiredLayout(db, marked, [], 'armor').reverse())
+    expect(swapped.required).toEqual([
+      { skillId: evade, level: 1 },
+      { skillId: weakness, level: 5, off: true, locked: true },
+    ])
+  })
+
+  it('새 스킬은 묶음 끝(맨 아래 구분선보다 아래)에 들어가고, 묶음에 스킬이 안 남으면 그 묶음 구분선도 지운다', () => {
+    const required = points(weakness, attack)
+    const dividers = [line('a', 'armor', 1), line('w', 'weapon', 0)]
+    const layout = requiredLayout(db, required, dividers, 'armor') // 약점 특효 /
+    const added = applyRequiredLayout(db, required, dividers, 'armor', [
+      ...layout,
+      { type: 'skill', required: { skillId: earplugs, level: 1 } },
+    ])
+    expect(shape(requiredLayout(db, added.required, added.requiredDividers, 'armor'))).toEqual([weakness, 'a', earplugs])
+    const emptied = applyRequiredLayout(db, required, dividers, 'armor', layout.slice(1))
+    expect(ids(emptied.required)).toEqual([attack])
+    expect(emptied.requiredDividers).toEqual([line('w', 'weapon', 0)])
+  })
+
+  it('구분선 저장값은 모양을 검사하고, 검색 요청에는 들어가지 않는다', () => {
+    const broken = [line('a', 'armor', 1), { id: 3 }, line('b', 'nope' as SkillKind, 0), line('c', 'armor', -1), null]
+    const stored = normalizeConditions({
+      required: points(weakness, evade),
+      excluded: [],
+      requiredDividers: [...broken, line('d', 'armor', 0.5)] as unknown as RequiredDivider[],
+    })
+    expect(stored.requiredDividers).toEqual([line('a', 'armor', 1)])
+    // 예전 저장값엔 없음
+    expect(normalizeConditions({ required: [], excluded: [] }).requiredDividers).toEqual([])
+    expect(buildRequest(db, stored, [])).toEqual(buildRequest(db, cond({ required: points(weakness, evade) }), []))
   })
 
   it('원하는 스킬 순서만 다른 요청은 같은 키이고, 결과 요청을 지금 순서로 늘어놓는다', () => {

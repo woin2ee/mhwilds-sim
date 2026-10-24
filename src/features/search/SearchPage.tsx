@@ -190,7 +190,7 @@ export function SearchPage() {
           title="원하는 스킬"
           actions={
             cond.required.length > 0 && (
-              <Button size="sm" variant="ghost" onClick={() => patch({ required: [] })}>
+              <Button size="sm" variant="ghost" onClick={() => patch({ required: [], requiredDividers: [] })}>
                 비우기
               </Button>
             )
@@ -198,8 +198,9 @@ export function SearchPage() {
         >
           <RequiredSkills
             required={cond.required}
+            dividers={cond.requiredDividers}
             excluded={cond.excluded}
-            onChange={(required) => patch({ required })}
+            onChange={patch}
           />
         </Panel>
 

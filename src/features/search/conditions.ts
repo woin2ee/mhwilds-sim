@@ -24,8 +24,21 @@ export interface RequiredSkill extends SkillPoint {
   locked?: boolean
 }
 
+/**
+ * 원하는 스킬 목록에 끼워 두는 가로 구분선 (목록을 나눠 보는 용도라 검색 요청에는 넣지 않음).
+ * 자리는 같은 묶음에서 구분선 위에 있는 스킬 수라서, 새 스킬은 늘 맨 아래 구분선보다 아래(묶음 끝)에 들어간다
+ */
+export interface RequiredDivider {
+  id: string
+  kind: SkillKind
+  /** 같은 묶음에서 이 구분선 위에 있는 스킬 수. 0 = 묶음 맨 위 */
+  index: number
+}
+
 export interface SearchConditions {
   required: RequiredSkill[]
+  /** 원하는 스킬 목록의 구분선 (예전 저장값엔 없음 = 없음) */
+  requiredDividers: RequiredDivider[]
   excluded: number[]
   excludeMode: ExcludeMode
   weaponMode: WeaponMode
@@ -52,6 +65,7 @@ export interface SearchConditions {
 
 export const DEFAULT_CONDITIONS: SearchConditions = {
   required: [],
+  requiredDividers: [],
   excluded: [],
   excludeMode: 'mark',
   weaponMode: 'none',
@@ -93,6 +107,7 @@ export function normalizeConditions(stored: Partial<SearchConditions>): SearchCo
   if (!Number.isInteger(cond.weaponGroupSkillId)) cond.weaponGroupSkillId = null
   const slots = Array.isArray(cond.customWeaponSlots) ? cond.customWeaponSlots : []
   cond.customWeaponSlots = [0, 1, 2].map((i) => Math.max(0, Math.min(3, Number(slots[i]) || 0)))
+  cond.requiredDividers = Array.isArray(cond.requiredDividers) ? cond.requiredDividers.filter(isRequiredDivider) : []
   return cond
 }
 
@@ -113,22 +128,64 @@ export function sortRequired<T extends SkillPoint>(db: GameDb, required: readonl
   return [...required].sort((a, b) => groupRank(db, a.skillId) - groupRank(db, b.skillId))
 }
 
-/** skillId 를 같은 묶음 안의 to 번째로 옮긴다. 묶음 밖 자리는 묶음 처음·끝으로 자른다 */
-export function moveRequired<T extends SkillPoint>(
+function isRequiredDivider(value: unknown): value is RequiredDivider {
+  if (typeof value !== 'object' || value === null) return false
+  const v = value as Record<string, unknown>
+  return (
+    typeof v.id === 'string' &&
+    REQUIRED_KIND_ORDER.includes(v.kind as SkillKind) &&
+    Number.isInteger(v.index) &&
+    (v.index as number) >= 0
+  )
+}
+
+/** 원하는 스킬 한 묶음의 줄. 화면은 스킬과 구분선을 이 순서로 늘어놓고, 옮기거나 지운 결과도 이 모양으로 돌려준다 */
+export type RequiredItem = { type: 'skill'; required: RequiredSkill } | { type: 'divider'; divider: RequiredDivider }
+
+const isKind = (db: GameDb, skillId: number, kind: SkillKind) => db.skills.get(skillId)?.kind === kind
+
+/**
+ * kind 묶음의 줄을 화면 순서로. 같은 자리의 구분선은 저장 순서대로, 자리가 스킬 수를 넘으면 맨 아래.
+ * 스킬이 없는 묶음은 구분선도 없는 것으로 본다
+ */
+export function requiredLayout(
   db: GameDb,
-  required: readonly T[],
-  skillId: number,
-  to: number,
-): T[] {
-  const sorted = sortRequired(db, required)
-  const from = sorted.findIndex((r) => r.skillId === skillId)
-  if (from < 0) return sorted
-  const rank = groupRank(db, skillId)
-  const start = sorted.findIndex((r) => groupRank(db, r.skillId) === rank)
-  const count = sorted.filter((r) => groupRank(db, r.skillId) === rank).length
-  const [moved] = sorted.splice(from, 1)
-  sorted.splice(start + Math.max(0, Math.min(count - 1, to)), 0, moved)
-  return sorted
+  required: readonly RequiredSkill[],
+  dividers: readonly RequiredDivider[],
+  kind: SkillKind,
+): RequiredItem[] {
+  const skills = required.filter((r) => isKind(db, r.skillId, kind))
+  if (skills.length === 0) return []
+  const lines = dividers.filter((d) => d.kind === kind)
+  const items: RequiredItem[] = []
+  for (let i = 0; i <= skills.length; i++) {
+    for (const divider of lines) if (Math.min(divider.index, skills.length) === i) items.push({ type: 'divider', divider })
+    if (i < skills.length) items.push({ type: 'skill', required: skills[i] })
+  }
+  return items
+}
+
+/**
+ * kind 묶음의 줄(화면 순서)을 저장값으로 돌린다: 그 묶음 스킬을 이 순서로 두고(다른 묶음은 그대로)
+ * 구분선 자리(위에 있는 스킬 수)를 다시 센다. 묶음에 스킬이 하나도 안 남으면 그 묶음 구분선도 지운다
+ */
+export function applyRequiredLayout(
+  db: GameDb,
+  required: readonly RequiredSkill[],
+  dividers: readonly RequiredDivider[],
+  kind: SkillKind,
+  items: readonly RequiredItem[],
+): Pick<SearchConditions, 'required' | 'requiredDividers'> {
+  const skills: RequiredSkill[] = []
+  const lines: RequiredDivider[] = []
+  for (const item of items) {
+    if (item.type === 'skill') skills.push(item.required)
+    else lines.push({ ...item.divider, kind, index: skills.length })
+  }
+  return {
+    required: sortRequired(db, [...required.filter((r) => !isKind(db, r.skillId, kind)), ...skills]),
+    requiredDividers: [...dividers.filter((d) => d.kind !== kind), ...(skills.length > 0 ? lines : [])],
+  }
 }
 
 /**
