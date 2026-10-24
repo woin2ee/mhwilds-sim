@@ -4,6 +4,7 @@ import { Button, EmptyState, Segmented } from '../../components/ui'
 import type { SearchRequest, SearchResponse, SearchResultItem, SearchSort } from '../../core/search/types'
 import { nameOf, type GameDb } from '../../data/db'
 import { useDb } from '../../state/context'
+import { useToast } from '../../state/toast'
 import { formatCount } from './format'
 import { ResultCard, type CompareControl, type ExcludeControl } from './ResultCard'
 
@@ -17,26 +18,42 @@ function formatElapsed(ms: number): string {
   return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}초`
 }
 
+/** 목록에 보이는 결과. index 는 검색 결과 안의 순위(#N)라 앞의 카드를 숨겨도 그대로다 */
+interface ShownItem {
+  item: SearchResultItem
+  index: number
+}
+
 function PagedCards({
-  items,
+  entries,
   request,
   exclude,
   compare,
+  onHide,
 }: {
-  items: SearchResultItem[]
+  entries: ShownItem[]
   request: SearchRequest
   exclude: ExcludeControl
   compare: CompareControl
+  onHide: (entry: ShownItem) => void
 }) {
   const [shown, setShown] = useState(PAGE_SIZE)
   return (
     <div className="space-y-2.5">
-      {items.slice(0, shown).map((item, i) => (
-        <ResultCard key={item.id} item={item} request={request} index={i + 1} exclude={exclude} compare={compare} />
+      {entries.slice(0, shown).map((entry) => (
+        <ResultCard
+          key={entry.item.id}
+          item={entry.item}
+          request={request}
+          index={entry.index}
+          exclude={exclude}
+          compare={compare}
+          onHide={() => onHide(entry)}
+        />
       ))}
-      {items.length > shown && (
+      {entries.length > shown && (
         <Button className="w-full" onClick={() => setShown((n) => n + PAGE_SIZE)}>
-          더 보기 ({formatCount(items.length - shown)}건 남음)
+          더 보기 ({formatCount(entries.length - shown)}건 남음)
         </Button>
       )}
     </div>
@@ -135,8 +152,27 @@ export function ResultList({
   compare: CompareControl
 }) {
   const db = useDb()
+  const toast = useToast()
   const { items } = response
   const variantTotal = useMemo(() => items.reduce((n, item) => n + item.variantCount, 0), [items])
+  // 숨긴 결과 id. 이 목록은 검색할 때마다 새로 그려지므로(SearchPage 의 key) 다시 검색하면 모두 다시 보인다
+  const [hidden, setHidden] = useState<ReadonlySet<string>>(() => new Set())
+  const entries = useMemo(
+    () => items.flatMap((item, i) => (hidden.has(item.id) ? [] : [{ item, index: i + 1 }])),
+    [items, hidden],
+  )
+  const hide = ({ item, index }: ShownItem) => {
+    setHidden((prev) => new Set(prev).add(item.id))
+    toast(`#${index} 결과를 숨겼어요`, {
+      label: '되돌리기',
+      onClick: () =>
+        setHidden((prev) => {
+          const next = new Set(prev)
+          next.delete(item.id)
+          return next
+        }),
+    })
+  }
   const hasWeaponSkill = request.required.some((r) => db.skills.get(r.skillId)?.kind === 'weapon')
   // 탐색 상한에 걸리면 전체 개수는 '최소' 개수다
   const atLeast = response.truncated ? ' 이상' : ''
@@ -175,6 +211,15 @@ export function ResultList({
         <Segmented size="sm" value={request.sort} options={SORT_OPTIONS} onChange={onSortChange} />
       </div>
 
+      {hidden.size > 0 && (
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+          <span>숨긴 결과 {formatCount(hidden.size)}건 · 다시 검색하면 다시 보여요.</span>
+          <Button size="sm" onClick={() => setHidden(new Set())}>
+            모두 다시 보기
+          </Button>
+        </div>
+      )}
+
       {response.truncated && (
         <p className="rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-warn">
           조합이 너무 많아 일부만 탐색했어요. 유망한 조합부터 찾기 때문에 상위 결과는 대부분 좋은 조합이지만 놓친 조합이 있을
@@ -182,7 +227,7 @@ export function ResultList({
         </p>
       )}
 
-      <PagedCards items={items} request={request} exclude={exclude} compare={compare} />
+      <PagedCards entries={entries} request={request} exclude={exclude} compare={compare} onHide={hide} />
     </div>
   )
 }

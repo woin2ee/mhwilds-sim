@@ -301,12 +301,15 @@ export function ResultCard({
   index,
   exclude,
   compare,
+  onHide,
 }: {
   item: SearchResultItem
   request: SearchRequest
   index: number
   exclude: ExcludeControl
   compare: CompareControl
+  /** 목록에서 이 카드를 숨긴다 (다시 검색하면 다시 보인다) */
+  onHide: () => void
 }) {
   const { db, customTalismans, openInManual } = useAppState()
   const toast = useToast()
@@ -403,6 +406,10 @@ export function ResultCard({
         </span>
         {item.variantCount > 1 && <Badge>방어구 조합 {formatCount(item.variantCount)}개</Badge>}
         <div className="ml-auto flex gap-1.5">
+          {/* 늘 누르던 '수동 세팅에서 열기' 자리가 그대로이게 맨 앞에 둔다 */}
+          <Button size="sm" variant="ghost" title="목록에서 숨기기 · 다시 검색하면 다시 보여요" onClick={onHide}>
+            숨기기
+          </Button>
           <Button
             size="sm"
             variant={compared ? 'primary' : 'ghost'}
@@ -416,7 +423,9 @@ export function ResultCard({
             저장
           </Button>
           <Button size="sm" onClick={() => openInManual(build)}>
-            수동 세팅에서 열기
+            {/* 휴대폰 폭에는 버튼 넷이 다 안 들어가서 줄인다 (버튼 안 gap 때문에 글자를 둘로 나누지 않는다) */}
+            <span className="sm:hidden">수동 세팅</span>
+            <span className="max-sm:hidden">수동 세팅에서 열기</span>
           </Button>
         </div>
       </header>
