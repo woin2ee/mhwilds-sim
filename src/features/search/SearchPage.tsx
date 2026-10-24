@@ -30,6 +30,7 @@ import { ExcludedSkills, RequiredSkills } from './RequiredSkills'
 import type { CompareControl } from './ResultCard'
 import { ResultCompareActions } from './ResultCompareActions'
 import { ResultList } from './ResultList'
+import { SearchPresets } from './SearchPresets'
 import { TalismanCondition } from './TalismanCondition'
 import { WeaponCondition } from './WeaponCondition'
 import { compareItemOf, compareTrayItemOf } from './compareList'
@@ -186,6 +187,8 @@ export function SearchPage() {
     // 1단(lg 미만)에서는 블록으로 둬야 맨 끝의 MobileBar 가 sticky 로 화면 아래에 붙는다 (grid 칸 안에선 안 움직임)
     <div className="max-lg:space-y-4 lg:grid lg:grid-cols-[380px_minmax(0,1fr)] lg:items-start lg:gap-4">
       <div className={cx('space-y-4', pane !== 'conditions' && 'max-lg:hidden')}>
+        <SearchPresets cond={cond} onLoad={setStored} />
+
         <Panel
           title="원하는 스킬"
           actions={
