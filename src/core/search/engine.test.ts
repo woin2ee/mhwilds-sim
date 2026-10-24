@@ -8,7 +8,7 @@ import { customWeaponChoice, dbWeaponChoice, type GogmaSkills } from '../gogmaAr
 import type { CustomTalisman, Slot, WeaponChoice } from '../types'
 import { runSearch } from './engine'
 import { resultToBuild } from './toBuild'
-import type { SearchRequest, SearchResponse, SearchResultItem, SearchTalisman } from './types'
+import type { SearchProgress, SearchRequest, SearchResponse, SearchResultItem, SearchTalisman } from './types'
 
 const db = loadTestDb()
 const sid = (name: string) => skillIdByName(db, name)
@@ -44,6 +44,8 @@ function request(overrides: Partial<SearchRequest>): SearchRequest {
     excludedArmorIds: [],
     sort: 'slots',
     limit: 30,
+    maxShortfall: 0,
+    lockedSkills: [],
     ...overrides,
   }
 }
@@ -51,15 +53,21 @@ function request(overrides: Partial<SearchRequest>): SearchRequest {
 const slotKey = (slots: readonly Slot[]) => slots.map((s) => `${s.kind[0]}${s.level}`).sort()
 const slotScore = (slots: readonly Slot[]) => slots.reduce((sum, s) => sum + s.level * s.level, 0)
 
-/** 결과 하나를 computeBuild 로 다시 계산해 엔진이 준 값과 맞는지 확인 */
+/** 원하는 스킬보다 모자란 레벨 합 (시리즈/그룹 스킬은 단계) */
+const shortfallOf = (summary: ReturnType<typeof computeBuild>, required: readonly SkillPoint[]) =>
+  missingRequirements(summary, required).reduce((sum, m) => sum + m.required - m.current, 0)
+
+/** 결과 하나를 computeBuild 로 다시 계산해 엔진이 준 값과 맞는지 확인. shortfall = 응답의 모자란 레벨 합 */
 function verifyItem(
   r: SearchRequest,
   item: SearchResultItem,
   customs: CustomTalisman[],
   variant: Parameters<typeof resultToBuild>[3] = {},
+  shortfall = 0,
 ) {
   const summary = computeBuild(db, resultToBuild(db, item, r, variant), customs)
-  expect(missingRequirements(summary, r.required)).toEqual([])
+  if (shortfall === 0) expect(missingRequirements(summary, r.required)).toEqual([])
+  else expect(shortfallOf(summary, r.required)).toBe(shortfall)
   expect(summary.slots.every((s) => s.valid)).toBe(true)
   expect(unwantedSkillsOf(summary, r.excludedSkills).sort()).toEqual([...item.unwantedSkills].sort())
   return summary
@@ -68,7 +76,7 @@ function verifyItem(
 /** 응답의 모든 결과(+ 앞쪽 몇 개의 대체 방어구/호석)를 재검증 */
 function verify(r: SearchRequest, res: SearchResponse, customs: CustomTalisman[] = []) {
   for (const item of res.items) {
-    const summary = verifyItem(r, item, customs)
+    const summary = verifyItem(r, item, customs, {}, res.shortfall)
     expect(slotKey(summary.freeSlots)).toEqual(slotKey(item.freeSlots))
     expect(summary.defense.max).toBe(item.defense)
     const levels = activeSkillLevels(summary)
@@ -78,9 +86,9 @@ function verify(r: SearchRequest, res: SearchResponse, customs: CustomTalisman[]
     expect(item.variantCount).toBe(Object.values(item.armor).reduce((n, ids) => n * Math.max(1, ids.length), 1))
     // 같은 결과로 묶인 대체 방어구·호석도 같은 장식주 배치로 조건을 만족해야 한다
     for (const [kind, ids] of Object.entries(item.armor)) {
-      for (const id of ids.slice(1, 4)) verifyItem(r, item, customs, { [kind]: id })
+      for (const id of ids.slice(1, 4)) verifyItem(r, item, customs, { [kind]: id }, res.shortfall)
     }
-    item.talismans.slice(1, 4).forEach((_, i) => verifyItem(r, item, customs, { talismanIndex: i + 1 }))
+    item.talismans.slice(1, 4).forEach((_, i) => verifyItem(r, item, customs, { talismanIndex: i + 1 }, res.shortfall))
   }
   expect(res.items.length).toBeLessThanOrEqual(r.limit)
   expect(res.total).toBeGreaterThanOrEqual(res.items.length)
@@ -387,6 +395,153 @@ describe('runSearch', () => {
     }
     verify(r, res)
   })
+
+  describe('모자란 조합 찾기', () => {
+    const hunger = sid('쇄인룡의 굶주림')
+    const lordsSoul = sid('주인의 혼')
+    const gogma = weaponOf(dbWeaponChoice(db.weaponByGameKey('great-sword', 87)!.id, { setSkillId: hunger, groupSkillId: lordsSoul }))
+    /** 결과를 실제 방어구·호석 조합으로 펼친 키 */
+    const physical = (items: readonly SearchResultItem[]) =>
+      items.flatMap((item) => {
+        let combos = ['']
+        for (const kind of ARMOR_KINDS) {
+          const ids = item.armor[kind].length > 0 ? item.armor[kind] : [0]
+          combos = combos.flatMap((c) => ids.map((id) => `${c}${id},`))
+        }
+        const talismans = item.talismans.length > 0 ? item.talismans.map((t) => `${t.type}:${t.id}`) : ['-']
+        return combos.flatMap((c) => talismans.map((t) => c + t))
+      })
+    /** 레벨을 모두 합쳐 s 만큼 낮추는 모든 방법 (스킬별로 낮출 레벨) */
+    const lowerings = (levels: readonly number[], s: number): number[][] => {
+      if (levels.length === 0) return s === 0 ? [[]] : []
+      const out: number[][] = []
+      for (let l = 0; l <= Math.min(s, levels[0]); l++) {
+        for (const rest of lowerings(levels.slice(1), s - l)) out.push([l, ...rest])
+      }
+      return out
+    }
+
+    it.each<[string, Partial<SearchRequest>, number]>([
+      [
+        '시리즈/그룹 스킬은 단계로 센다',
+        { required: [{ skillId: hunger, level: 2 }, { skillId: lordsSoul, level: 1 }, ...req(['약점 특효', 5], ['도전자', 5], ['연격', 5])] },
+        1,
+      ],
+      [
+        '거극 아티어 무기가 센 부위',
+        {
+          required: [{ skillId: hunger, level: 2 }, { skillId: lordsSoul, level: 1 }, ...req(['약점 특효', 5], ['도전자', 5], ['뇌악룡의 투지', 2])],
+          weapon: gogma,
+        },
+        1,
+      ],
+      ['장식주 없이', { required: req(['약점 특효', 5], ['도전자', 5], ['연격', 3], ['회피 성능', 3]), useDecorations: false }, 1],
+      [
+        '무기 슬롯 장식주 (앙길바인 ③③③)',
+        {
+          required: req(['공격', 5], ['간파', 5], ['슈퍼회심', 3], ['약점 특효', 5], ['도전자', 5], ['연격', 5]),
+          weapon: weaponOf({ type: 'db', id: 71 }),
+        },
+        4,
+      ],
+      [
+        '고정한 스킬은 낮추지 않는다 (굶주림·연격 고정)',
+        {
+          required: [{ skillId: hunger, level: 2 }, { skillId: lordsSoul, level: 1 }, ...req(['약점 특효', 5], ['도전자', 5], ['연격', 5])],
+          lockedSkills: [hunger, sid('연격')],
+        },
+        1,
+      ],
+      [
+        '고정한 무기 스킬 (공격 고정)',
+        {
+          required: req(['공격', 5], ['간파', 5], ['슈퍼회심', 3], ['약점 특효', 5], ['도전자', 5], ['연격', 5]),
+          weapon: weaponOf({ type: 'db', id: 71 }),
+          lockedSkills: [sid('공격')],
+        },
+        5,
+      ],
+      [
+        '장식주 없이 + 고정',
+        {
+          required: req(['약점 특효', 5], ['도전자', 5], ['연격', 3], ['회피 성능', 3]),
+          useDecorations: false,
+          lockedSkills: req(['약점 특효', 5], ['회피 성능', 3]).map((p) => p.skillId),
+        },
+        1,
+      ],
+    ])('%s: 레벨을 그만큼 낮춘 검색들에서 나오는 조합을 빠짐없이 찾는다', (_, overrides, expected) => {
+      const r = request({ limit: 100_000, ...overrides })
+      expect(runSearch(db, r).total).toBe(0)
+      const relaxed = { ...r, maxShortfall: 99 }
+      const res = runSearch(db, relaxed)
+      expect(res.truncated).toBe(false)
+      expect(res.shortfall).toBe(expected)
+      // 덜 낮추면 결과가 없으므로, 레벨을 모두 합쳐 그만큼 낮춘 검색들의 결과를 합치면 정확히 그만큼 모자란 조합이 된다.
+      // 고정한 스킬은 낮추지 않는다
+      const union = new Set<string>()
+      const lowerable = r.required.map((p) => (r.lockedSkills.includes(p.skillId) ? 0 : p.level))
+      for (const lower of lowerings(lowerable, expected)) {
+        const required = r.required.flatMap((p, i) => (p.level > lower[i] ? [{ ...p, level: p.level - lower[i] }] : []))
+        const strict = runSearch(db, { ...r, required })
+        expect(strict.truncated).toBe(false)
+        for (const key of physical(strict.items)) union.add(key)
+      }
+      const found = physical(res.items)
+      expect(new Set(found).size).toBe(found.length)
+      expect(found.sort()).toEqual([...union].sort())
+      verify(relaxed, { ...res, items: res.items.slice(0, 30) })
+    })
+
+    it('조건을 채우는 조합이 있으면 엄격 검색 결과 그대로', () => {
+      const r = request({ required: req(['약점 특효', 5], ['도전자', 5], ['연격', 5], ['힘의 해방', 3]) })
+      const strict = runSearch(db, r)
+      const res = runSearch(db, { ...r, maxShortfall: 99 })
+      expect(res.shortfall).toBe(0)
+      expect(res.total).toBe(strict.total)
+      expect(res.items.map((i) => i.id)).toEqual(strict.items.map((i) => i.id))
+    })
+
+    it('원하는 스킬을 모두 고정하면 엄격 검색과 같다', () => {
+      const required = req(['약점 특효', 5], ['도전자', 5], ['연격', 5], ['힘의 해방', 5], ['회피 성능', 5], ['회피 거리 UP', 3], ['체술', 3])
+      const res = runSearch(db, request({ required, maxShortfall: 99, lockedSkills: required.map((p) => p.skillId) }))
+      expect(res).toMatchObject({ items: [], total: 0, shortfall: 0, truncated: false })
+    })
+
+    it('maxShortfall 이 0 이거나 그보다 많이 모자라면 결과가 없다', () => {
+      const r = request({
+        required: req(['공격', 5], ['간파', 5], ['슈퍼회심', 3], ['약점 특효', 5], ['도전자', 5], ['연격', 5]),
+        weapon: weaponOf({ type: 'db', id: 71 }),
+      })
+      expect(runSearch(db, r)).toMatchObject({ items: [], total: 0, shortfall: 0 })
+      expect(runSearch(db, { ...r, maxShortfall: 3 })).toMatchObject({ items: [], total: 0, shortfall: 0 })
+      expect(runSearch(db, { ...r, maxShortfall: 4 }).shortfall).toBe(4)
+    })
+
+    it('많이 모자라도 가장 적게 모자란 조합을 정렬 기준대로 찾는다', () => {
+      const required = req(['약점 특효', 5], ['도전자', 5], ['연격', 5], ['힘의 해방', 5], ['회피 성능', 5], ['회피 거리 UP', 3], ['체술', 3])
+      const r = request({ required, maxShortfall: 99, limit: 50 })
+      const res = runSearch(db, r)
+      expect(res.shortfall).toBe(7)
+      expect(runSearch(db, { ...r, maxShortfall: 6 }).total).toBe(0)
+      verify(r, res)
+      const scores = res.items.map((i) => slotScore(i.freeSlots))
+      expect(scores).toEqual([...scores].sort((a, b) => b - a))
+      const byDefense = runSearch(db, { ...r, sort: 'defense' })
+      expect(byDefense.shortfall).toBe(7)
+      const defenses = byDefense.items.map((i) => i.defense)
+      expect(defenses).toEqual([...defenses].sort((a, b) => b - a))
+    })
+
+    it('두 번째 검색의 진행률은 relaxed 로 알린다', () => {
+      const progress: SearchProgress[] = []
+      runSearch(db, request({ required: req(['쇄인룡의 굶주림', 2], ['주인의 혼', 1], ['약점 특효', 5], ['도전자', 5], ['연격', 5]), maxShortfall: 99 }), {
+        onProgress: (p) => progress.push(p),
+      })
+      expect(progress.some((p) => !p.relaxed)).toBe(true)
+      expect(progress.at(-1)).toMatchObject({ ratio: 1, relaxed: true })
+    })
+  })
 })
 
 describe('일반화된 경로 (합성 데이터)', () => {
@@ -477,6 +632,8 @@ describe('일반화된 경로 (합성 데이터)', () => {
       excludedArmorIds: [],
       sort: 'slots',
       limit: 10,
+      maxShortfall: 0,
+      lockedSkills: [],
     }
     const res = runSearch(synthetic, r)
     expect(res.items.length).toBeGreaterThan(0)
@@ -485,6 +642,58 @@ describe('일반화된 경로 (합성 데이터)', () => {
       expect(missingRequirements(summary, r.required)).toEqual([])
       expect(summary.slots.every((s) => s.valid)).toBe(true)
       expect(slotKey(summary.freeSlots)).toEqual(slotKey(item.freeSlots))
+    }
+  })
+
+  it('모자란 조합 찾기: 비선호 장식주로 덜 모자라지면 표시만 모드에서 쓴다', () => {
+    // 무기 슬롯 Lv1 하나에 스킬 2 를 3레벨 채울 수 없다. 깨끗한 장식주는 1, 비선호 스킬 4 가 붙은 장식주는 2
+    const small: GameData = {
+      ...data,
+      skills: [...data.skills, skill(4, 'weapon', 1)],
+      armor: data.armor.filter((a) => a.id <= 5).map((a) => ({ ...a, skills: [], slots: [] })),
+      decorations: [
+        { id: 1, gameId: 1, name: names('clean'), kind: 'weapon', size: 1, rarity: 1, skills: [{ skillId: 2, level: 1 }] },
+        {
+          id: 2,
+          gameId: 2,
+          name: names('dirty'),
+          kind: 'weapon',
+          size: 1,
+          rarity: 1,
+          skills: [
+            { skillId: 2, level: 2 },
+            { skillId: 4, level: 1 },
+          ],
+        },
+      ],
+      weapons: [{ ...data.weapons[0], slots: [1] }],
+    }
+    const smallDb = new GameDb(small)
+    const r: SearchRequest = {
+      required: [{ skillId: 2, level: 3 }],
+      excludedSkills: [4],
+      excludeMode: 'mark',
+      weapon: { choice: { type: 'db', id: 1 }, skills: [], slots: [1] },
+      talismans: [],
+      includeLowRank: false,
+      transcend: false,
+      useDecorations: true,
+      excludedArmorIds: [],
+      sort: 'slots',
+      limit: 10,
+      maxShortfall: 99,
+      lockedSkills: [],
+    }
+    expect(runSearch(smallDb, { ...r, maxShortfall: 0 }).total).toBe(0)
+    const marked = runSearch(smallDb, r)
+    expect(marked.shortfall).toBe(1)
+    expect(marked.items.map((i) => i.unwantedSkills)).toEqual([[4]])
+    const excluded = runSearch(smallDb, { ...r, excludeMode: 'exclude' })
+    expect(excluded.shortfall).toBe(2)
+    expect(excluded.items.map((i) => i.unwantedSkills)).toEqual([[]])
+    for (const res of [marked, excluded]) {
+      const summary = computeBuild(smallDb, resultToBuild(smallDb, res.items[0], r))
+      expect(missingRequirements(summary, r.required)).toEqual([{ skillId: 2, required: 3, current: 3 - res.shortfall }])
     }
   })
 })

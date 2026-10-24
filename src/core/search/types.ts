@@ -47,6 +47,13 @@ export interface SearchRequest {
   sort: SearchSort
   /** 최대 반환 개수 */
   limit: number
+  /**
+   * 조건을 모두 채우는 조합이 없으면 원하는 스킬이 모자란 레벨 합이 이 값 이하인 조합 중 가장 적게 모자란 조합을 대신 찾는다.
+   * 0 이면 찾지 않는다. 시리즈/그룹 스킬은 단계로 센다
+   */
+  maxShortfall: number
+  /** 고정한 원하는 스킬 id: 모자란 조합을 찾을 때도 요구 레벨을 꼭 채운다 (낮추지 않는다) */
+  lockedSkills: number[]
 }
 
 export interface SearchResultItem {
@@ -81,12 +88,16 @@ export interface SearchResponse {
   /** 탐색 상한(시간/노드)에 걸려 중간에 멈췄는지 */
   truncated: boolean
   elapsedMs: number
+  /** 0 = 모든 결과가 조건을 채운다. 1 이상이면 그런 조합이 없어서 원하는 스킬이 모두 합쳐 이만큼 모자란 조합을 대신 찾은 것 */
+  shortfall: number
 }
 
 export interface SearchProgress {
   /** 0~1 */
   ratio: number
   found: number
+  /** 조건을 채우는 조합이 없어 모자란 조합을 찾는 중 (ratio 는 0 부터 다시 센다) */
+  relaxed: boolean
 }
 
 // ---- Web Worker 메시지 프로토콜 ----

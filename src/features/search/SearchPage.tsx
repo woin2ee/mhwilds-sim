@@ -106,7 +106,7 @@ export function SearchPage() {
       clientRef.current ??= new SearchClient(db.data)
       lastRequestRef.current = req
       setError(null)
-      setProgress({ ratio: 0, found: 0 })
+      setProgress({ ratio: 0, found: 0, relaxed: false })
       const running = clientRef.current.search(req, setProgress)
       runningRef.current = running
       running.promise
@@ -135,7 +135,12 @@ export function SearchPage() {
 
   const running = progress !== null
   const currentKey = useMemo(() => requestKey(request), [request])
-  const resultKey = useMemo(() => (result ? requestKey(result.request) : null), [result])
+  // 고정은 조건을 채우는 조합이 없을 때만 쓰이므로, 조건을 채운 결과가 있으면 고정만 바꿔도 다시 검색할 필요가 없다
+  const resultKey = useMemo(() => {
+    if (!result) return null
+    const exact = result.response.total > 0 && result.response.shortfall === 0
+    return requestKey(exact ? { ...result.request, lockedSkills: request.lockedSkills } : result.request)
+  }, [result, request.lockedSkills])
   const stale = resultKey !== null && resultKey !== currentKey
   // 원하는 스킬 순서만 바꾸면 다시 검색하지 않아도 되므로(requestKey) 결과 칩이 바로 지금 순서를 따르게 한다
   // (순서가 같으면 결과 요청을 그대로 넘겨 결과 카드가 다시 계산하지 않는다)
@@ -298,7 +303,8 @@ export function SearchPage() {
                 />
               </div>
               <p className="text-xs text-muted">
-                탐색 중… {Math.round(progress.ratio * 100)}% · {formatCount(progress.found)}건 발견
+                {progress.relaxed ? '조건을 모두 채우는 조합이 없어 가장 가까운 조합을 찾는 중…' : '탐색 중…'}{' '}
+                {Math.round(progress.ratio * 100)}% · {formatCount(progress.found)}건 발견
               </p>
             </div>
           )}

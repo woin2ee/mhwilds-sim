@@ -51,6 +51,88 @@ describe('DecoFiller', () => {
     expect(filler.fill([], [1, 1, 1], [0, 0, 1])?.score).toBe(1 + 4 + 9 + 9)
   })
 
+  it('허용치까지는 부족분을 남기고, 가장 적게 남기는 배치를 고른다', () => {
+    const filler = new DecoFiller([deco('armor', 1, [1, 0]), deco('armor', 2, [0, 1])], 2)
+    // Lv2 슬롯 하나뿐: 둘 중 하나만 채울 수 있다
+    expect(filler.fill([1, 1], [0, 1, 0], [0, 0, 0])).toBeNull()
+    const one = filler.fill([1, 1], [0, 1, 0], [0, 0, 0], 1)
+    expect(one?.short).toBe(1)
+    expect(one?.decos).toHaveLength(1)
+    // 다 채울 수 있으면 허용치가 있어도 다 채운다
+    expect(filler.fill([1, 1], [1, 1, 0], [0, 0, 0], 2)).toMatchObject({ short: 0, score: 0 })
+    // 허용치보다 많이 모자라면 null
+    expect(filler.fill([3, 3], [0, 1, 0], [0, 0, 0], 4)).toBeNull()
+    expect(filler.fill([3, 3], [0, 1, 0], [0, 0, 0], 5)?.short).toBe(5)
+  })
+
+  it('고정한 스킬은 허용치가 있어도 모자란 채로 두지 않는다', () => {
+    const filler = new DecoFiller([deco('armor', 1, [1, 0]), deco('armor', 2, [0, 1])], 2, [true, false])
+    // Lv2 슬롯 하나: 고정한 0번 스킬을 채우고 1번 스킬이 모자란다
+    const result = filler.fill([1, 1], [0, 1, 0], [0, 0, 0], 1)
+    expect(result?.short).toBe(1)
+    expect(result?.decos.map((d) => d.pts)).toEqual([[1, 0]])
+    // 고정한 스킬을 다 채울 슬롯이 없으면 허용치가 커도 null
+    expect(filler.fill([2, 0], [0, 1, 0], [0, 0, 0], 5)).toBeNull()
+  })
+
+  it('허용치가 있을 때 모든 배치를 넣어 본 결과와 같다 (무작위, 고정한 스킬 포함)', () => {
+    // mulberry32: 실패하면 같은 사례로 다시 볼 수 있게 고정 시드
+    let seed = 20261024
+    const random = () => {
+      seed = (seed + 0x6d2b79f5) | 0
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+    }
+    const int = (max: number) => Math.floor(random() * (max + 1))
+    for (let round = 0; round < 300; round++) {
+      const skills = 1 + int(2)
+      const decos = Array.from({ length: 1 + int(4) }, () => {
+        const pts = Array.from({ length: skills }, () => int(2))
+        if (!pts.some((p) => p > 0)) pts[int(skills - 1)] = 1
+        return deco(random() < 0.7 ? 'armor' : 'weapon', (1 + int(2)) as SlotLevel, pts)
+      })
+      const armor: [number, number, number] = [int(2), int(1), int(1)]
+      const weapon: [number, number, number] = [int(1), 0, int(1)]
+      const deficits = Array.from({ length: skills }, () => int(4))
+      const tolerance = int(3)
+      const locked = Array.from({ length: skills }, () => random() < 0.3)
+
+      // 슬롯마다 비우거나 들어가는 장식주 하나를 넣는 모든 경우
+      const slots = (['armor', 'weapon'] as const).flatMap((kind) =>
+        (kind === 'armor' ? armor : weapon).flatMap((n, i) => Array.from({ length: n }, () => ({ kind, level: i + 1 }))),
+      )
+      let best: { short: number; score: number } | null = null
+      const visit = (i: number, covered: number[], score: number) => {
+        if (i === slots.length) {
+          if (deficits.some((d, k) => locked[k] && covered[k] < d)) return
+          const short = deficits.reduce((s, d, k) => s + Math.max(0, d - covered[k]), 0)
+          if (!best || short < best.short || (short === best.short && score > best.score)) best = { short, score }
+          return
+        }
+        const slot = slots[i]
+        visit(i + 1, covered, score + slot.level * slot.level)
+        for (const d of decos) {
+          if (d.kind === slot.kind && d.size <= slot.level) visit(i + 1, covered.map((c, k) => c + d.pts[k]), score)
+        }
+      }
+      visit(0, deficits.map(() => 0), 0)
+      const expected = best as { short: number; score: number } | null
+
+      const result = new DecoFiller(decos, skills, locked).fill(deficits, armor, weapon, tolerance)
+      const label = JSON.stringify({ round, decos: decos.map((d) => [d.kind, d.size, d.pts]), armor, weapon, deficits, tolerance, locked })
+      if (!expected || expected.short > tolerance) {
+        expect(result, label).toBeNull()
+        continue
+      }
+      expect(result && { short: result.short, score: result.score }, label).toEqual(expected)
+      // 고른 장식주로 실제로 그만큼만 모자란지
+      const covered = deficits.map((_, k) => result!.decos.reduce((s, d) => s + d.pts[k], 0))
+      expect(deficits.reduce((s, d, k) => s + Math.max(0, d - covered[k]), 0), label).toBe(result!.short)
+      expect(deficits.every((d, k) => !locked[k] || covered[k] >= d), label).toBe(true)
+    }
+  })
+
   it('비선호 장식주는 다른 방법이 없을 때만 쓴다', () => {
     const clean = deco('armor', 3, [1])
     const dirty = deco('armor', 1, [1], [99])

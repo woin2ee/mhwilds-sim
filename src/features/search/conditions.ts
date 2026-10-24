@@ -20,6 +20,8 @@ export type TalismanMode = 'auto' | 'custom-only' | 'fixed' | 'none'
 /** 원하는 스킬. off 면 목록에는 남겨 두고 검색 요청에서만 뺀다 (예전 저장값엔 없음 = 켜짐) */
 export interface RequiredSkill extends SkillPoint {
   off?: boolean
+  /** 고정: 조건을 채우는 조합이 없어 가장 가까운 조합을 찾을 때도 이 레벨은 꼭 채운다 (예전 저장값엔 없음 = 낮출 수 있음) */
+  locked?: boolean
 }
 
 export interface SearchConditions {
@@ -69,6 +71,11 @@ export const DEFAULT_CONDITIONS: SearchConditions = {
 }
 
 export const RESULT_LIMIT = 200
+/**
+ * 조건을 모두 채우는 조합이 없을 때 대신 보여 줄 조합이 모자라도 되는 레벨 합의 상한.
+ * 넉넉히 둬서 사실상 가장 가까운(가장 적게 모자란) 조합을 찾는다
+ */
+export const MAX_SHORTFALL = 99
 
 export function isStoredConditions(value: unknown): value is Partial<SearchConditions> {
   if (typeof value !== 'object' || value === null) return false
@@ -217,6 +224,12 @@ export function buildRequest(
     excludedArmorIds: cond.excludeHr100 ? hr100ArmorIds(db) : [],
     sort: cond.sort,
     limit: RESULT_LIMIT,
+    maxShortfall: MAX_SHORTFALL,
+    // 원하는 스킬 순서를 바꿔도 같은 요청이 되게 id 순으로 (requestKey)
+    lockedSkills: cond.required
+      .filter((r) => r.locked && !r.off && db.skills.has(r.skillId) && r.level > 0)
+      .map((r) => r.skillId)
+      .sort((a, b) => a - b),
   }
 }
 

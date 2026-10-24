@@ -17,12 +17,25 @@ export interface PointRequirement {
   skillId: number
   need: number
   pool: Pool
+  /** 고정: 모자란 조합을 찾을 때도 낮추지 않는다 */
+  locked: boolean
 }
 
 export interface BonusRequirement {
   skillId: number
   /** 방어구로 채울 부위 수 (거극 아티어 무기가 센 1부위는 뺀 값) */
   pieces: number
+  /** 1단계부터 요구 단계까지 단계별로 방어구로 채울 부위 수 (오름차순, 마지막 = pieces). 모자란 단계를 셀 때 쓴다 */
+  steps: number[]
+  /** 고정: 모자란 조합을 찾을 때도 낮추지 않는다 */
+  locked: boolean
+}
+
+/** 방어구 부위 수가 pieces 일 때 요구 단계보다 모자란 단계 수 */
+export function bonusShortfall(bonus: BonusRequirement, pieces: number): number {
+  let short = 0
+  for (const step of bonus.steps) if (step > pieces) short++
+  return short
 }
 
 export interface ArmorClass {
@@ -89,9 +102,13 @@ export interface Prepared {
     noneIndices: number[]
     /** [d][i] 남은 부위 최대 점수 합 */
     remainingPts: Int32Array[]
+    /** [d] 남은 부위마다 장식주로 못 채우는 스킬 점수 합이 가장 큰 클래스의 그 합을 더한 값 */
+    remainingNone: Int32Array
     /** [d][j] 남은 부위 중 해당 시리즈/그룹에 속한 클래스가 있는 부위 수 */
     remainingBonus: Int32Array[]
     thresholds: Threshold[]
+    /** 고정한 방어구 풀 스킬만으로 만든 임계 묶음 (모자란 조합 찾기에서 다 채울 수 있는지 따로 본다) */
+    lockedThresholds: Threshold[]
   }
   /** computeBuild 검증용: 요청의 사용자 호석 */
   customTalismans: CustomTalisman[]
@@ -126,19 +143,25 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
 
   // 무기는 사용자가 고정한다. 거극 아티어 무기의 시리즈/그룹 스킬은 그 스킬을 방어구 1부위만큼 덜 찾게 한다
   const resolvedWeapon = resolveWeapon(db, request.weapon.choice)
-  const points: { skillId: number; need: number }[] = []
+  const locked = new Set(request.lockedSkills)
+  const points: { skillId: number; need: number; locked: boolean }[] = []
   const bonuses: BonusRequirement[] = []
   for (const [skillId, level] of merged) {
     const skill = db.skill(skillId)
     if (skill.kind === 'set' || skill.kind === 'group') {
-      const pieces = Math.min(
-        ...skill.ranks.filter((r) => r.level >= level && r.pieces !== undefined).map((r) => r.pieces!),
-      )
       const fromWeapon = resolvedWeapon?.setSkillId === skillId || resolvedWeapon?.groupSkillId === skillId ? 1 : 0
-      if (!Number.isFinite(pieces) || pieces - fromWeapon > ARMOR_KINDS.length) return null
-      bonuses.push({ skillId, pieces: pieces - fromWeapon })
+      const steps = Array.from(
+        { length: level },
+        (_, i) =>
+          Math.min(...skill.ranks.filter((r) => r.level > i && r.pieces !== undefined).map((r) => r.pieces!)) -
+          fromWeapon,
+      )
+      const pieces = steps[level - 1]
+      if (!Number.isFinite(pieces)) return null
+      // 방어구 5부위로도 모자라면 엄격 검색은 탐색 첫 단계에서 끝나고, 모자란 조합 찾기는 그만큼 모자란 것으로 센다
+      bonuses.push({ skillId, pieces, steps, locked: locked.has(skillId) })
     } else {
-      points.push({ skillId, need: level })
+      points.push({ skillId, need: level, locked: locked.has(skillId) })
     }
   }
 
@@ -181,7 +204,11 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
       if (pts.every((p) => p === 0)) continue
       decos.push({ decoration, kind: decoration.kind, size: decoration.size, pts, unwanted })
     }
-    return new DecoFiller(decos, indices.length)
+    return new DecoFiller(
+      decos,
+      indices.length,
+      indices.map((i) => required[i].locked),
+    )
   }
   const makeFillers = (indices: number[], kinds: readonly SlotKind[]): Fillers => ({
     clean: makeFiller(indices, kinds, false),
@@ -205,17 +232,30 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
 
   // ---- 임계 레벨별 방어구 슬롯 잠재력 ----
   const armorDecosForBounds = allowedDecos.filter((d) => d.kind === 'armor')
-  const thresholds: Threshold[] = []
-  for (const t of [1, 2, 3]) {
-    const indices = armorIdx.filter((i) => minSize[i].armor >= t)
-    if (indices.length === 0) continue
-    const pot: [number, number, number] = [0, 0, 0]
-    for (const deco of armorDecosForBounds) {
-      let total = 0
-      for (const i of indices) total += Math.min(required[i].need, pointsOf(deco.skills, required[i].skillId))
-      for (let level = deco.size; level <= 3; level++) pot[level - 1] = Math.max(pot[level - 1], total)
+  const thresholdsOf = (skillIndices: readonly number[]): Threshold[] => {
+    const list: Threshold[] = []
+    for (const t of [1, 2, 3]) {
+      const indices = skillIndices.filter((i) => minSize[i].armor >= t)
+      if (indices.length === 0) continue
+      const pot: [number, number, number] = [0, 0, 0]
+      for (const deco of armorDecosForBounds) {
+        let total = 0
+        for (const i of indices) total += Math.min(required[i].need, pointsOf(deco.skills, required[i].skillId))
+        for (let level = deco.size; level <= 3; level++) pot[level - 1] = Math.max(pot[level - 1], total)
+      }
+      list.push({ indices, pot, remaining: new Float64Array(ARMOR_KINDS.length + 1) })
     }
-    thresholds.push({ indices, pot, remaining: new Float64Array(ARMOR_KINDS.length + 1) })
+    return list
+  }
+  const thresholds = thresholdsOf(armorIdx)
+  // 모자란 조합 찾기에서 고정한 스킬은 다른 스킬과 따로 다 채워야 하므로 따로 본다
+  const lockedThresholds = thresholdsOf(armorIdx.filter((i) => required[i].locked))
+  /** 클래스 하나가 임계 묶음에 줄 수 있는 최대치: 그 스킬들 점수 + 슬롯 잠재력 */
+  const potentialOf = (cls: ArmorClass, th: Threshold) => {
+    let value = 0
+    for (const i of th.indices) value += cls.pts[i]
+    for (let level = 0; level < 3; level++) value += cls.slotCounts[level] * th.pot[level]
+    return value
   }
 
   // ---- 방어구 동등 클래스 ----
@@ -283,10 +323,7 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
     }
     for (const cls of classes) {
       thresholds.forEach((th, ti) => {
-        let value = 0
-        for (const i of th.indices) value += cls.pts[i]
-        for (let level = 0; level < 3; level++) value += cls.slotCounts[level] * th.pot[level]
-        cls.potential[ti] = value
+        cls.potential[ti] = potentialOf(cls, th)
       })
     }
     // 유망한 클래스부터 탐색 (상한에 걸려 중단돼도 좋은 결과가 먼저 나오도록). 잠재력이 같으면 결과 정렬 기준 순.
@@ -348,8 +385,17 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
   const depthCount = kinds.length
   const remainingPts = Array.from({ length: depthCount + 1 }, () => new Int32Array(required.length))
   const remainingBonus = Array.from({ length: depthCount + 1 }, () => new Int32Array(bonuses.length))
+  const noneIndices = poolIndices('none')
+  const remainingNone = new Int32Array(depthCount + 1)
   for (let d = depthCount - 1; d >= 0; d--) {
     const kindClasses = classes[d]
+    let noneMax = 0
+    for (const cls of kindClasses) {
+      let sum = 0
+      for (const i of noneIndices) sum += cls.pts[i]
+      noneMax = Math.max(noneMax, sum)
+    }
+    remainingNone[d] = remainingNone[d + 1] + noneMax
     for (let i = 0; i < required.length; i++) {
       let max = 0
       for (const cls of kindClasses) max = Math.max(max, cls.pts[i])
@@ -363,6 +409,11 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
       for (const cls of kindClasses) max = Math.max(max, cls.potential[ti])
       th.remaining[d] = th.remaining[d + 1] + max
     })
+    for (const th of lockedThresholds) {
+      let max = 0
+      for (const cls of kindClasses) max = Math.max(max, potentialOf(cls, th))
+      th.remaining[d] = th.remaining[d + 1] + max
+    }
   }
 
   const weaponPrecheck = !joint && classes.every((kindClasses) => kindClasses.every((c) => weaponIdx.every((i) => c.pts[i] === 0)))
@@ -384,10 +435,12 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
     jointFill,
     weaponPrecheck,
     bounds: {
-      noneIndices: poolIndices('none'),
+      noneIndices,
       remainingPts,
+      remainingNone,
       remainingBonus,
       thresholds,
+      lockedThresholds,
     },
     customTalismans,
   }

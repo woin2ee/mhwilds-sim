@@ -21,6 +21,8 @@ export interface FillResult {
   decos: FillDeco[]
   /** 사용한 장식주들의 비선호 스킬 합집합 (정렬) */
   unwanted: number[]
+  /** 채우지 못하고 남긴 부족분 합 (fill 의 tolerance 이하, 부족분을 다 채우면 0) */
+  short: number
 }
 
 export function slotScore(counts: Readonly<SlotCounts>): number {
@@ -73,8 +75,11 @@ export class DecoFiller {
   private readonly bySkill: FillDeco[][]
   /** 슬롯 레벨별로 넣을 수 있는 장식주가 주는 점수 합 최댓값 (가지치기용 상한) */
   private readonly potential: Record<SlotKind, [number, number, number]>
+  /** 스킬(로컬 인덱스)별 고정 여부: 허용치가 있어도 모자란 채로 두지 않는다 */
+  private readonly locked: readonly boolean[]
 
-  constructor(decos: readonly FillDeco[], skillCount: number) {
+  constructor(decos: readonly FillDeco[], skillCount: number, locked: readonly boolean[] = []) {
+    this.locked = locked
     const usable = removeDominated(decos)
     this.bySkill = Array.from({ length: skillCount }, (_, i) =>
       usable
@@ -91,25 +96,35 @@ export class DecoFiller {
     }
   }
 
-  /** 부족분을 채울 수 없으면 null. 인자 배열은 변경하지 않는다. */
-  fill(deficits: readonly number[], armor: Readonly<SlotCounts>, weapon: Readonly<SlotCounts>): FillResult | null {
-    return this.solve([...deficits], [...armor], [...weapon])
+  /**
+   * 부족분을 채울 수 없으면 null. 인자 배열은 변경하지 않는다.
+   * tolerance 를 주면 부족분을 그 합까지 남겨도 되고, 가장 적게 남기는 배치를 고른다 (모자란 조합 찾기, DESIGN.md §6.7).
+   */
+  fill(
+    deficits: readonly number[],
+    armor: Readonly<SlotCounts>,
+    weapon: Readonly<SlotCounts>,
+    tolerance = 0,
+  ): FillResult | null {
+    return this.solve([...deficits], [...armor], [...weapon], tolerance)
   }
 
   get memoSize(): number {
     return this.memo.size
   }
 
-  private solve(d: number[], a: SlotCounts, w: SlotCounts): FillResult | null {
-    const key = `${d.join(',')}|${a.join(',')}|${w.join(',')}`
+  private solve(d: number[], a: SlotCounts, w: SlotCounts, tolerance: number): FillResult | null {
+    // 부족분 합보다 큰 허용치는 부족분 합과 같다 (메모 키를 줄인다)
+    if (tolerance > 0) tolerance = Math.min(tolerance, d.reduce((s, x) => s + x, 0))
+    const key = `${d.join(',')}|${a.join(',')}|${w.join(',')}${tolerance > 0 ? `|${tolerance}` : ''}`
     const cached = this.memo.get(key)
     if (cached !== undefined) return cached
-    const result = this.compute(d, a, w)
+    const result = this.compute(d, a, w, tolerance)
     this.memo.set(key, result)
     return result
   }
 
-  private compute(d: number[], a: SlotCounts, w: SlotCounts): FillResult | null {
+  private compute(d: number[], a: SlotCounts, w: SlotCounts, tolerance: number): FillResult | null {
     let first = -1
     let total = 0
     for (let i = 0; i < d.length; i++) {
@@ -118,12 +133,12 @@ export class DecoFiller {
         total += d[i]
       }
     }
-    if (first < 0) return { score: slotScore(a) + slotScore(w), decos: [], unwanted: [] }
+    if (first < 0) return { score: slotScore(a) + slotScore(w), decos: [], unwanted: [], short: 0 }
 
     const pa = this.potential.armor
     const pw = this.potential.weapon
     const capacity = a[0] * pa[0] + a[1] * pa[1] + a[2] * pa[2] + w[0] * pw[0] + w[1] * pw[1] + w[2] * pw[2]
-    if (capacity < total) return null
+    if (total - capacity > tolerance) return null
 
     let best: FillResult | null = null
     for (const deco of this.bySkill[first]) {
@@ -134,21 +149,31 @@ export class DecoFiller {
       const next = d.slice()
       for (let i = 0; i < next.length; i++) if (deco.pts[i] > 0) next[i] = Math.max(0, next[i] - deco.pts[i])
       slots[level]--
-      const sub = this.solve(next, a, w)
+      const sub = this.solve(next, a, w, tolerance)
       slots[level]++
       if (!sub) continue
       const unwanted = mergeSorted(deco.unwanted, sub.unwanted)
-      // 비선호 스킬이 적은 배치 우선, 같으면 남는 슬롯 점수가 큰 배치 (비선호 기준은 근사)
-      if (
-        !best ||
-        unwanted.length < best.unwanted.length ||
-        (unwanted.length === best.unwanted.length && sub.score > best.score)
-      ) {
-        best = { score: sub.score, decos: [deco, ...sub.decos], unwanted }
+      if (isBetter(sub.short, unwanted, sub.score, best)) {
+        best = { score: sub.score, decos: [deco, ...sub.decos], unwanted, short: sub.short }
       }
+    }
+    // 이 스킬을 1레벨 모자란 채로 둔다 (고정한 스킬은 빼고)
+    if (tolerance > 0 && !this.locked[first]) {
+      const next = d.slice()
+      next[first]--
+      const sub = this.solve(next, a, w, tolerance - 1)
+      if (sub && isBetter(sub.short + 1, sub.unwanted, sub.score, best)) best = { ...sub, short: sub.short + 1 }
     }
     return best
   }
+}
+
+/** 덜 모자란 배치 → 비선호 스킬이 적은 배치 → 남는 슬롯 점수가 큰 배치 순 (비선호 기준은 근사) */
+function isBetter(short: number, unwanted: readonly number[], score: number, best: FillResult | null): boolean {
+  if (!best) return true
+  if (short !== best.short) return short < best.short
+  if (unwanted.length !== best.unwanted.length) return unwanted.length < best.unwanted.length
+  return score > best.score
 }
 
 /** 실제 장비 슬롯 하나 */

@@ -84,7 +84,7 @@ describe('검색 결과 비교 목록', () => {
     expect(relinked.variant).toBe(true)
     expect(defenseResponse.items[relinked.index - 1].armor[kind]).toContain(item.armor[kind][1])
 
-    const empty: SearchResponse = { items: [], total: 0, truncated: false, elapsedMs: 0 }
+    const empty: SearchResponse = { items: [], total: 0, truncated: false, elapsedMs: 0, shortfall: 0 }
     expect(relinkEntries(db, [entry], 3, byDefense, empty)).toEqual([entry])
   })
 

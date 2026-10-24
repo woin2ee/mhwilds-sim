@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react'
+import { SkillChip } from '../../components/SkillChip'
 import { Button, EmptyState, Segmented } from '../../components/ui'
 import type { SearchRequest, SearchResponse, SearchResultItem, SearchSort } from '../../core/search/types'
+import { nameOf, type GameDb } from '../../data/db'
 import { useDb } from '../../state/context'
 import { formatCount } from './format'
 import { ResultCard, type CompareControl, type ExcludeControl } from './ResultCard'
@@ -41,9 +43,13 @@ function PagedCards({
   )
 }
 
-/** 결과가 없을 때 조건별로 해 볼 만한 것 */
-function emptyHints(request: SearchRequest, hasWeaponSkill: boolean): string[] {
-  const hints = ['원하는 스킬의 레벨을 낮추거나 스킬 수를 줄여 보세요.']
+/** 결과가 없을 때 조건별로 해 볼 만한 것. lowering = '원하는 스킬을 낮추기'도 넣을지 (가까운 조합을 보여 줄 땐 뺀다) */
+function emptyHints(request: SearchRequest, hasWeaponSkill: boolean, lowering = true): string[] {
+  const hints = lowering ? ['원하는 스킬의 레벨을 낮추거나 스킬 수를 줄여 보세요.'] : []
+  // 고정한 스킬 때문에 가장 가까운 조합도 못 찾은 경우
+  if (lowering && request.lockedSkills.length > 0 && request.maxShortfall > 0) {
+    hints.unshift('원하는 스킬의 고정을 풀면 그 스킬도 낮춘 가장 가까운 조합을 찾아요.')
+  }
   if (!request.useDecorations) hints.unshift('‘장식주 없이 찾기’를 끄면 모자란 스킬을 장식주로 채워요.')
   if (request.excludedSkills.length > 0 && request.excludeMode === 'exclude') {
     hints.push('비선호 스킬을 ‘표시만’으로 바꾸거나 줄여 보세요.')
@@ -56,6 +62,62 @@ function emptyHints(request: SearchRequest, hasWeaponSkill: boolean): string[] {
     hints.push('무기 스킬은 무기 슬롯이 있어야 장식주로 채울 수 있어요. 무기를 지정해 보세요.')
   }
   return hints
+}
+
+/** 결과 카드에서 모자란 원하는 스킬 칩의 모양 (첫 결과에서 처음 모자란 스킬, ResultCard 의 칩과 같게) */
+function shortChipOf(db: GameDb, request: SearchRequest, item: SearchResultItem | undefined) {
+  if (!item) return null
+  for (const r of request.required) {
+    const skill = db.skills.get(r.skillId)
+    const level = item.skillLevels.find((s) => s.skillId === r.skillId)?.level ?? 0
+    if (!skill || level >= r.level) continue
+    const bonus = skill.kind === 'set' || skill.kind === 'group'
+    return (
+      <SkillChip name={nameOf(skill.name)} level={level} maxLevel={bonus ? undefined : skill.maxLevel} tone="missing">
+        <span className="font-semibold">−{r.level - level}</span>
+      </SkillChip>
+    )
+  }
+  return null
+}
+
+/** 조건을 모두 채우는 조합이 없어 원하는 스킬이 가장 적게 모자란 조합을 보여 줄 때의 안내 */
+function ShortfallNotice({
+  request,
+  response,
+  hasWeaponSkill,
+}: {
+  request: SearchRequest
+  response: SearchResponse
+  hasWeaponSkill: boolean
+}) {
+  const db = useDb()
+  const sample = shortChipOf(db, request, response.items[0])
+  const hints = emptyHints(request, hasWeaponSkill, false)
+  const amount = response.shortfall === 1 ? '1레벨' : `모두 합쳐 ${response.shortfall}레벨`
+  const locked = request.lockedSkills.flatMap((id) => {
+    const skill = db.skills.get(id)
+    return skill ? [nameOf(skill.name)] : []
+  })
+  return (
+    <div className="space-y-1.5 rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-xs">
+      <p className="text-sm font-medium text-warn">조건을 모두 채우는 조합이 없어요.</p>
+      <p>
+        원하는 스킬이 {amount} 모자란, 가장 가까운 조합을 대신 보여 드려요.
+        {sample && <> 모자란 스킬은 {sample} 처럼 표시돼요.</>}{' '}
+        {locked.length > 0
+          ? `고정한 스킬(${locked.join('·')})은 낮추지 않았어요.`
+          : '낮추고 싶지 않은 스킬은 원하는 스킬 목록에서 자물쇠로 고정하세요.'}
+      </p>
+      {hints.length > 0 && (
+        <ul className="space-y-0.5 text-muted">
+          {hints.map((hint) => (
+            <li key={hint}>· {hint}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
 }
 
 export function ResultList({
@@ -94,6 +156,8 @@ export function ResultList({
 
   return (
     <div className="space-y-3">
+      {response.shortfall > 0 && <ShortfallNotice request={request} response={response} hasWeaponSkill={hasWeaponSkill} />}
+
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="text-sm">
           <span className="font-semibold">결과 {formatCount(items.length)}건</span>

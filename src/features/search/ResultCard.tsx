@@ -19,7 +19,7 @@ import { useToast } from '../../state/toast'
 import { COMPARE_MAX } from '../compare/compareRows'
 import { SaveBuildDialog } from '../saved/SaveBuildDialog'
 import { buildKey, isAlternative, type CompareEntry, type ResultVariant } from './compareList'
-import { formatCount } from './format'
+import { bonusRankLabel, formatCount } from './format'
 
 type Expandable = ArmorKind | 'talisman'
 
@@ -51,6 +51,8 @@ interface ChipInfo {
   tone: SkillTone
   /** 시리즈·그룹 스킬의 부위 수 */
   pieces?: number
+  /** 원하는 레벨보다 모자란 레벨 (가장 가까운 조합). 색이 시리즈·그룹 칩과 비슷해서 글자로도 보인다 */
+  short?: number
 }
 
 /** 요구 스킬 → 비선호 → 시리즈/그룹 → 그 외 순서의 스킬 칩 */
@@ -72,6 +74,7 @@ function skillChips(db: GameDb, summary: BuildSummary, request: SearchRequest): 
       maxLevel: bonus ? undefined : skill.maxLevel,
       tone: level >= r.level ? 'required' : 'missing',
       pieces: pieces.get(r.skillId),
+      short: level < r.level ? r.level - level : undefined,
     })
   }
   const unwantedChips: ChipInfo[] = []
@@ -242,6 +245,12 @@ function SkillDetail({
             </p>
           )}
         </div>
+      )}
+      {chip.short !== undefined && (
+        <p className="text-warn">
+          원하는 {bonus ? bonusRankLabel(skill, chip.level + chip.short) : `Lv${chip.level + chip.short}`}보다 {chip.short}
+          {bonus ? '단계' : '레벨'} 모자라요.
+        </p>
       )}
       {chip.tone === 'unwanted' && <p className="text-muted">비선호 스킬이에요.</p>}
       {chip.tone === 'extra' && <UnwantedAction skillId={chip.skillId} request={request} exclude={exclude} />}
@@ -493,10 +502,18 @@ export function ResultCard({
               level={chip.level}
               maxLevel={chip.maxLevel}
               tone={pending ? 'unwanted' : chip.tone}
-              title={extra ? '눌러서 스킬 효과 보기 · 비선호 스킬에 넣거나 빼기' : '눌러서 스킬 효과 보기'}
+              title={
+                chip.short
+                  ? `원하는 레벨보다 ${chip.short} 모자라요 · 눌러서 스킬 효과 보기`
+                  : extra
+                    ? '눌러서 스킬 효과 보기 · 비선호 스킬에 넣거나 빼기'
+                    : '눌러서 스킬 효과 보기'
+              }
               onClick={() => setPicked((id) => (id === chip.skillId ? null : chip.skillId))}
               expanded={picked === chip.skillId}
-            />
+            >
+              {chip.short && <span className="font-semibold">−{chip.short}</span>}
+            </SkillChip>
           )
         })}
       </div>

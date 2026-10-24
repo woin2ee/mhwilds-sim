@@ -37,6 +37,25 @@ function BonusLevelSelect({ skill, value, onChange }: { skill: Skill; value: num
   )
 }
 
+/** 고정 자물쇠. 잠기면 몸통을 채운다 */
+function LockIcon({ locked }: { locked: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      className="size-4"
+    >
+      <rect x="5" y="11" width="14" height="10" rx="2" fill={locked ? 'currentColor' : 'none'} fillOpacity={0.25} />
+      <path d={locked ? 'M8 11V7a4 4 0 0 1 8 0v4' : 'M8 11V7a4 4 0 0 1 7.75-1.4'} />
+    </svg>
+  )
+}
+
 /** 순서 바꾸기 손잡이 (점 6개) */
 function GripIcon() {
   return (
@@ -234,6 +253,26 @@ function RequiredGroupList({
                   ariaLabel={`${name} 레벨`}
                 />
               )}
+              {/* 고정: 조건을 채우는 조합이 없어 가장 가까운 조합을 찾을 때도 이 스킬은 낮추지 않는다.
+                  휴대폰에서 스킬 이름 자리를 덜 차지하게 손잡이처럼 좁게 */}
+              <button
+                type="button"
+                aria-label={`${name} 고정`}
+                aria-pressed={!!r.locked}
+                title={
+                  r.locked
+                    ? '고정됨: 가장 가까운 조합을 찾을 때도 이 레벨은 꼭 채워요 (누르면 풀어요)'
+                    : '고정: 조건을 채우는 조합이 없어 가장 가까운 조합을 찾을 때도 이 스킬은 낮추지 않아요'
+                }
+                onClick={() => onUpdate(r.skillId, { locked: !r.locked })}
+                className={cx(
+                  'flex h-8 w-7 shrink-0 items-center justify-center rounded-md hover:bg-surface-2',
+                  'pointer-coarse:h-10 pointer-coarse:w-8',
+                  r.locked ? 'text-accent' : 'text-muted hover:text-fg',
+                )}
+              >
+                <LockIcon locked={!!r.locked} />
+              </button>
               <Button variant="ghost" size="sm" aria-label={`${name} 제거`} onClick={() => onRemove(r.skillId)}>
                 ×
               </Button>

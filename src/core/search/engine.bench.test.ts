@@ -45,6 +45,8 @@ const base: SearchRequest = {
   excludedArmorIds: [],
   sort: 'slots',
   limit: 300,
+  maxShortfall: 0,
+  lockedSkills: [],
 }
 
 const CASES: [string, Partial<SearchRequest>][] = [
@@ -88,6 +90,36 @@ const CASES: [string, Partial<SearchRequest>][] = [
   ['장식주 없이: 약특5 도전5 연격3', { required: req(['약점 특효', 5], ['도전자', 5], ['연격', 3]), useDecorations: false }],
   ['장식주 없이: 약특5 도전5', { required: req(['약점 특효', 5], ['도전자', 5]), useDecorations: false }],
   ['장식주 없이: 약특1 (상한 도달 예상)', { required: req(['약점 특효', 1]), useDecorations: false }],
+  // 조건을 채우는 조합이 없어 가장 적게 모자란 조합을 찾는 경우 (결과 칸의 −N = 모자란 레벨 합)
+  [
+    '모자란 조합: 7스킬 최대',
+    {
+      required: req(['약점 특효', 5], ['도전자', 5], ['연격', 5], ['힘의 해방', 5], ['회피 성능', 5], ['회피 거리 UP', 3], ['체술', 3]),
+      maxShortfall: 99,
+    },
+  ],
+  [
+    '모자란 조합: 10스킬 최대',
+    {
+      required: req(
+        ['약점 특효', 5], ['도전자', 5], ['연격', 5], ['힘의 해방', 5], ['회피 성능', 5],
+        ['회피 거리 UP', 3], ['체술', 3], ['귀마개', 3], ['납도술', 3], ['공세', 5],
+      ),
+      maxShortfall: 99,
+    },
+  ],
+  [
+    '모자란 조합: 장식주 없이 6스킬',
+    {
+      required: req(['약점 특효', 5], ['도전자', 5], ['연격', 5], ['힘의 해방', 5], ['회피 성능', 5], ['체술', 3]),
+      useDecorations: false,
+      maxShortfall: 99,
+    },
+  ],
+  [
+    '모자란 조합: 무기 스킬 없이 공격5 간파5 약특5 (상한 도달 예상)',
+    { required: req(['공격', 5], ['간파', 5], ['약점 특효', 5]), maxShortfall: 99 },
+  ],
 ]
 
 describe.skipIf(!process.env.BENCH)('search benchmark', () => {
@@ -97,7 +129,8 @@ describe.skipIf(!process.env.BENCH)('search benchmark', () => {
       const r = { ...base, ...overrides }
       runSearch(db, r) // 워밍업 (JIT)
       const res = runSearch(db, r)
-      rows.push(`| ${name} | ${res.elapsedMs.toFixed(0)} ms | ${res.total} | ${res.truncated ? 'Y' : ''} |`)
+      const shortfall = res.shortfall > 0 ? ` (−${res.shortfall})` : ''
+      rows.push(`| ${name} | ${res.elapsedMs.toFixed(0)} ms | ${res.total}${shortfall} | ${res.truncated ? 'Y' : ''} |`)
       expect(res.elapsedMs).toBeLessThan(25_000)
     }
     console.log(['| 조건 | 시간 | 결과 | 상한 |', '|---|---:|---:|---|', ...rows].join('\n'))

@@ -5,7 +5,7 @@ import { activeSkillLevels, computeBuild, unwantedSkillsOf } from '../calc'
 import { canTranscend } from '../transcend'
 import { emptyBuild, EQUIP_KEYS } from '../types'
 import { assignDecorations, type ConcreteSlot, type FillResult, type SlotCounts } from './decoFill'
-import { prepare, type Fillers, type Prepared } from './prepare'
+import { bonusShortfall, prepare, type Fillers, type Prepared } from './prepare'
 import { TopK, type Ranked } from './topK'
 import type { SearchProgress, SearchRequest, SearchResponse, SearchResultItem } from './types'
 
@@ -31,10 +31,19 @@ export interface EngineHooks {
 export function runSearch(db: GameDb, request: SearchRequest, hooks: EngineHooks = {}): SearchResponse {
   const started = performance.now()
   const prepared = prepare(db, request)
-  if (!prepared) return { items: [], total: 0, truncated: false, elapsedMs: performance.now() - started }
-  const searcher = new Searcher(db, request, prepared, hooks, started)
+  if (!prepared) return { items: [], total: 0, truncated: false, elapsedMs: performance.now() - started, shortfall: 0 }
+  const searcher = new Searcher(db, request, prepared, hooks, started, 0)
   searcher.run()
-  return searcher.response()
+  const response = searcher.response()
+  // 조건을 모두 채우는 조합이 (끝까지 찾아도) 없으면 원하는 스킬이 가장 적게 모자란 조합을 찾는다 (§6.7).
+  // 시간 상한은 앞의 검색과 함께 센다
+  const maxShortfall = Math.floor(request.maxShortfall)
+  // 원하는 스킬을 모두 고정했으면 낮출 수 있는 스킬이 없어 엄격 검색과 같다
+  const relaxable = prepared.required.some((r) => !r.locked) || prepared.bonuses.some((b) => !b.locked)
+  if (response.total > 0 || response.truncated || !(maxShortfall > 0) || !relaxable) return response
+  const relaxed = new Searcher(db, request, prepared, hooks, started, maxShortfall)
+  relaxed.run()
+  return relaxed.response()
 }
 
 /** 찾은 조합 (상위 limit 개만 보관) */
@@ -47,7 +56,7 @@ interface Leaf extends Ranked {
 }
 
 const NO_SLOTS: Readonly<SlotCounts> = [0, 0, 0]
-const EMPTY_FILL: FillResult = { score: 0, decos: [], unwanted: [] }
+const EMPTY_FILL: FillResult = { score: 0, decos: [], unwanted: [], short: 0 }
 
 class Searcher {
   private readonly db: GameDb
@@ -67,7 +76,11 @@ class Searcher {
   private talismanPosition = 0
   private weaponResult: FillResult | null = null
 
-  private readonly results: TopK<Leaf>
+  /** 모자란 조합 찾기인지 (bound 의 처음 값이 0 보다 큼) */
+  private readonly relaxed: boolean
+  /** 받아들일 수 있는 모자란 레벨 합. 엄격 검색은 0, 모자란 조합 찾기는 더 적게 모자란 조합을 찾을 때마다 줄어든다 */
+  private bound: number
+  private results: TopK<Leaf>
   private total = 0
   private seq = 0
   private leaves = 0
@@ -75,17 +88,30 @@ class Searcher {
   private stopped = false
   private lastProgress = 0
 
-  constructor(db: GameDb, request: SearchRequest, prepared: Prepared, hooks: EngineHooks, started: number) {
+  constructor(
+    db: GameDb,
+    request: SearchRequest,
+    prepared: Prepared,
+    hooks: EngineHooks,
+    started: number,
+    maxShortfall: number,
+  ) {
     this.db = db
     this.request = request
     this.p = prepared
     this.hooks = hooks
     this.limits = { ...DEFAULT_LIMITS, ...hooks.limits }
     this.started = started
+    this.relaxed = maxShortfall > 0
+    this.bound = maxShortfall
     this.points = new Int32Array(prepared.required.length)
     this.bonusPieces = new Int32Array(prepared.bonuses.length)
     this.chosen = new Int32Array(prepared.kinds.length)
-    this.results = new TopK<Leaf>(Math.max(1, Math.floor(request.limit) || DEFAULT_RESULT_LIMIT))
+    this.results = this.newResults()
+  }
+
+  private newResults(): TopK<Leaf> {
+    return new TopK<Leaf>(Math.max(1, Math.floor(this.request.limit) || DEFAULT_RESULT_LIMIT))
   }
 
   run(): void {
@@ -102,7 +128,9 @@ class Searcher {
         this.weaponSlots[level] = weapon.slotCounts[level] + talisman.weaponSlots[level]
       }
       // 무기 스킬은 방어구와 무관하므로 호석마다 한 번만 판정한다
-      this.weaponResult = this.p.weaponPrecheck ? this.fill(this.p.weaponFill, NO_SLOTS, this.weaponSlots) : null
+      this.weaponResult = this.p.weaponPrecheck
+        ? this.fill(this.p.weaponFill, NO_SLOTS, this.weaponSlots, this.bound)
+        : null
       if ((!this.p.weaponPrecheck || this.weaponResult) && this.feasible(0)) this.dfs(0)
       this.progress(1, 1, true)
     }
@@ -114,6 +142,7 @@ class Searcher {
       total: this.total,
       truncated: this.stopped,
       elapsedMs: performance.now() - this.started,
+      shortfall: this.relaxed && this.total > 0 ? this.bound : 0,
     }
   }
 
@@ -141,17 +170,38 @@ class Searcher {
     for (let level = 0; level < 3; level++) this.armorSlots[level] += sign * slots[level]
   }
 
-  /** 남은 부위(depth 이후)를 최대로 가정해도 조건을 못 채우면 false (낙관적 상한만 사용) */
+  /**
+   * 남은 부위(depth 이후)를 최대로 가정해도 모자랄 수밖에 없는 레벨 합이 bound 를 넘으면 false (낙관적 상한만 사용).
+   * 엄격 검색(bound 0)은 한 스킬이라도 모자라면 컷
+   */
   private feasible(depth: number): boolean {
     const { required, bonuses, bounds } = this.p
+    let short = this.weaponResult?.short ?? 0
     const remainingBonus = bounds.remainingBonus[depth]
     for (let j = 0; j < bonuses.length; j++) {
-      if (this.bonusPieces[j] + remainingBonus[j] < bonuses[j].pieces) return false
+      const bonus = bonuses[j]
+      const pieces = this.bonusPieces[j] + remainingBonus[j]
+      if (pieces < bonus.pieces && (bonus.locked || (short += bonusShortfall(bonus, pieces)) > this.bound)) return false
     }
-    const remainingPts = bounds.remainingPts[depth]
-    for (const i of bounds.noneIndices) {
-      if (this.points[i] + remainingPts[i] < required[i].need) return false
+    // 장식주로 못 채우는 스킬: 스킬마다 남은 부위의 최대 점수를 따로 더한 하한과, 부족분 합에서 남은 부위가 한 번에 줄 수 있는
+    // 점수 합을 뺀 하한 중 큰 쪽 (스킬이 많으면 뒤쪽이 훨씬 정확하다)
+    if (bounds.noneIndices.length > 0) {
+      const remainingPts = bounds.remainingPts[depth]
+      let perSkill = 0
+      let deficit = 0
+      for (const i of bounds.noneIndices) {
+        const d = required[i].need - this.points[i]
+        if (d <= 0) continue
+        deficit += d
+        if (d > remainingPts[i]) {
+          if (required[i].locked) return false
+          perSkill += d - remainingPts[i]
+        }
+      }
+      if ((short += Math.max(perSkill, deficit - bounds.remainingNone[depth])) > this.bound) return false
     }
+    // 방어구 장식주로 채우는 스킬: 임계 레벨별 스킬 묶음이 서로 포함 관계(1 ⊇ 2 ⊇ 3)라 가장 큰 하한 하나만 더한다
+    let armorShort = 0
     const slots = this.armorSlots
     for (const th of bounds.thresholds) {
       let deficit = 0
@@ -161,31 +211,72 @@ class Searcher {
       }
       if (deficit === 0) continue
       const current = slots[0] * th.pot[0] + slots[1] * th.pot[1] + slots[2] * th.pot[2]
-      if (deficit > current + th.remaining[depth]) return false
+      const lack = deficit - current - th.remaining[depth]
+      if (lack > armorShort) {
+        if (short + lack > this.bound) return false
+        armorShort = lack
+      }
+    }
+    // 고정한 스킬은 모자라면 안 되므로 그 스킬들만으로도 본다 (엄격 검색은 위 검사에 이미 들어 있다)
+    if (this.relaxed) {
+      for (const th of bounds.lockedThresholds) {
+        let deficit = 0
+        for (const i of th.indices) {
+          const d = required[i].need - this.points[i]
+          if (d > 0) deficit += d
+        }
+        if (deficit > slots[0] * th.pot[0] + slots[1] * th.pot[1] + slots[2] * th.pot[2] + th.remaining[depth]) return false
+      }
     }
     return true
   }
 
-  private fill(fillers: Fillers, armor: Readonly<SlotCounts>, weapon: Readonly<SlotCounts>): FillResult | null {
+  private fill(
+    fillers: Fillers,
+    armor: Readonly<SlotCounts>,
+    weapon: Readonly<SlotCounts>,
+    tolerance: number,
+  ): FillResult | null {
     const { required } = this.p
     const deficits = fillers.indices.map((i) => Math.max(0, required[i].need - this.points[i]))
-    return fillers.clean.fill(deficits, armor, weapon) ?? fillers.all?.fill(deficits, armor, weapon) ?? null
+    const clean = fillers.clean.fill(deficits, armor, weapon, tolerance)
+    if (!fillers.all || clean?.short === 0) return clean
+    // 비선호 장식주는 그걸로 덜 모자랄 때만 쓴다
+    const all = fillers.all.fill(deficits, armor, weapon, clean ? clean.short - 1 : tolerance)
+    return all ?? clean
   }
 
   private leaf(): void {
     if (++this.leaves >= this.limits.maxLeaves) this.stopped = true
-    const { classes, kinds, talismans, weapon, jointFill } = this.p
+    const { classes, kinds, talismans, weapon, jointFill, required, bonuses, bounds } = this.p
 
+    // 시리즈/그룹 스킬과 장식주로 못 채우는 스킬은 고른 부위만으로 정해진다
+    let short = 0
+    for (let j = 0; j < bonuses.length; j++) {
+      if (this.bonusPieces[j] < bonuses[j].pieces) short += bonusShortfall(bonuses[j], this.bonusPieces[j])
+    }
+    for (const i of bounds.noneIndices) if (this.points[i] < required[i].need) short += required[i].need - this.points[i]
     let armorFill: FillResult | null
     let weaponFill: FillResult | null
     if (jointFill) {
-      armorFill = this.fill(jointFill, this.armorSlots, this.weaponSlots)
+      armorFill = this.fill(jointFill, this.armorSlots, this.weaponSlots, this.bound - short)
       weaponFill = EMPTY_FILL
     } else {
-      armorFill = this.fill(this.p.armorFill, this.armorSlots, NO_SLOTS)
-      weaponFill = armorFill && (this.weaponResult ?? this.fill(this.p.weaponFill, NO_SLOTS, this.weaponSlots))
+      // 방어구·무기 장식주는 따로 채우므로 각각 가장 적게 모자란 배치를 합치면 된다
+      const weaponShort = this.weaponResult?.short ?? 0
+      armorFill = this.fill(this.p.armorFill, this.armorSlots, NO_SLOTS, this.bound - short - weaponShort)
+      weaponFill =
+        armorFill &&
+        (this.weaponResult ?? this.fill(this.p.weaponFill, NO_SLOTS, this.weaponSlots, this.bound - short - armorFill.short))
     }
     if (!armorFill || !weaponFill) return
+    short += armorFill.short + weaponFill.short
+    if (short < this.bound) {
+      // 더 적게 모자란 조합을 찾았으면 지금까지 모은 결과는 버리고 이만큼 모자란 조합만 모은다
+      this.bound = short
+      this.results = this.newResults()
+      this.total = 0
+    }
 
     let defense = weapon.defense
     let unwanted =
@@ -227,7 +318,7 @@ class Searcher {
     if (!force && now - this.lastProgress < PROGRESS_INTERVAL_MS) return
     this.lastProgress = now
     const ratio = (this.talismanPosition + done / total) / this.p.talismans.length
-    this.hooks.onProgress({ ratio: Math.min(1, ratio), found: this.total })
+    this.hooks.onProgress({ ratio: Math.min(1, ratio), found: this.total, relaxed: this.relaxed })
   }
 
   /** 상위 결과를 실제 장비·장식주 배치로 바꾸고 computeBuild 로 최종 값을 계산한다 */

@@ -158,6 +158,26 @@ describe('검색 조건 → SearchRequest', () => {
     expect(requestKey(request(true))).not.toBe(requestKey(request()))
     expect(requestKey(request(false))).toBe(requestKey(request()))
   })
+
+  it('고정한 원하는 스킬은 id 순으로 lockedSkills 에 담고, 꺼 둔 스킬은 고정해도 빠진다', () => {
+    const [attack, crit, weakness] = ['공격', '간파', '약점 특효'].map((name) => skillIdByName(db, name))
+    const request = buildRequest(
+      db,
+      cond({
+        required: [
+          { skillId: weakness, level: 5, locked: true },
+          { skillId: crit, level: 2, locked: true, off: true },
+          { skillId: attack, level: 3, locked: true },
+        ],
+      }),
+      [],
+    )
+    expect(request.lockedSkills).toEqual([attack, weakness].sort((a, b) => a - b))
+    expect(request.maxShortfall).toBeGreaterThan(0)
+    const unlocked = buildRequest(db, cond({ required: [{ skillId: attack, level: 3 }, { skillId: weakness, level: 5 }] }), [])
+    expect(unlocked.lockedSkills).toEqual([])
+    expect(requestKey(unlocked)).not.toBe(requestKey(request))
+  })
 })
 
 describe('원하는 스킬 묶음·순서', () => {
