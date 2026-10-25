@@ -91,8 +91,7 @@ export function computeBuild(
 
   const defense = { base: 0, max: 0 }
   const resistances = Object.fromEntries(ELEMENTS.map((e) => [e, 0])) as Record<Element, number>
-  const setPieces = new Map<number, number>()
-  const groupPieces = new Map<number, number>()
+  const bonusPieces = new Map<number, number>()
   const slots: SlotUsage[] = []
 
   for (const key of EQUIP_KEYS) {
@@ -102,8 +101,7 @@ export function computeBuild(
     defense.max += eq.defense.max
     for (const element of ELEMENTS) resistances[element] += eq.resistances[element]
     for (const point of eq.skills) addSkill(point, key, null)
-    if (eq.setSkillId !== null) setPieces.set(eq.setSkillId, (setPieces.get(eq.setSkillId) ?? 0) + 1)
-    if (eq.groupSkillId !== null) groupPieces.set(eq.groupSkillId, (groupPieces.get(eq.groupSkillId) ?? 0) + 1)
+    for (const skillId of eq.bonusSkillIds) bonusPieces.set(skillId, (bonusPieces.get(skillId) ?? 0) + 1)
 
     const decorationIds = build.decorations[key] ?? []
     eq.slots.forEach((slot, index) => {
@@ -119,22 +117,17 @@ export function computeBuild(
     .sort((a, b) => b.level - a.level || a.skillId - b.skillId)
 
   const bonuses: BonusTotal[] = []
-  for (const [kind, counts] of [
-    ['set', setPieces],
-    ['group', groupPieces],
-  ] as const) {
-    for (const [skillId, pieces] of counts) {
-      const skill = db.skills.get(skillId)
-      if (!skill) continue
-      bonuses.push({
-        skillId,
-        kind,
-        pieces,
-        level: bonusLevel(skill, pieces),
-        maxLevel: skill.maxLevel,
-        nextPieces: nextBonusPieces(skill, pieces),
-      })
-    }
+  for (const [skillId, pieces] of bonusPieces) {
+    const skill = db.skills.get(skillId)
+    if (!skill || (skill.kind !== 'set' && skill.kind !== 'group')) continue
+    bonuses.push({
+      skillId,
+      kind: skill.kind,
+      pieces,
+      level: bonusLevel(skill, pieces),
+      maxLevel: skill.maxLevel,
+      nextPieces: nextBonusPieces(skill, pieces),
+    })
   }
   bonuses.sort((a, b) => b.level - a.level || b.pieces - a.pieces || a.skillId - b.skillId)
 

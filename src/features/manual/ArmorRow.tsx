@@ -7,7 +7,7 @@ import type { SlotUsage } from '../../core/calc'
 import { armorDefense, armorSlots, canTranscend, TRANSCEND_DEFENSE_BONUS } from '../../core/transcend'
 import { nameOf, type GameDb } from '../../data/db'
 import { signed, skillName, skillPointsText } from '../../data/format'
-import { ARMOR_KIND_LABEL, ELEMENT_LABEL } from '../../data/labels'
+import { ARMOR_KIND_LABEL, ELEMENT_LABEL, SKILL_KIND_LABEL } from '../../data/labels'
 import { ELEMENTS, type ArmorKind, type ArmorPiece } from '../../data/types'
 import { useAppState, useDb } from '../../state/context'
 import { refitDecorations, setArmor, setDecoration } from '../../core/buildUpdates'
@@ -20,10 +20,9 @@ const getKey = (a: ArmorPiece) => a.id
 const getLabel = (a: ArmorPiece) => nameOf(a.name)
 const groupBy = (a: ArmorPiece) => `레어도 ${a.rarity}`
 
-/** 방어구가 속한 세트의 시리즈/그룹 스킬 이름 */
+/** 방어구에 붙은 시리즈/그룹 스킬 이름 */
 function bonusNames(db: GameDb, piece: ArmorPiece): string[] {
-  const { setSkillId, groupSkillId } = db.bonusesOf(piece)
-  return [setSkillId, groupSkillId].flatMap((id) => (id === null ? [] : [skillName(db, id)]))
+  return piece.bonusSkillIds.map((id) => skillName(db, id))
 }
 
 export function ArmorRow({
@@ -126,7 +125,6 @@ function ArmorInfo({
   const resistances = ELEMENTS.filter((e) => piece.resistances[e] !== 0)
     .map((e) => `${ELEMENT_LABEL[e]}${signed(piece.resistances[e])}`)
     .join(' ')
-  const { setSkillId, groupSkillId } = db.bonusesOf(piece)
   const transcendedSlots = armorSlots(piece, true)
   const slotsChange = transcendedSlots.join() !== piece.slots.join()
 
@@ -140,8 +138,9 @@ function ArmorInfo({
         {piece.skills.map((p) => (
           <SkillChip key={p.skillId} name={skillName(db, p.skillId)} level={p.level} />
         ))}
-        {setSkillId !== null && <SkillChip tone="bonus" name={skillName(db, setSkillId)} title="시리즈 스킬" />}
-        {groupSkillId !== null && <SkillChip tone="bonus" name={skillName(db, groupSkillId)} title="그룹 스킬" />}
+        {piece.bonusSkillIds.map((id) => (
+          <SkillChip key={id} tone="bonus" name={skillName(db, id)} title={SKILL_KIND_LABEL[db.skill(id).kind]} />
+        ))}
       </div>
       {canTranscend(piece) && (
         <Toggle

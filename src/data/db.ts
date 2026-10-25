@@ -80,12 +80,6 @@ export class GameDb {
   talismanByGameKey(charmGameId: number, level: number): FixedTalisman | undefined {
     return this.talismansByGame.get(`${charmGameId}:${level}`)
   }
-
-  /** 방어구가 속한 세트의 시리즈/그룹 스킬 */
-  bonusesOf(piece: ArmorPiece): { setSkillId: number | null; groupSkillId: number | null } {
-    const set = this.armorSets.get(piece.setId)
-    return { setSkillId: set?.setSkillId ?? null, groupSkillId: set?.groupSkillId ?? null }
-  }
 }
 
 function byId<T extends { id: number }>(rows: T[]): Map<number, T> {

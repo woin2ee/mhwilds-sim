@@ -45,6 +45,28 @@ describe('computeBuild', () => {
     expect(set).toMatchObject({ pieces: 2, level: 1, nextPieces: 4 })
   })
 
+  describe('고그 방어구: 부위마다 거극룡의 묵시록 + 다른 몬스터의 시리즈 스킬', () => {
+    const bonusOf = (summary: ReturnType<typeof computeBuild>, name: string) =>
+      summary.bonuses.find((b) => b.skillId === skillIdByName(db, name))
+
+    it('두 시리즈 스킬을 각각 1부위로 센다', () => {
+      const summary = computeBuild(
+        db,
+        buildWith(['그라비드헬름α', '그라비드메일β', '그라비드암α', '고그코일β', '고그그리브β']),
+      )
+      expect(bonusOf(summary, '개룡의 수호')).toMatchObject({ kind: 'set', pieces: 4, level: 2 })
+      expect(bonusOf(summary, '거극룡의 묵시록')).toMatchObject({ kind: 'set', pieces: 2, level: 1 })
+      expect(bonusOf(summary, '포호룡의 힘')).toMatchObject({ kind: 'set', pieces: 1, level: 0 })
+    })
+
+    it('고그β 5부위: 거극룡의 묵시록 2단계, 호쇄인룡의 명맥은 헬름β 1부위뿐', () => {
+      const summary = computeBuild(db, buildWith(['고그헬름β', '고그메일β', '고그암β', '고그코일β', '고그그리브β']))
+      expect(bonusOf(summary, '거극룡의 묵시록')).toMatchObject({ pieces: 5, level: 2 })
+      expect(bonusOf(summary, '호쇄인룡의 명맥')).toMatchObject({ pieces: 1, level: 0 })
+      expect(summary.bonuses.filter((b) => b.kind === 'group')).toEqual([])
+    })
+  })
+
   it('장식주: 종류/크기가 맞을 때만 스킬로 계산하고, 최대 레벨을 넘으면 잘라낸다', () => {
     const build = buildWith(['슈바르카그리브γ']) // 슬롯 [3, 3]
     const weaknessExploit = skillIdByName(db, '약점 특효')

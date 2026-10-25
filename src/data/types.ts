@@ -65,10 +65,6 @@ export interface ArmorSet {
   /** 게임 내부 id. 방어구는 (세트 gameId, 부위)로 식별한다. */
   gameId: number
   name: Names
-  /** 시리즈 스킬 id. α/β/γ 세트가 같은 시리즈 스킬을 공유하며 부위 수를 합산한다. */
-  setSkillId: number | null
-  /** 그룹 스킬 id. 서로 다른 세트끼리도 같은 그룹 스킬이면 부위 수를 합산한다. */
-  groupSkillId: number | null
   pieceIds: number[]
 }
 
@@ -81,8 +77,13 @@ export interface ArmorPiece {
   /** max = 강화 최대치 (초월 전) */
   defense: { base: number; max: number }
   resistances: Record<Element, number>
-  /** armor/weapon 스킬만. 시리즈/그룹 스킬은 setId → ArmorSet 으로 계산한다. */
+  /** armor/weapon 스킬만. 시리즈/그룹 스킬은 bonusSkillIds */
   skills: SkillPoint[]
+  /**
+   * 장착하면 각각 1부위로 세는 시리즈/그룹 스킬 (시리즈 → 그룹, 세트 공통 먼저). 같은 스킬이면 세트가 달라도
+   * 부위 수를 합산한다 (시리즈 스킬은 α/β/γ 세트끼리). 고그 방어구는 부위마다 다른 몬스터의 시리즈 스킬이 하나 더 붙는다.
+   */
+  bonusSkillIds: number[]
   /** 방어구 슬롯 레벨 (내림차순) */
   slots: SlotLevel[]
   setId: number

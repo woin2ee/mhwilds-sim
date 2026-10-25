@@ -20,9 +20,8 @@ export interface ResolvedEquipment {
   slots: Slot[]
   defense: { base: number; max: number }
   resistances: Record<Element, number>
-  /** 방어구·거극 아티어 무기: 시리즈/그룹 스킬 부위 수 계산용 (장비 하나 = 1부위) */
-  setSkillId: number | null
-  groupSkillId: number | null
+  /** 방어구·거극 아티어 무기: 시리즈/그룹 스킬 부위 수 계산용 (장비 하나 = 스킬마다 1부위) */
+  bonusSkillIds: number[]
 }
 
 const NO_RESISTANCE: Record<Element, number> = Object.fromEntries(ELEMENTS.map((e) => [e, 0])) as Record<
@@ -34,6 +33,7 @@ const NO_DEFENSE = { base: 0, max: 0 }
 export function resolveWeapon(db: GameDb, choice: WeaponChoice | null): ResolvedEquipment | null {
   if (!choice) return null
   const { setSkillId, groupSkillId } = gogmaSkillsOf(db, choice)
+  const bonusSkillIds = [setSkillId, groupSkillId].filter((id) => id !== null)
   if (choice.type === 'custom') {
     return {
       key: 'weapon',
@@ -42,8 +42,7 @@ export function resolveWeapon(db: GameDb, choice: WeaponChoice | null): Resolved
       slots: choice.slots.map((level) => ({ kind: 'weapon', level })),
       defense: NO_DEFENSE,
       resistances: NO_RESISTANCE,
-      setSkillId,
-      groupSkillId,
+      bonusSkillIds,
     }
   }
   const weapon = db.weapons.get(choice.id)
@@ -55,8 +54,7 @@ export function resolveWeapon(db: GameDb, choice: WeaponChoice | null): Resolved
     slots: weapon.slots.map((level) => ({ kind: 'weapon', level })),
     defense: { base: weapon.defenseBonus, max: weapon.defenseBonus },
     resistances: NO_RESISTANCE,
-    setSkillId,
-    groupSkillId,
+    bonusSkillIds,
   }
 }
 
@@ -64,7 +62,6 @@ export function resolveArmor(db: GameDb, kind: ArmorKind, choice: ArmorChoice | 
   if (!choice) return null
   const piece = db.armor.get(choice.id)
   if (!piece || piece.kind !== kind) return null
-  const { setSkillId, groupSkillId } = db.bonusesOf(piece)
   return {
     key: kind,
     name: piece.name.ko,
@@ -72,8 +69,7 @@ export function resolveArmor(db: GameDb, kind: ArmorKind, choice: ArmorChoice | 
     slots: armorSlots(piece, choice.transcend).map((level) => ({ kind: 'armor', level })),
     defense: armorDefense(piece, choice.transcend),
     resistances: piece.resistances,
-    setSkillId,
-    groupSkillId,
+    bonusSkillIds: piece.bonusSkillIds,
   }
 }
 
@@ -93,8 +89,7 @@ export function resolveTalisman(
       slots: talisman.slots,
       defense: NO_DEFENSE,
       resistances: NO_RESISTANCE,
-      setSkillId: null,
-      groupSkillId: null,
+      bonusSkillIds: [],
     }
   }
   const talisman = db.talismans.get(ref.id)
@@ -106,8 +101,7 @@ export function resolveTalisman(
     slots: [],
     defense: NO_DEFENSE,
     resistances: NO_RESISTANCE,
-    setSkillId: null,
-    groupSkillId: null,
+    bonusSkillIds: [],
   }
 }
 

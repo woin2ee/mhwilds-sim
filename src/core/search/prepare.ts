@@ -149,7 +149,7 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
   for (const [skillId, level] of merged) {
     const skill = db.skill(skillId)
     if (skill.kind === 'set' || skill.kind === 'group') {
-      const fromWeapon = resolvedWeapon?.setSkillId === skillId || resolvedWeapon?.groupSkillId === skillId ? 1 : 0
+      const fromWeapon = resolvedWeapon?.bonusSkillIds.includes(skillId) ? 1 : 0
       const steps = Array.from(
         { length: level },
         (_, i) =>
@@ -279,8 +279,7 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
     for (const piece of candidates) {
       const transcend = request.transcend && canTranscend(piece)
       const pts = Int32Array.from(required, (r) => Math.min(r.need, pointsOf(piece.skills, r.skillId)))
-      const { setSkillId, groupSkillId } = db.bonusesOf(piece)
-      const bonus = Uint8Array.from(bonuses, (b) => (b.skillId === setSkillId || b.skillId === groupSkillId ? 1 : 0))
+      const bonus = Uint8Array.from(bonuses, (b) => (piece.bonusSkillIds.includes(b.skillId) ? 1 : 0))
       const slots = armorSlots(piece, transcend)
       const unwanted = unwantedOf(piece.skills, excluded)
       const key = `${pts.join(',')}|${bonus.join('')}|${slots.join('')}|${unwanted.join(',')}`

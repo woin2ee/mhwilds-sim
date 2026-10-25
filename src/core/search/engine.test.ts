@@ -127,6 +127,16 @@ describe('runSearch', () => {
     verify(r, res)
   })
 
+  it('고그 방어구는 부위마다 붙은 다른 몬스터의 시리즈 스킬도 1부위로 센다', () => {
+    // 개룡의 수호 4부위 + 거극룡의 묵시록 2부위는 둘 다 붙은 고그그리브β 를 껴야 5부위에 들어간다
+    const r = request({ required: req(['개룡의 수호', 2], ['거극룡의 묵시록', 1]) })
+    const res = runSearch(db, r)
+    expect(res.items.length).toBeGreaterThan(0)
+    verify(r, res)
+    const legs = armorByName(db, '고그그리브β').id
+    for (const item of res.items) expect(resultToBuild(db, item, r).armor.legs?.id).toBe(legs)
+  })
+
   describe('비선호 스킬', () => {
     const required = req(['약점 특효', 5], ['도전자', 5], ['연격', 3])
     const excludedSkills = [sid('공세')]
@@ -211,7 +221,7 @@ describe('runSearch', () => {
     /** 결과의 방어구 중 그 시리즈/그룹 스킬에 속한 부위 수 */
     const armorPieces = (r: SearchRequest, item: SearchResultItem, skillId: number) => {
       const { equipment } = computeBuild(db, resultToBuild(db, item, r))
-      return ARMOR_KINDS.filter((k) => [equipment[k]?.setSkillId, equipment[k]?.groupSkillId].includes(skillId)).length
+      return ARMOR_KINDS.filter((k) => equipment[k]?.bonusSkillIds.includes(skillId)).length
     }
 
     it('무기에 붙은 시리즈 스킬만큼 방어구를 1부위 덜 찾는다', () => {
@@ -563,7 +573,7 @@ describe('일반화된 경로 (합성 데이터)', () => {
   const data: GameData = {
     meta: { source: 'test', mhdbVersion: 'test', generatedAt: '', locales: ['ko', 'en', 'ja'] },
     skills: [skill(1, 'armor', 5), skill(2, 'weapon', 3), skill(3, 'armor', 3)],
-    armorSets: [{ id: 1, gameId: 1, name: names('set'), setSkillId: null, groupSkillId: null, pieceIds: [1, 2, 3, 4, 5, 6] }],
+    armorSets: [{ id: 1, gameId: 1, name: names('set'), pieceIds: [1, 2, 3, 4, 5, 6] }],
     armor: [
       ...kinds.map((kind, i) => ({
         id: i + 1,
@@ -574,6 +584,7 @@ describe('일반화된 경로 (합성 데이터)', () => {
         defense: { base: 10, max: 20 },
         resistances: resist,
         skills: [{ skillId: 1, level: 1 }],
+        bonusSkillIds: [],
         slots: [2, 1] as (1 | 2 | 3)[],
         setId: 1,
       })),
@@ -587,6 +598,7 @@ describe('일반화된 경로 (합성 데이터)', () => {
         defense: { base: 5, max: 5 },
         resistances: resist,
         skills: [{ skillId: 2, level: 1 }],
+        bonusSkillIds: [],
         slots: [] as (1 | 2 | 3)[],
         setId: 1,
       },

@@ -129,11 +129,28 @@ async function main() {
       id: set.id,
       gameId: set.gameId,
       name: namesOf(setNameIdx, set.id),
-      setSkillId: set.bonus?.skill?.id ?? null,
-      groupSkillId: set.groupBonus?.skill?.id ?? null,
       pieceIds: set.pieces.map((p) => p.id).sort((a, b) => a - b),
     }))
     .sort((a, b) => a.id - b.id)
+
+  // 시리즈/그룹 스킬은 부위 스킬 목록(Lv1)에서 가져온다. 보통 세트 공통이지만 고그 방어구는 부위마다 다른 몬스터의
+  // 시리즈 스킬이 하나 더 붙는데, MHDB 세트의 bonus/groupBonus 는 하나씩만 담아서 고그β 처럼 틀린 값이 들어간다.
+  const isBonusSkill = (entry) => ['set', 'group'].includes(skillKinds.get(entry.skill.id))
+  const setBonusPieces = new Map()
+  for (const a of armor) {
+    const counts = setBonusPieces.get(a.armorSet.id) ?? new Map()
+    setBonusPieces.set(a.armorSet.id, counts)
+    for (const e of (a.skills ?? []).filter(isBonusSkill)) counts.set(e.skill.id, (counts.get(e.skill.id) ?? 0) + 1)
+  }
+  /** 시리즈 → 그룹, 같은 종류면 세트에서 더 많은 부위가 가진 스킬(세트 공통)부터 */
+  const bonusSkillIdsOf = (a) => {
+    const counts = setBonusPieces.get(a.armorSet.id)
+    const kindOrder = (id) => (skillKinds.get(id) === 'set' ? 0 : 1)
+    return (a.skills ?? [])
+      .filter(isBonusSkill)
+      .map((e) => e.skill.id)
+      .sort((x, y) => kindOrder(x) - kindOrder(y) || counts.get(y) - counts.get(x) || x - y)
+  }
 
   const outArmor = armor
     .map((a) => {
@@ -146,8 +163,9 @@ async function main() {
         rarity: a.rarity,
         defense: { base: a.defense.base, max: a.defense.max },
         resistances: Object.fromEntries(ELEMENTS.map((e) => [e, a.resistances?.[e] ?? 0])),
-        // 시리즈/그룹 스킬은 세트 정보로 계산하므로 부위 스킬 목록에서는 제외
+        // 시리즈/그룹 스킬은 레벨 대신 부위 수로 세므로 bonusSkillIds 로 따로 둔다
         skills: toSkillPoints(a.skills, skillKinds),
+        bonusSkillIds: bonusSkillIdsOf(a),
         slots: sortSlots(a.slots),
         setId: a.armorSet.id,
       }
@@ -212,8 +230,11 @@ async function main() {
   const skillIds = new Set(outSkills.map((s) => s.id))
   const problems = []
   for (const a of outArmor) if (!setIds.has(a.setId)) problems.push(`방어구 ${a.id}: 세트 ${a.setId} 없음`)
-  for (const s of outSets) {
-    for (const id of [s.setSkillId, s.groupSkillId]) if (id && !skillIds.has(id)) problems.push(`세트 ${s.id}: 스킬 ${id} 없음`)
+  // 부위 하나 = 1부위로 세므로 시리즈/그룹 스킬은 부위마다 Lv1 이어야 한다
+  for (const a of armor) {
+    for (const e of (a.skills ?? []).filter(isBonusSkill)) {
+      if (e.level !== 1) problems.push(`방어구 ${a.id}: 시리즈/그룹 스킬 ${e.skill.id} 가 Lv${e.level}`)
+    }
   }
   for (const list of [outArmor, outDecorations, outWeapons, outTalismans]) {
     for (const item of list) {

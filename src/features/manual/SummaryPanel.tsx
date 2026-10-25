@@ -68,10 +68,7 @@ export function SummaryPanel({ summary }: { summary: BuildSummary }) {
                   <BonusRow
                     key={bonus.skillId}
                     bonus={bonus}
-                    fromWeapon={
-                      summary.equipment.weapon?.setSkillId === bonus.skillId ||
-                      summary.equipment.weapon?.groupSkillId === bonus.skillId
-                    }
+                    fromWeapon={summary.equipment.weapon?.bonusSkillIds.includes(bonus.skillId) ?? false}
                   />
                 ))}
               </ul>
