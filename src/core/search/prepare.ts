@@ -51,6 +51,11 @@ export interface ArmorClass {
   defense: number
   /** 임계 레벨 t(1~3)별 가지치기 상한: 해당 스킬 점수 합 + 슬롯 잠재력 */
   potential: [number, number, number]
+  /**
+   * 요구 스킬 점수·시리즈/그룹·비선호는 같고 슬롯·방어력이 이 클래스보다 같거나 못한 방어구 (슬롯 많은 순).
+   * 탐색에서는 빼고, 결과에서 그 부위 장식주가 들어가면 대체 후보로 붙는다 (§6.2)
+   */
+  fewerSlots: { piece: ArmorPiece; slots: SlotLevel[] }[]
 }
 
 export interface TalismanClass {
@@ -128,6 +133,10 @@ function countSlots(levels: readonly SlotLevel[]): SlotCounts {
   for (const level of levels) counts[level - 1]++
   return counts
 }
+
+/** 슬롯(레벨 내림차순)이 자리마다 같거나 커서 small 에 들어가는 장식주가 big 에도 모두 들어가는지 */
+const coversSlots = (big: readonly SlotLevel[], small: readonly SlotLevel[]) =>
+  big.length >= small.length && small.every((level, i) => big[i] >= level)
 
 /** 요청을 탐색 가능한 형태로 정리한다. 요구 스킬이 없거나 처음부터 불가능하면 null. */
 export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
@@ -275,14 +284,18 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
         !excludedArmor.has(p.id) &&
         !(excludeMode && p.skills.some((s) => excluded.has(s.skillId))),
     )
-    const groups = new Map<string, { pieces: { piece: ArmorPiece; defense: number }[]; cls: ArmorClass }>()
+    const groups = new Map<
+      string,
+      { pieces: { piece: ArmorPiece; defense: number }[]; cls: ArmorClass; same: string }
+    >()
     for (const piece of candidates) {
       const transcend = request.transcend && canTranscend(piece)
       const pts = Int32Array.from(required, (r) => Math.min(r.need, pointsOf(piece.skills, r.skillId)))
       const bonus = Uint8Array.from(bonuses, (b) => (piece.bonusSkillIds.includes(b.skillId) ? 1 : 0))
       const slots = armorSlots(piece, transcend)
       const unwanted = unwantedOf(piece.skills, excluded)
-      const key = `${pts.join(',')}|${bonus.join('')}|${slots.join('')}|${unwanted.join(',')}`
+      const same = `${pts.join(',')}|${bonus.join('')}|${unwanted.join(',')}`
+      const key = `${same}|${slots.join('')}`
       const defense = armorDefense(piece, transcend).max
       let group = groups.get(key)
       if (!group) {
@@ -295,18 +308,36 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
           unwanted,
           defense: 0,
           potential: [0, 0, 0],
+          fewerSlots: [],
         }
-        group = { pieces: [], cls }
+        group = { pieces: [], cls, same }
         groups.set(key, group)
       }
       group.pieces.push({ piece, defense })
     }
-    const classes = [...groups.values()].map(({ pieces, cls }) => {
+    for (const { pieces, cls } of groups.values()) {
       pieces.sort((a, b) => b.defense - a.defense || a.piece.id - b.piece.id)
       cls.members = pieces.map((p) => p.piece)
       cls.defense = pieces[0].defense
-      return cls
-    })
+    }
+    // 요구 스킬 점수·시리즈/그룹·비선호가 같고 슬롯·방어력이 모두 같거나 못한 클래스는 나은 클래스에 붙인다 (예: 무구한 용관α → β).
+    // 그 클래스로 되는 조합은 나은 클래스로도 같은 장식주로 되고 정렬 기준도 같거나 앞서므로 탐색에서 뺀다
+    const ordered = [...groups.values()].sort(
+      (a, b) => slotScore(b.cls.slotCounts) - slotScore(a.cls.slotCounts) || b.cls.defense - a.cls.defense,
+    )
+    const classes: ArmorClass[] = []
+    const sameOf = new Map<ArmorClass, string>()
+    for (const { cls, same } of ordered) {
+      const owner = classes.find(
+        (c) => sameOf.get(c) === same && coversSlots(c.slots, cls.slots) && c.defense >= cls.defense,
+      )
+      if (owner) {
+        owner.fewerSlots.push(...cls.members.map((piece) => ({ piece, slots: cls.slots })))
+      } else {
+        classes.push(cls)
+        sameOf.set(cls, same)
+      }
+    }
     if (classes.length === 0) {
       // 후보가 하나도 없으면 미장착
       classes.push({
@@ -318,6 +349,7 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
         unwanted: [],
         defense: 0,
         potential: [0, 0, 0],
+        fewerSlots: [],
       })
     }
     for (const cls of classes) {

@@ -6,6 +6,7 @@ import { canTranscend } from '../transcend'
 import { emptyBuild, EQUIP_KEYS } from '../types'
 import { assignDecorations, type ConcreteSlot, type FillResult, type SlotCounts } from './decoFill'
 import { bonusShortfall, prepare, type Fillers, type Prepared } from './prepare'
+import { placeArmorDecorations } from './toBuild'
 import { TopK, type Ranked } from './topK'
 import type { SearchProgress, SearchRequest, SearchResponse, SearchResultItem } from './types'
 
@@ -329,15 +330,11 @@ class Searcher {
     build.weapon = this.request.weapon.choice
     build.talisman = talisman.members[0]?.ref ?? null
 
-    const armor = {} as Record<ArmorKind, number[]>
     const armorSlotLevels = {} as Record<ArmorKind, SlotLevel[]>
-    let variantCount = 1
     kinds.forEach((kind, depth) => {
       const cls = classes[depth][leaf.chosen[depth]]
       const rep = cls.members[0]
-      armor[kind] = cls.members.map((m) => m.id)
       armorSlotLevels[kind] = rep ? cls.slots : []
-      variantCount *= Math.max(1, cls.members.length)
       build.armor[kind] = rep ? { id: rep.id, transcend: this.request.transcend && canTranscend(rep) } : null
     })
 
@@ -352,6 +349,18 @@ class Searcher {
     if (!assigned) throw new Error('장식주 배치에 실패했습니다 (검색 엔진 오류)')
     for (const key of EQUIP_KEYS) build.decorations[key] = []
     for (const slot of concrete) build.decorations[slot.key][slot.index] = assigned.get(slot)?.id ?? null
+
+    // 대체 후보: 같은 클래스(슬롯이 같음) + 슬롯이 적어도 그 부위 장식주가 다 들어가는 방어구 (부위마다 따로 바꿔도 된다)
+    const armor = {} as Record<ArmorKind, number[]>
+    let variantCount = 1
+    kinds.forEach((kind, depth) => {
+      const cls = classes[depth][leaf.chosen[depth]]
+      const fewer = cls.fewerSlots.filter(
+        (alt) => placeArmorDecorations(this.db, alt.slots, build.decorations[kind]) !== null,
+      )
+      armor[kind] = [...cls.members, ...fewer.map((alt) => alt.piece)].map((p) => p.id)
+      variantCount *= Math.max(1, armor[kind].length)
+    })
 
     const summary = computeBuild(this.db, build, customTalismans)
     return {

@@ -7,7 +7,7 @@ import { resolveTalisman } from '../../core/equipment'
 import { suggestName } from '../../core/savedBuilds'
 import { resultToBuild } from '../../core/search/toBuild'
 import type { SearchRequest, SearchResultItem } from '../../core/search/types'
-import { armorDefense, canTranscend } from '../../core/transcend'
+import { armorDefense, armorSlots, canTranscend } from '../../core/transcend'
 import type { EquipKey } from '../../core/types'
 import { nameOf, type GameDb } from '../../data/db'
 import { skillName, skillPointsText, talismanName } from '../../data/format'
@@ -373,8 +373,11 @@ export function ResultCard({
     return item.armor[key].flatMap((id) => {
       const piece = db.armor.get(id)
       if (!piece) return []
-      const defense = armorDefense(piece, request.transcend && canTranscend(piece)).max
-      return [{ key: String(id), name: nameOf(piece.name), detail: extraSkillsText(piece.skills), meta: `방어 ${defense}` }]
+      const transcend = request.transcend && canTranscend(piece)
+      const slots = armorSlots(piece, transcend)
+      // 대표보다 슬롯이 적은 대체 방어구도 있어서 슬롯을 같이 보인다
+      const meta = `슬롯 ${slots.length > 0 ? slots.join('-') : '없음'} · 방어 ${armorDefense(piece, transcend).max}`
+      return [{ key: String(id), name: nameOf(piece.name), detail: extraSkillsText(piece.skills), meta }]
     })
   }
   const selectedIndex = (key: Expandable) => {

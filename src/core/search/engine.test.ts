@@ -137,6 +137,47 @@ describe('runSearch', () => {
     for (const item of res.items) expect(resultToBuild(db, item, r).armor.legs?.id).toBe(legs)
   })
 
+  describe('슬롯만 적은 방어구 묶기', () => {
+    it('슬롯·방어력만 못한 방어구는 따로 결과로 내지 않고 나은 방어구의 대체 후보로 붙인다', () => {
+      // 무구한 용관α(슬롯 3-2)는 β(3-2-1)와 도전자·속성 흡수 점수, 백열룡의 맥동이 같고 방어력도 같다
+      const r = request({ required: req(['백열룡의 맥동', 2], ['도전자', 5], ['속성 흡수', 2]), limit: 300 })
+      const res = runSearch(db, r)
+      verify(r, res)
+      const alpha = armorByName(db, '무구한 용관α').id
+      const beta = armorByName(db, '무구한 용관β').id
+      expect(res.items.some((item) => item.armor.head[0] === alpha)).toBe(false)
+      const grouped = res.items.filter((item) => item.armor.head[0] === beta && item.armor.head.includes(alpha))
+      expect(grouped.length).toBeGreaterThan(0)
+      for (const item of grouped) {
+        // 같은 장식주로 조건을 채우고 남는 슬롯만 하나 줄어든다
+        const summary = verifyItem(r, item, [], { head: alpha })
+        expect(summary.freeSlots).toHaveLength(item.freeSlots.length - 1)
+      }
+    })
+
+    it('슬롯이 적은 대체 후보로 바꾸면 그 부위 장식주를 그 슬롯에 다시 넣는다', () => {
+      const r = request({ required: req(['약점 특효', 5], ['도전자', 3], ['회피 성능', 2]), limit: 300 })
+      const res = runSearch(db, r)
+      const decosOf = (ids: readonly (number | null)[]) => ids.filter((id) => id !== null).sort()
+      let checked = 0
+      for (const item of res.items) {
+        for (const kind of ARMOR_KINDS) {
+          const rep = db.armor.get(item.armor[kind][0] ?? -1)
+          if (!rep || decosOf(item.decorations[kind]).length === 0) continue
+          for (const id of item.armor[kind].slice(1)) {
+            if (db.armor.get(id)!.slots.join() === rep.slots.join()) continue
+            expect(decosOf(resultToBuild(db, item, r, { [kind]: id }).decorations[kind])).toEqual(
+              decosOf(item.decorations[kind]),
+            )
+            verifyItem(r, item, [], { [kind]: id })
+            checked++
+          }
+        }
+      }
+      expect(checked).toBeGreaterThan(0)
+    })
+  })
+
   describe('비선호 스킬', () => {
     const required = req(['약점 특효', 5], ['도전자', 5], ['연격', 3])
     const excludedSkills = [sid('공세')]
