@@ -34,6 +34,8 @@ import { SearchPresets } from './SearchPresets'
 import { TalismanCondition } from './TalismanCondition'
 import { WeaponCondition } from './WeaponCondition'
 import { compareItemOf, compareTrayItemOf } from './compareList'
+import { ExcludedArmorCondition } from './ExcludedArmorCondition'
+import { excludedArmorIds } from './excludedArmor'
 import { useCompareList } from './useCompareList'
 
 const EXCLUDE_MODE_OPTIONS: { value: ExcludeMode; label: string }[] = [
@@ -71,6 +73,7 @@ export function SearchPage() {
     [setStored],
   )
   const request = useMemo(() => buildRequest(db, cond, customTalismans), [db, cond, customTalismans])
+  const excludedArmorCount = useMemo(() => excludedArmorIds(db, cond.excludedArmor).length, [db, cond.excludedArmor])
 
   // ---- 검색 실행 ----
   const clientRef = useRef<SearchClient | null>(null)
@@ -243,6 +246,22 @@ export function SearchPage() {
           <TalismanCondition cond={cond} onChange={patch} />
         </Panel>
 
+        <Panel
+          title="제외할 방어구"
+          actions={
+            cond.excludedArmor.length > 0 && (
+              <Button size="sm" variant="ghost" onClick={() => patch({ excludedArmor: [] })}>
+                비우기
+              </Button>
+            )
+          }
+        >
+          <ExcludedArmorCondition
+            excluded={cond.excludedArmor}
+            onChange={(excludedArmor) => patch({ excludedArmor })}
+          />
+        </Panel>
+
         <Panel title="옵션">
           <div className="space-y-2.5">
             <Toggle
@@ -295,6 +314,7 @@ export function SearchPage() {
               원하는 스킬 {request.required.length}개 · 비선호 {request.excludedSkills.length}개
               {request.excludedSkills.length > 0 && ` (${cond.excludeMode === 'exclude' ? '제외' : '표시만'})`} · 호석
               후보 {request.talismans.length}개{cond.excludeHr100 && ' · HR 100 장비 제외'}
+              {excludedArmorCount > 0 && ` · 방어구 ${formatCount(excludedArmorCount)}개 제외`}
               {!request.useDecorations && ' · 장식주 없이'}
             </p>
           </div>

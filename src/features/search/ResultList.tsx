@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { SkillChip } from '../../components/SkillChip'
 import { Button, EmptyState, Segmented } from '../../components/ui'
+import { hr100ArmorIds } from '../../core/hunterRank'
 import type { SearchRequest, SearchResponse, SearchResultItem, SearchSort } from '../../core/search/types'
 import { nameOf, type GameDb } from '../../data/db'
 import { useDb } from '../../state/context'
@@ -60,8 +61,15 @@ function PagedCards({
   )
 }
 
+/** 제외할 방어구로 직접 뺀 방어구가 있는지 (HR 100 장비 제외로만 빠진 것은 빼고) */
+function hasOwnExcludedArmor(db: GameDb, request: SearchRequest): boolean {
+  const hr100 = hr100ArmorIds(db)
+  const excluded = new Set(request.excludedArmorIds)
+  return hr100.every((id) => excluded.has(id)) ? excluded.size > hr100.length : excluded.size > 0
+}
+
 /** 결과가 없을 때 조건별로 해 볼 만한 것. lowering = '원하는 스킬을 낮추기'도 넣을지 (가까운 조합을 보여 줄 땐 뺀다) */
-function emptyHints(request: SearchRequest, hasWeaponSkill: boolean, lowering = true): string[] {
+function emptyHints(db: GameDb, request: SearchRequest, hasWeaponSkill: boolean, lowering = true): string[] {
   const hints = lowering ? ['원하는 스킬의 레벨을 낮추거나 스킬 수를 줄여 보세요.'] : []
   // 고정한 스킬 때문에 가장 가까운 조합도 못 찾은 경우
   if (lowering && request.lockedSkills.length > 0 && request.maxShortfall > 0) {
@@ -71,6 +79,7 @@ function emptyHints(request: SearchRequest, hasWeaponSkill: boolean, lowering = 
   if (request.excludedSkills.length > 0 && request.excludeMode === 'exclude') {
     hints.push('비선호 스킬을 ‘표시만’으로 바꾸거나 줄여 보세요.')
   }
+  if (hasOwnExcludedArmor(db, request)) hints.push('제외할 방어구를 줄여 보세요.')
   if (!request.includeLowRank) hints.push('‘하위 랭크 방어구 포함’을 켜 보세요.')
   // 초월·무기 슬롯은 장식주를 넣을 자리만 늘리므로 장식주 없이 찾을 때는 도움이 안 된다
   if (!request.transcend && request.useDecorations) hints.push('초월한 방어구가 있다면 ‘방어구 초월 적용’을 켜 보세요.')
@@ -110,7 +119,7 @@ function ShortfallNotice({
 }) {
   const db = useDb()
   const sample = shortChipOf(db, request, response.items[0])
-  const hints = emptyHints(request, hasWeaponSkill, false)
+  const hints = emptyHints(db, request, hasWeaponSkill, false)
   const amount = response.shortfall === 1 ? '1레벨' : `모두 합쳐 ${response.shortfall}레벨`
   const locked = request.lockedSkills.flatMap((id) => {
     const skill = db.skills.get(id)
@@ -182,7 +191,7 @@ export function ResultList({
       <EmptyState>
         <p className="mb-2 font-medium text-fg">조건을 만족하는 조합이 없어요.</p>
         <ul className="space-y-0.5 text-xs">
-          {emptyHints(request, hasWeaponSkill).map((hint) => (
+          {emptyHints(db, request, hasWeaponSkill).map((hint) => (
             <li key={hint}>· {hint}</li>
           ))}
         </ul>

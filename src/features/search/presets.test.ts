@@ -28,6 +28,16 @@ describe('검색 조건 저장', () => {
     expect(newPreset('   ', cond({})).name).toBe('이름 없는 조건')
   })
 
+  it('제외할 방어구는 저장하지 않고 불러와도 지금 목록을 두며, 같은 조건인지 볼 때도 뺀다', () => {
+    const mine = cond({ excludedArmor: [{ type: 'series', id: db.data.armorSets[0].id }] })
+    const saved = newPreset('제외 있음', mine)
+    expect('excludedArmor' in saved.conditions).toBe(false)
+    expect(overwritePreset(saved, mine).conditions).not.toHaveProperty('excludedArmor')
+    const now = cond({ excludedArmor: [{ type: 'piece', id: db.data.armor[0].id }] })
+    expect(presetConditions(saved, now).excludedArmor).toEqual(now.excludedArmor)
+    expect(conditionsKey(now)).toBe(conditionsKey(saved.conditions))
+  })
+
   it('저장한 뒤 생긴 필드는 불러올 때 기본값으로 채운다', () => {
     const old = newPreset('예전 조건', cond({}))
     const conditions: Partial<SearchConditions> = { ...old.conditions }

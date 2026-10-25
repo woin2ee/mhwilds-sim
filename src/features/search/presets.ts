@@ -5,8 +5,11 @@ import { WEAPON_KIND_LABEL } from '../../data/labels'
 import { newId } from '../../lib/id'
 import { isStoredConditions, normalizeConditions, sortRequired, type SearchConditions } from './conditions'
 
-/** 저장하는 조건. 정렬은 결과를 보는 방식이라 담지 않고, 불러올 때 지금 정렬을 그대로 둔다 */
-export type PresetConditions = Omit<SearchConditions, 'sort'>
+/**
+ * 저장하는 조건. 정렬은 결과를 보는 방식이고 제외할 방어구는 무기와 상관없이 가진 장비에 따라 정하는 것이라 담지 않고,
+ * 불러올 때 지금 값을 그대로 둔다
+ */
+export type PresetConditions = Omit<SearchConditions, 'sort' | 'excludedArmor'>
 
 export interface SearchPreset {
   id: string
@@ -29,9 +32,10 @@ export function validPresets(value: unknown): SearchPreset[] {
   )
 }
 
-export function withoutSort(cond: SearchConditions): PresetConditions {
+function presetPart(cond: SearchConditions): PresetConditions {
   const copy: Partial<SearchConditions> = { ...cond }
   delete copy.sort
+  delete copy.excludedArmor
   return copy as PresetConditions
 }
 
@@ -41,7 +45,7 @@ export function newPreset(name: string, cond: SearchConditions): SearchPreset {
   return {
     id: newId(),
     name: trimName(name) || '이름 없는 조건',
-    conditions: withoutSort(cond),
+    conditions: presetPart(cond),
     updatedAt: new Date().toISOString(),
   }
 }
@@ -51,22 +55,22 @@ export function overwritePreset(preset: SearchPreset, cond: SearchConditions, na
   return {
     ...preset,
     name: trimName(name) || preset.name,
-    conditions: withoutSort(cond),
+    conditions: presetPart(cond),
     updatedAt: new Date().toISOString(),
   }
 }
 
-/** 불러올 조건. 저장한 뒤 생긴 필드는 기본값으로 채우고(normalizeConditions), 정렬은 지금 것을 둔다 */
+/** 불러올 조건. 저장한 뒤 생긴 필드는 기본값으로 채우고(normalizeConditions), 정렬·제외할 방어구는 지금 것을 둔다 */
 export function presetConditions(preset: SearchPreset, current: SearchConditions): SearchConditions {
-  return { ...normalizeConditions(preset.conditions), sort: current.sort }
+  return { ...normalizeConditions(preset.conditions), sort: current.sort, excludedArmor: current.excludedArmor }
 }
 
 /**
- * 같은 조건인지 가리는 키. 정렬은 빼고, 원하는 스킬의 off·locked 는 없으면 false 로 맞춘다
+ * 같은 조건인지 가리는 키. 저장하지 않는 정렬·제외할 방어구는 빼고, 원하는 스킬의 off·locked 는 없으면 false 로 맞춘다
  * (켰다 끈 스킬은 off: false 로 남아 저장값 모양이 달라도 같은 조건이다)
  */
 export function conditionsKey(cond: Partial<SearchConditions>): string {
-  const c = withoutSort(normalizeConditions(cond))
+  const c = presetPart(normalizeConditions(cond))
   return JSON.stringify({
     ...c,
     required: c.required.map((r) => ({ skillId: r.skillId, level: r.level, off: !!r.off, locked: !!r.locked })),

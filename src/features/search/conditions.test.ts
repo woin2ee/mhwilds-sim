@@ -3,7 +3,7 @@ import { isGogmaArtian } from '../../core/gogmaArtian'
 import { hr100ArmorIds, isHr100Talisman } from '../../core/hunterRank'
 import type { CustomTalisman } from '../../core/types'
 import type { SkillKind, SkillPoint } from '../../data/types'
-import { loadTestDb, skillIdByName } from '../../test/testDb'
+import { armorByName, loadTestDb, skillIdByName } from '../../test/testDb'
 import {
   DEFAULT_CONDITIONS,
   applyRequiredLayout,
@@ -95,6 +95,32 @@ describe('검색 조건 → SearchRequest', () => {
     expect(on.excludedArmorIds).toEqual(hr100ArmorIds(db))
     expect(on.excludedArmorIds.length).toBeGreaterThan(0)
     expect(requestKey(on)).not.toBe(requestKey(off))
+  })
+
+  it('제외할 방어구는 펼쳐서 HR 100 장비와 합쳐 id 순으로 넘기고, 같은 방어구를 빼면 넣은 방식이 달라도 같은 요청', () => {
+    const gamma = db.data.armorSets.find((s) => s.name.ko === '슈바르카γ')!
+    const reyDau = armorByName(db, '레다젤트헬름α').id
+    const bySet = buildRequest(db, cond({ excludedArmor: [{ type: 'set', id: gamma.id }] }), [])
+    expect(bySet.excludedArmorIds).toEqual([...gamma.pieceIds].sort((a, b) => a - b))
+    const byPieces = buildRequest(db, cond({ excludedArmor: gamma.pieceIds.map((id) => ({ type: 'piece', id })) }), [])
+    expect(requestKey(byPieces)).toBe(requestKey(bySet))
+    expect(requestKey(bySet)).not.toBe(requestKey(buildRequest(db, cond({}), [])))
+    // 슈바르카γ 는 HR 100 장비라 겹친다
+    const withHr100 = buildRequest(
+      db,
+      cond({ excludeHr100: true, excludedArmor: [{ type: 'set', id: gamma.id }, { type: 'piece', id: reyDau }] }),
+      [],
+    )
+    expect(withHr100.excludedArmorIds).toEqual([...hr100ArmorIds(db), reyDau].sort((a, b) => a - b))
+  })
+
+  it('제외할 방어구 저장값은 모양이 맞는 것만 남기고, 예전 저장값엔 없음', () => {
+    const stored = (excludedArmor: unknown) =>
+      normalizeConditions({ required: [], excluded: [], excludedArmor } as unknown as Partial<SearchConditions>)
+    const broken = [{ type: 'x', id: 1 }, { type: 'piece', id: '2' }, { type: 'series', id: 1.5 }, null]
+    expect(stored([{ type: 'set', id: 3 }, ...broken]).excludedArmor).toEqual([{ type: 'set', id: 3 }])
+    expect(stored('broken').excludedArmor).toEqual([])
+    expect(normalizeConditions({ required: [], excluded: [] }).excludedArmor).toEqual([])
   })
 
   it('HR 100 장비 제외면 자동 호석은 계열마다 HR 100 전에 만들 수 있는 가장 높은 등급 (예: 통격의 호석Ⅲ → Ⅱ)', () => {

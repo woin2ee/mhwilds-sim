@@ -13,6 +13,7 @@ import {
   type SlotLevel,
   type WeaponKind,
 } from '../../data/types'
+import { excludedArmorIds, isExcludedArmor, type ExcludedArmor } from './excludedArmor'
 
 export type WeaponMode = 'none' | 'db' | 'custom'
 export type TalismanMode = 'auto' | 'custom-only' | 'fixed' | 'none'
@@ -58,6 +59,8 @@ export interface SearchConditions {
   includeLowRank: boolean
   /** HR 100 이상에서만 얻는 방어구를 빼고, 자동 호석은 HR 100 전에 만들 수 있는 등급까지만 (core/hunterRank.ts) */
   excludeHr100: boolean
+  /** 검색에서 뺄 방어구·세트·계열 (예전 저장값엔 없음 = 없음). 가진 장비에 따라 정하는 것이라 저장한 조건에는 담지 않는다 */
+  excludedArmor: ExcludedArmor[]
   transcend: boolean
   useDecorations: boolean
   sort: SearchSort
@@ -79,6 +82,7 @@ export const DEFAULT_CONDITIONS: SearchConditions = {
   fixedTalisman: null,
   includeLowRank: false,
   excludeHr100: false,
+  excludedArmor: [],
   transcend: false,
   useDecorations: true,
   sort: 'slots',
@@ -108,6 +112,7 @@ export function normalizeConditions(stored: Partial<SearchConditions>): SearchCo
   const slots = Array.isArray(cond.customWeaponSlots) ? cond.customWeaponSlots : []
   cond.customWeaponSlots = [0, 1, 2].map((i) => Math.max(0, Math.min(3, Number(slots[i]) || 0)))
   cond.requiredDividers = Array.isArray(cond.requiredDividers) ? cond.requiredDividers.filter(isRequiredDivider) : []
+  cond.excludedArmor = Array.isArray(cond.excludedArmor) ? cond.excludedArmor.filter(isExcludedArmor) : []
   return cond
 }
 
@@ -249,6 +254,13 @@ export function talismanRefsOf(
   }
 }
 
+/** 검색에서 뺄 방어구 id: HR 100 장비 + 제외할 방어구 (id 순, 중복 없음) */
+function excludedArmorIdsOf(db: GameDb, cond: SearchConditions): number[] {
+  const ids = new Set(excludedArmorIds(db, cond.excludedArmor))
+  if (cond.excludeHr100) for (const id of hr100ArmorIds(db)) ids.add(id)
+  return [...ids].sort((a, b) => a - b)
+}
+
 export function buildRequest(
   db: GameDb,
   cond: SearchConditions,
@@ -278,7 +290,7 @@ export function buildRequest(
     includeLowRank: cond.includeLowRank,
     transcend: cond.transcend,
     useDecorations: cond.useDecorations,
-    excludedArmorIds: cond.excludeHr100 ? hr100ArmorIds(db) : [],
+    excludedArmorIds: excludedArmorIdsOf(db, cond),
     sort: cond.sort,
     limit: RESULT_LIMIT,
     maxShortfall: MAX_SHORTFALL,
