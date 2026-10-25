@@ -19,6 +19,11 @@ export function skillTooltip(skill: Skill, level: number): string {
   return lines.filter(Boolean).join('\n')
 }
 
+/** 시리즈·그룹 스킬 단계에 필요한 부위 수 (시리즈 1·2단계 → 2·4, 그룹 → 3, 미발동 → 0). 칩에는 단계 대신 이 수를 보인다 */
+export function bonusPieces(skill: Skill, level: number): number {
+  return skill.ranks.find((r) => r.level === level)?.pieces ?? 0
+}
+
 /** 예: "간파 2 · 공격 1" */
 export function skillPointsText(db: GameDb, points: readonly SkillPoint[], separator = ' · '): string {
   return points.map((p) => `${skillName(db, p.skillId)} ${p.level}`).join(separator)

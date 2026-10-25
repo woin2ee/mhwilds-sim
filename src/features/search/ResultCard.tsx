@@ -19,7 +19,7 @@ import { useToast } from '../../state/toast'
 import { COMPARE_MAX } from '../compare/compareRows'
 import { SaveBuildDialog } from '../saved/SaveBuildDialog'
 import { buildKey, isAlternative, type CompareEntry, type ResultVariant } from './compareList'
-import { bonusRankLabel, formatCount } from './format'
+import { chipLevel, formatCount, shortfallLabel } from './format'
 
 type Expandable = ArmorKind | 'talisman'
 
@@ -46,13 +46,16 @@ export interface CompareControl {
 interface ChipInfo {
   skillId: number
   name: string
+  /** 레벨. 시리즈·그룹 스킬은 단계 */
   level: number
+  /** 칩의 숫자 (chipLevel: 시리즈·그룹 스킬은 단계의 부위 수) */
+  shown: number
   maxLevel?: number
   tone: SkillTone
   /** 시리즈·그룹 스킬의 부위 수 */
   pieces?: number
-  /** 원하는 레벨보다 모자란 레벨 (가장 가까운 조합). 색이 시리즈·그룹 칩과 비슷해서 글자로도 보인다 */
-  short?: number
+  /** 원하는 레벨보다 모자라면 (가장 가까운 조합) 칩 글자·설명. 색이 시리즈·그룹 칩과 비슷해서 글자로도 보인다 */
+  short?: { mark: string; text: string }
 }
 
 /** 요구 스킬 → 비선호 → 시리즈/그룹 → 그 외 순서의 스킬 칩 */
@@ -71,24 +74,39 @@ function skillChips(db: GameDb, summary: BuildSummary, request: SearchRequest): 
       skillId: r.skillId,
       name: nameOf(skill.name),
       level,
+      shown: chipLevel(skill, level),
       maxLevel: bonus ? undefined : skill.maxLevel,
       tone: level >= r.level ? 'required' : 'missing',
       pieces: pieces.get(r.skillId),
-      short: level < r.level ? r.level - level : undefined,
+      short: level < r.level ? shortfallLabel(skill, level, r.level) : undefined,
     })
   }
   const unwantedChips: ChipInfo[] = []
   const extra: ChipInfo[] = []
   for (const s of summary.skills) {
     if (requiredIds.has(s.skillId) || s.level === 0) continue
-    const chip: ChipInfo = { skillId: s.skillId, name: skillName(db, s.skillId), level: s.level, maxLevel: s.maxLevel, tone: 'extra' }
+    const chip: ChipInfo = {
+      skillId: s.skillId,
+      name: skillName(db, s.skillId),
+      level: s.level,
+      shown: s.level,
+      maxLevel: s.maxLevel,
+      tone: 'extra',
+    }
     if (unwanted.has(s.skillId)) unwantedChips.push({ ...chip, tone: 'unwanted' })
     else extra.push(chip)
   }
   const bonuses: ChipInfo[] = []
   for (const b of summary.bonuses) {
     if (requiredIds.has(b.skillId) || b.level === 0) continue
-    bonuses.push({ skillId: b.skillId, name: skillName(db, b.skillId), level: b.level, tone: 'bonus', pieces: b.pieces })
+    bonuses.push({
+      skillId: b.skillId,
+      name: skillName(db, b.skillId),
+      level: b.level,
+      shown: chipLevel(db.skill(b.skillId), b.level),
+      tone: 'bonus',
+      pieces: b.pieces,
+    })
   }
   return [...required, ...unwantedChips, ...bonuses, ...extra]
 }
@@ -246,12 +264,7 @@ function SkillDetail({
           )}
         </div>
       )}
-      {chip.short !== undefined && (
-        <p className="text-warn">
-          원하는 {bonus ? bonusRankLabel(skill, chip.level + chip.short) : `Lv${chip.level + chip.short}`}보다 {chip.short}
-          {bonus ? '단계' : '레벨'} 모자라요.
-        </p>
-      )}
+      {chip.short && <p className="text-warn">{chip.short.text}.</p>}
       {chip.tone === 'unwanted' && <p className="text-muted">비선호 스킬이에요.</p>}
       {chip.tone === 'extra' && <UnwantedAction skillId={chip.skillId} request={request} exclude={exclude} />}
     </div>
@@ -511,12 +524,12 @@ export function ResultCard({
             <SkillChip
               key={chip.skillId}
               name={chip.name}
-              level={chip.level}
+              level={chip.shown}
               maxLevel={chip.maxLevel}
               tone={pending ? 'unwanted' : chip.tone}
               title={
                 chip.short
-                  ? `원하는 레벨보다 ${chip.short} 모자라요 · 눌러서 스킬 효과 보기`
+                  ? `${chip.short.text} · 눌러서 스킬 효과 보기`
                   : extra
                     ? '눌러서 스킬 효과 보기 · 비선호 스킬에 넣거나 빼기'
                     : '눌러서 스킬 효과 보기'
@@ -524,7 +537,7 @@ export function ResultCard({
               onClick={() => setPicked((id) => (id === chip.skillId ? null : chip.skillId))}
               expanded={picked === chip.skillId}
             >
-              {chip.short && <span className="font-semibold">−{chip.short}</span>}
+              {chip.short && <span className="font-semibold">{chip.short.mark}</span>}
             </SkillChip>
           )
         })}

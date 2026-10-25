@@ -6,7 +6,7 @@ import type { SearchRequest, SearchResponse, SearchResultItem, SearchSort } from
 import { nameOf, type GameDb } from '../../data/db'
 import { useDb } from '../../state/context'
 import { useToast } from '../../state/toast'
-import { formatCount } from './format'
+import { chipLevel, formatCount, shortfallLabel } from './format'
 import { ResultCard, type CompareControl, type ExcludeControl } from './ResultCard'
 
 const PAGE_SIZE = 30
@@ -99,8 +99,13 @@ function shortChipOf(db: GameDb, request: SearchRequest, item: SearchResultItem 
     if (!skill || level >= r.level) continue
     const bonus = skill.kind === 'set' || skill.kind === 'group'
     return (
-      <SkillChip name={nameOf(skill.name)} level={level} maxLevel={bonus ? undefined : skill.maxLevel} tone="missing">
-        <span className="font-semibold">−{r.level - level}</span>
+      <SkillChip
+        name={nameOf(skill.name)}
+        level={chipLevel(skill, level)}
+        maxLevel={bonus ? undefined : skill.maxLevel}
+        tone="missing"
+      >
+        <span className="font-semibold">{shortfallLabel(skill, level, r.level).mark}</span>
       </SkillChip>
     )
   }

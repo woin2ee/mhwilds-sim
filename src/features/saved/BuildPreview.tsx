@@ -3,7 +3,7 @@ import { SkillChip } from '../../components/SkillChip'
 import { SlotList } from '../../components/SlotBadge'
 import { computeBuild } from '../../core/calc'
 import type { BuildState } from '../../core/types'
-import { skillName } from '../../data/format'
+import { bonusPieces, skillName } from '../../data/format'
 import { ARMOR_KIND_LABEL, WEAPON_KIND_LABEL } from '../../data/labels'
 import { ARMOR_KINDS } from '../../data/types'
 import { useAppState } from '../../state/context'
@@ -37,7 +37,12 @@ export function BuildPreview({ build, maxSkills }: { build: BuildState; maxSkill
       </dl>
       <div className="flex flex-wrap gap-1">
         {bonuses.map((b) => (
-          <SkillChip key={b.skillId} tone="bonus" name={skillName(db, b.skillId)} level={b.level} />
+          <SkillChip
+            key={b.skillId}
+            tone="bonus"
+            name={skillName(db, b.skillId)}
+            level={bonusPieces(db.skill(b.skillId), b.level)}
+          />
         ))}
         {shown.map((s) => (
           <SkillChip key={s.skillId} name={skillName(db, s.skillId)} level={s.level} maxLevel={s.maxLevel} />
