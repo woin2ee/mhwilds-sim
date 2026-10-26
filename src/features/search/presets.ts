@@ -32,7 +32,8 @@ export function validPresets(value: unknown): SearchPreset[] {
   )
 }
 
-function presetPart(cond: SearchConditions): PresetConditions {
+/** 조건에서 저장할 부분 (정렬·제외할 방어구를 뺀다) */
+export function presetPart(cond: SearchConditions): PresetConditions {
   const copy: Partial<SearchConditions> = { ...cond }
   delete copy.sort
   delete copy.excludedArmor

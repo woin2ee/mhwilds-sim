@@ -7,6 +7,8 @@ import { requestPersistentStorage, usePersistentState } from '../../lib/storage'
 import { useDb } from '../../state/context'
 import { useToast } from '../../state/toast'
 import type { SearchConditions } from './conditions'
+import { ExportPresets, ImportPresets } from './PresetTransferDialogs'
+import type { PresetImportResult } from './presetTransfer'
 import {
   conditionsKey,
   newPreset,
@@ -25,12 +27,17 @@ const INPUT =
 const isArray = (value: unknown): value is SearchPreset[] => Array.isArray(value)
 const isActiveId = (value: unknown): value is string | null => value === null || typeof value === 'string'
 
-type DialogState = { type: 'save' } | { type: 'rename'; preset: SearchPreset } | null
+type DialogState =
+  | { type: 'save' }
+  | { type: 'rename'; preset: SearchPreset }
+  | { type: 'export' }
+  | { type: 'import' }
+  | null
 
 /**
  * 저장한 검색 조건 (조건 열 맨 위). 무기를 바꾸면 크게 바뀌는 조건을 이름을 붙여 두고, 누르면 그 조건으로 바꾼다.
  * 마지막으로 불러오거나 저장한 조건(activeId, '사용 중')은 고친 뒤 덮어쓸 수 있고, '해제'하면 지금 조건은 그대로 두고
- * 연결만 끊어 저장한 조건과 상관없이 고친다
+ * 연결만 끊어 저장한 조건과 상관없이 고친다. 아래 '내보내기'·'가져오기'로 다른 기기·친구와 코드나 파일로 주고받는다
  */
 export function SearchPresets({ cond, onLoad }: { cond: SearchConditions; onLoad: (next: SearchConditions) => void }) {
   const db = useDb()
@@ -42,10 +49,11 @@ export function SearchPresets({ cond, onLoad }: { cond: SearchConditions; onLoad
   const currentKey = useMemo(() => conditionsKey(cond), [cond])
   const active = presets.find((p) => p.id === activeId) ?? null
 
-  const load = (preset: SearchPreset) => {
-    const previous = cond
+  /** current: 불러오기 바로 전 조건 (가져오기에서 제외할 방어구를 더한 직후면 더한 조건) */
+  const load = (preset: SearchPreset, current = cond) => {
+    const previous = current
     const previousActive = activeId
-    onLoad(presetConditions(preset, cond))
+    onLoad(presetConditions(preset, current))
     setActiveId(preset.id)
     toast(`‘${preset.name}’ 조건을 불러왔어요`, {
       label: '되돌리기',
@@ -81,6 +89,27 @@ export function SearchPresets({ cond, onLoad }: { cond: SearchConditions; onLoad
     setStored(presets.filter((p) => p.id !== target.id))
     if (activeId === target.id) setActiveId(null)
     toast('삭제했어요')
+  }
+  const importDone = (result: PresetImportResult, withExcluded: boolean) => {
+    // 제외할 방어구는 저장한 조건이 아니라 지금 조건의 제외 목록에 더한다
+    const excluded = withExcluded && result.excludedArmor?.added ? result.excludedArmor : null
+    const current = excluded ? { ...cond, excludedArmor: excluded.merged } : cond
+    if (excluded) onLoad(current)
+    if (result.added.length > 0) {
+      setStored(result.presets)
+      void requestPersistentStorage()
+    }
+    setDialog(null)
+    const [first] = result.added
+    const count = result.added.length
+    const presetsText = count === 1 ? `‘${first.name}’ 조건` : `조건 ${count}개`
+    const excludedText = excluded && `제외할 방어구 ${excluded.added}개`
+    const message = !excluded
+      ? `${presetsText}${count === 1 ? '을' : '를'} 가져왔어요`
+      : count === 0
+        ? `${excludedText}를 가져왔어요`
+        : `${presetsText}${count === 1 ? '과' : '와'} ${excludedText}를 가져왔어요`
+    toast(message, count === 1 ? { label: '불러오기', onClick: () => load(first, current) } : undefined)
   }
 
   return (
@@ -151,6 +180,25 @@ export function SearchPresets({ cond, onLoad }: { cond: SearchConditions; onLoad
           })}
         </ul>
       )}
+      <div className="mt-3 flex justify-end gap-1.5">
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={presets.length === 0 && cond.required.length === 0 && cond.excludedArmor.length === 0}
+          title="저장한 조건을 코드나 파일로 내보내요 (다른 기기·친구에게)"
+          onClick={() => setDialog({ type: 'export' })}
+        >
+          내보내기
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          title="내보낸 검색 조건 코드나 파일을 저장한 조건에 더해요"
+          onClick={() => setDialog({ type: 'import' })}
+        >
+          가져오기
+        </Button>
+      </div>
 
       <Dialog open={dialog?.type === 'save'} onClose={() => setDialog(null)} title="검색 조건 저장">
         <SaveForm
@@ -169,6 +217,12 @@ export function SearchPresets({ cond, onLoad }: { cond: SearchConditions; onLoad
             onClose={() => setDialog(null)}
           />
         )}
+      </Dialog>
+      <Dialog open={dialog?.type === 'export'} onClose={() => setDialog(null)} title="검색 조건 내보내기">
+        <ExportPresets presets={presets} cond={cond} />
+      </Dialog>
+      <Dialog open={dialog?.type === 'import'} onClose={() => setDialog(null)} title="검색 조건 가져오기">
+        <ImportPresets presets={presets} excludedArmor={cond.excludedArmor} onImport={importDone} />
       </Dialog>
     </Panel>
   )

@@ -3,6 +3,7 @@ import { Dialog } from '../../components/Dialog'
 import { Button } from '../../components/ui'
 import { decodeBackupCode, hasBackupCode, ShareCodeError } from '../../core/share'
 import { useDb } from '../../state/context'
+import { hasPresetsCode, isPresetsFile } from '../search/presetTransfer'
 import { BackupPreview } from './BackupPreview'
 import { DecodedBuildView } from './DecodedBuildView'
 import { parseShared } from './useBuildActions'
@@ -26,8 +27,12 @@ export function ImportDialog({ open, onClose }: { open: boolean; onClose: () => 
 
 type BackupInput = { backup: unknown } | { error: string }
 
+// 검색 조건 코드·파일은 스킬 검색에서 가져온다 (DESIGN.md §8.4)
+const PRESETS_CODE = '검색 조건 코드예요. ‘스킬 검색 → 저장한 조건 → 가져오기’에 붙여 넣어 주세요.'
+const PRESETS_FILE = '검색 조건 파일이에요. ‘스킬 검색 → 저장한 조건 → 가져오기’에서 골라 주세요.'
+
 /**
- * 붙여 넣은 글을 알아서 해석한다: 백업 코드면 백업 미리보기, 공유 링크·코드면 세팅 미리보기.
+ * 붙여 넣은 글을 알아서 해석한다: 백업 코드면 백업 미리보기, 공유 링크·코드면 세팅 미리보기, 검색 조건 코드면 넣을 곳 안내.
  * 가져오거나 열면 onDone (대화상자는 닫고, 백업 탭은 입력을 비운다)
  */
 export function ImportForm({ mode, onDone }: { mode: ImportMode; onDone: () => void }) {
@@ -36,17 +41,19 @@ export function ImportForm({ mode, onDone }: { mode: ImportMode; onDone: () => v
   const [file, setFile] = useState<{ name: string; input: BackupInput } | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const isBackupCode = hasBackupCode(text)
+  const isPresetsCode = !isBackupCode && hasPresetsCode(text)
   const backupCode = useDecodedBackupCode(isBackupCode ? text : '')
   const shared = useMemo(
-    () => (isBackupCode ? null : parseShared(db, text, TEXT[mode].notFound)),
-    [db, text, isBackupCode, mode],
+    () => (isBackupCode || isPresetsCode ? null : parseShared(db, text, TEXT[mode].notFound)),
+    [db, text, isBackupCode, isPresetsCode, mode],
   )
   const backup = file?.input ?? backupCode
 
   const readFile = async (picked: File) => {
     setText('')
     try {
-      setFile({ name: picked.name, input: { backup: JSON.parse(await picked.text()) as unknown } })
+      const json = JSON.parse(await picked.text()) as unknown
+      setFile({ name: picked.name, input: isPresetsFile(json) ? { error: PRESETS_FILE } : { backup: json } })
     } catch {
       setFile({ name: picked.name, input: { error: '백업 파일을 읽지 못했어요.' } })
     }
@@ -91,6 +98,7 @@ export function ImportForm({ mode, onDone }: { mode: ImportMode; onDone: () => v
         ) : (
           <BackupPreview backup={backup.backup} onDone={onDone} />
         ))}
+      {isPresetsCode && <p className="text-sm text-bad">{PRESETS_CODE}</p>}
       {shared && 'error' in shared && <p className="text-sm text-bad">{shared.error}</p>}
       {shared && 'decoded' in shared && <DecodedBuildView decoded={shared.decoded} onDone={onDone} />}
     </div>

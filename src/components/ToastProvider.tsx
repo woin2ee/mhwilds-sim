@@ -35,8 +35,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 size="sm"
                 className="pointer-events-auto -my-1 -mr-2"
                 onClick={() => {
-                  toast.action?.onClick()
+                  // 먼저 닫아야 동작이 띄운 새 알림이 남는다 (가져온 조건 '불러오기' → '불러왔어요 · 되돌리기')
                   setToast(null)
+                  toast.action?.onClick()
                 }}
               >
                 {toast.action.label}

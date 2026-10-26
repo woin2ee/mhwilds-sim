@@ -133,7 +133,7 @@ export function sortRequired<T extends SkillPoint>(db: GameDb, required: readonl
   return [...required].sort((a, b) => groupRank(db, a.skillId) - groupRank(db, b.skillId))
 }
 
-function isRequiredDivider(value: unknown): value is RequiredDivider {
+export function isRequiredDivider(value: unknown): value is RequiredDivider {
   if (typeof value !== 'object' || value === null) return false
   const v = value as Record<string, unknown>
   return (

@@ -13,9 +13,14 @@ export function downloadJson(filename: string, data: unknown): void {
 
 /** 예: mhwilds-sim-backup-20261022-1530.json */
 export function backupFileName(date = new Date()): string {
+  return exportFileName('backup', date)
+}
+
+/** 내보낸 파일 이름. 예: mhwilds-sim-search-20261022-1530.json (검색 조건) */
+export function exportFileName(kind: string, date = new Date()): string {
   const p = (n: number) => String(n).padStart(2, '0')
   const day = `${date.getFullYear()}${p(date.getMonth() + 1)}${p(date.getDate())}`
-  return `mhwilds-sim-backup-${day}-${p(date.getHours())}${p(date.getMinutes())}.json`
+  return `mhwilds-sim-${kind}-${day}-${p(date.getHours())}${p(date.getMinutes())}.json`
 }
 
 export function formatDateTime(iso: string): string {
