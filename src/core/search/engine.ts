@@ -6,6 +6,7 @@ import { canTranscend } from '../transcend'
 import { emptyBuild, EQUIP_KEYS } from '../types'
 import {
   assignDecorations,
+  fitsSizes,
   SimpleFill,
   slotScore,
   type ConcreteSlot,
@@ -150,6 +151,8 @@ class Searcher {
   private readonly armorFillers: Fillers
   /** 엄격 검색이고 방어구 장식주가 스킬마다 1레벨 하나뿐이면: 부족분만으로 채우기가 정해진다 (§6.4) */
   private readonly simple: SimpleFill | null
+  /** 방어구 장식주 여유분이 들어갈 슬롯 수 [레벨 1 이상, 2 이상, 3] (없으면 null, §6.8) */
+  private readonly spareAtLeast: [number, number, number] | null
 
   // 탐색 상태 (되돌리기 방식으로 재사용)
   private readonly points: Int32Array
@@ -195,7 +198,9 @@ class Searcher {
     this.relaxed = maxShortfall > 0
     this.bound = maxShortfall
     const simpleDecos = this.relaxed || prepared.jointFill ? null : prepared.armorFill.clean.simpleDecos()
-    this.simple = simpleDecos ? new SimpleFill(simpleDecos) : null
+    this.simple = simpleDecos ? new SimpleFill(simpleDecos, prepared.spare.armor) : null
+    const [s1, s2, s3] = prepared.spare.armor
+    this.spareAtLeast = s1 + s2 + s3 > 0 ? [s1 + s2 + s3, s2 + s3, s3] : null
     this.points = new Int32Array(prepared.required.length)
     this.bonusPieces = new Int32Array(prepared.bonuses.length)
     this.chosen = new Int32Array(prepared.kinds.length)
@@ -218,6 +223,11 @@ class Searcher {
       for (let level = 0; level < 3; level++) {
         this.armorSlots[level] = talisman.armorSlots[level]
         this.weaponSlots[level] = weapon.slotCounts[level] + talisman.weaponSlots[level]
+      }
+      // 무기 슬롯은 무기·호석으로 정해지므로 무기 장식주 여유분이 안 들어가면 이 호석은 볼 필요가 없다 (§6.8)
+      if (!fitsSizes(this.weaponSlots, this.p.spare.weapon)) {
+        this.progress(1, 1, true)
+        continue
       }
       // 무기 스킬은 방어구와 무관하므로 호석마다 한 번만 판정한다
       this.weaponResult = this.p.weaponPrecheck
@@ -272,6 +282,13 @@ class Searcher {
    */
   private feasible(depth: number): boolean {
     const { required, bonuses, bounds } = this.p
+    // 방어구 장식주 여유분: 레벨 k 이상 슬롯이 남은 부위를 다 더해도 모자라면 장식주와 상관없이 안 된다 (§6.8)
+    if (this.spareAtLeast) {
+      const [n1, n2, n3] = this.spareAtLeast
+      const a = this.armorSlots
+      const rest = bounds.remainingAtLeast[depth]
+      if (a[2] + rest[2] < n3 || a[1] + a[2] + rest[1] < n2 || a[0] + a[1] + a[2] + rest[0] < n1) return false
+    }
     let short = this.weaponResult?.short ?? 0
     const remainingBonus = bounds.remainingBonus[depth]
     for (let j = 0; j < bonuses.length; j++) {
@@ -296,7 +313,8 @@ class Searcher {
       }
       if ((short += Math.max(perSkill, deficit - bounds.remainingNone[depth])) > this.bound) return false
     }
-    // 방어구 장식주로 채우는 스킬: 임계 레벨별 스킬 묶음이 서로 포함 관계(1 ⊇ 2 ⊇ 3)라 가장 큰 하한 하나만 더한다
+    // 방어구 장식주로 채우는 스킬: 임계 레벨별 스킬 묶음이 서로 포함 관계(1 ⊇ 2 ⊇ 3)라 가장 큰 하한 하나만 더한다.
+    // 장식주 여유분이 비워 둘 슬롯은 장식주를 넣을 수 없으므로 그 잠재력 하한(sparePot)을 뺀다
     let armorShort = 0
     const slots = this.armorSlots
     for (const th of bounds.thresholds) {
@@ -307,7 +325,7 @@ class Searcher {
       }
       if (deficit === 0) continue
       const current = slots[0] * th.pot[0] + slots[1] * th.pot[1] + slots[2] * th.pot[2]
-      const lack = deficit - current - th.remaining[depth]
+      const lack = deficit - current - th.remaining[depth] + th.sparePot
       if (lack > armorShort) {
         if (short + lack > this.bound) return false
         armorShort = lack
@@ -321,7 +339,8 @@ class Searcher {
           const d = required[i].need - this.points[i]
           if (d > 0) deficit += d
         }
-        if (deficit > slots[0] * th.pot[0] + slots[1] * th.pot[1] + slots[2] * th.pot[2] + th.remaining[depth]) return false
+        const capacity = slots[0] * th.pot[0] + slots[1] * th.pot[1] + slots[2] * th.pot[2] + th.remaining[depth] - th.sparePot
+        if (deficit > capacity) return false
       }
     }
     return true
@@ -417,13 +436,14 @@ class Searcher {
    * 장식주가 스킬마다 하나뿐일 때 이 잎에서 결과가 되는 옵션 조합 수: 크기 k 이상 장식주 수 ≤ 레벨 k 이상 슬롯 수(k = 3, 2, 1)이면
    * 다 들어가므로, 부위마다 슬롯 수를 그 장식주 수에서 잘라 DP 로 센다. α 옵션 조합은 넣을 장식주(delta)가 모두 필요하면
    * 짝 결과와 장식주·남는 슬롯이 같아 짝 결과의 대체 후보로 보고 세지 않는다. 짝과 다른 시리즈/그룹 스킬의 발동이 달라져
-   * 따로 보이는 결과는 결과마다 보므로 이 개수에서 빠진다 (드물다, response 참고). 더 넣어 넘치면 모두 따로 센다
+   * 따로 보이는 결과는 결과마다 보므로 이 개수에서 빠진다 (드물다, response 참고). 더 넣어 넘치면 모두 따로 센다.
+   * 장식주 여유분은 넣을 장식주에 더해 함께 센다 (SimpleFill.withSpare)
    */
   private countSimple(deficits: readonly number[]): number {
     const { kinds, classes } = this.p
     const simple = this.simple!
     const indices = this.armorFillers.indices
-    let total = this.countFits(simple.sizes(deficits), null)
+    let total = this.countFits(simple.withSpare(simple.sizes(deficits)), null)
     // α 옵션 조합: 깊이마다 α 하나 또는 안 고름
     const alphaChoices = kinds.map((_, d) =>
       classes[d][this.chosen[d]].groups.filter((g) => g.swap !== null).map((g) => ({ depth: d, option: g.options[0] })),
@@ -436,7 +456,7 @@ class Searcher {
         const rest = indices.map((i, k) => Math.max(0, deficits[k] - delta[i]))
         // 넣을 장식주가 모두 필요하면 짝 결과와 장식주·남는 슬롯이 같다 (짝에만 있는 슬롯과 장식주 크기가 같다, prepare 의 findSwaps)
         if (indices.every((i, k) => delta[i] <= deficits[k])) return
-        total += this.countFits(simple.sizes(rest), picks)
+        total += this.countFits(simple.withSpare(simple.sizes(rest)), picks)
         return
       }
       visit(d + 1, picks)
@@ -447,7 +467,7 @@ class Searcher {
   }
 
   /**
-   * 크기별 장식주 n 이 다 들어가는 옵션 조합 수. picks 가 있으면 그 깊이는 그 α 옵션, 나머지 깊이는 α 가 아닌 옵션만.
+   * 크기별 장식주 n(여유분 포함)이 다 들어가는 옵션 조합 수. picks 가 있으면 그 깊이는 그 α 옵션, 나머지 깊이는 α 가 아닌 옵션만.
    * 상태 = (레벨 3 슬롯 수, 레벨 2 이상, 전체) 를 각각 n 의 크기 3, 2 이상, 전체 개수에서 자른 것
    */
   private countFits(n: SizeCounts, picks: readonly AlphaPick[] | null): number {

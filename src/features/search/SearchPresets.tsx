@@ -1,6 +1,6 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import { Dialog } from '../../components/Dialog'
-import { Button, Panel } from '../../components/ui'
+import { Button, Panel, type PanelCollapse } from '../../components/ui'
 import { NAME_MAX } from '../../core/savedBuilds'
 import { cx } from '../../lib/cx'
 import { requestPersistentStorage, usePersistentState } from '../../lib/storage'
@@ -39,7 +39,16 @@ type DialogState =
  * 마지막으로 불러오거나 저장한 조건(activeId, '사용 중')은 고친 뒤 덮어쓸 수 있고, '해제'하면 지금 조건은 그대로 두고
  * 연결만 끊어 저장한 조건과 상관없이 고친다. 아래 '내보내기'·'가져오기'로 다른 기기·친구와 코드나 파일로 주고받는다
  */
-export function SearchPresets({ cond, onLoad }: { cond: SearchConditions; onLoad: (next: SearchConditions) => void }) {
+export function SearchPresets({
+  cond,
+  onLoad,
+  collapse,
+}: {
+  cond: SearchConditions
+  onLoad: (next: SearchConditions) => void
+  /** 접기 (요약은 이 목록이 만든다: 사용 중인 조건 이름이나 저장한 조건 수) */
+  collapse?: PanelCollapse
+}) {
   const db = useDb()
   const toast = useToast()
   const [stored, setStored] = usePersistentState<SearchPreset[]>('search-presets:v1', [], isArray)
@@ -112,9 +121,17 @@ export function SearchPresets({ cond, onLoad }: { cond: SearchConditions; onLoad
     toast(message, count === 1 ? { label: '불러오기', onClick: () => load(first, current) } : undefined)
   }
 
+  const modifiedActive = active !== null && conditionsKey(active.conditions) !== currentKey
+  const summary = active
+    ? `${modifiedActive ? '수정됨' : '사용 중'} · ${active.name}`
+    : presets.length > 0
+      ? `${presets.length}개`
+      : '없음'
+
   return (
     <Panel
       title="저장한 조건"
+      collapse={collapse && { ...collapse, summary }}
       actions={
         <Button size="sm" onClick={() => setDialog({ type: 'save' })}>
           지금 조건 저장
@@ -123,7 +140,7 @@ export function SearchPresets({ cond, onLoad }: { cond: SearchConditions; onLoad
     >
       {presets.length === 0 ? (
         <p className="text-xs text-muted">
-          무기마다 바뀌는 검색 조건(원하는 스킬·비선호·무기·호석·옵션)을 이름을 붙여 저장해 두고 불러올 수 있어요.
+          무기마다 바뀌는 검색 조건(원하는 스킬·비선호·장식주 여유분·무기·호석·옵션)을 이름을 붙여 저장해 두고 불러올 수 있어요.
         </p>
       ) : (
         <ul className="max-h-72 space-y-1.5 overflow-y-auto">
@@ -298,7 +315,7 @@ function SaveForm({
       <p className="text-xs text-muted">
         {active
           ? `‘${active.name}’에서 불러온 조건이에요. 덮어쓰거나 새 조건으로 저장할 수 있어요.`
-          : '원하는 스킬·비선호 스킬·무기·호석·옵션을 저장해요. 결과 정렬은 저장하지 않아요.'}
+          : '원하는 스킬·비선호 스킬·장식주 여유분·무기·호석·옵션을 저장해요. 결과 정렬은 저장하지 않아요.'}
       </p>
       <div className="flex flex-wrap justify-end gap-2">
         <Button variant="ghost" onClick={onClose}>

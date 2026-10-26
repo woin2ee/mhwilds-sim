@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MobileBar } from '../../components/MobileBar'
-import { Button, EmptyState, Panel, Segmented, Toggle } from '../../components/ui'
+import { SlotList } from '../../components/SlotBadge'
+import { Button, EmptyState, Panel, Segmented, Toggle, type PanelCollapse } from '../../components/ui'
 import { SearchCancelledError, SearchClient, type RunningSearch } from '../../core/search/client'
 import type {
   ExcludeMode,
@@ -22,6 +23,14 @@ import {
   withRequiredOrder,
   type SearchConditions,
 } from './conditions'
+import {
+  excludedArmorSummary,
+  excludedSummary,
+  optionsSummary,
+  requiredSummary,
+  talismanSummary,
+  weaponSummary,
+} from './conditionSummary'
 import { CompareDialog } from '../compare/CompareDialog'
 import { COMPARE_MAX } from '../compare/compareRows'
 import { CompareTray } from '../compare/CompareTray'
@@ -31,6 +40,7 @@ import type { CompareControl } from './ResultCard'
 import { ResultCompareActions } from './ResultCompareActions'
 import { ResultList } from './ResultList'
 import { SearchPresets } from './SearchPresets'
+import { SpareSlotsCondition } from './SpareSlotsCondition'
 import { TalismanCondition } from './TalismanCondition'
 import { WeaponCondition } from './WeaponCondition'
 import { compareItemOf, compareTrayItemOf } from './compareList'
@@ -46,6 +56,12 @@ const EXCLUDE_MODE_HELP: Record<ExcludeMode, string> = {
   mark: '비선호 스킬이 든 조합도 같은 순서로 보여 주고, 결과에서 그 스킬에만 표시해요. 장식주로는 되도록 넣지 않아요.',
   exclude: '비선호 스킬이 붙은 방어구·호석·장식주를 후보에서 아예 빼고 찾아요.',
 }
+
+/** 접을 수 있는 조건 패널 (접은 패널은 localStorage search-collapsed:v1 에 기억한다) */
+type Section = 'presets' | 'required' | 'excluded' | 'spare' | 'weapon' | 'talisman' | 'excludedArmor' | 'options'
+
+const isSectionList = (value: unknown): value is Section[] =>
+  Array.isArray(value) && value.every((v) => typeof v === 'string')
 
 /** lg 미만(1단)에서 한 번에 하나만 보여 주는 패널 */
 type Pane = 'conditions' | 'results'
@@ -74,6 +90,13 @@ export function SearchPage() {
   )
   const request = useMemo(() => buildRequest(db, cond, customTalismans), [db, cond, customTalismans])
   const excludedArmorCount = useMemo(() => excludedArmorIds(db, cond.excludedArmor).length, [db, cond.excludedArmor])
+  const [collapsedSections, setCollapsedSections] = usePersistentState<Section[]>('search-collapsed:v1', [], isSectionList)
+  const collapse = (section: Section, summary: PanelCollapse['summary']): PanelCollapse => ({
+    collapsed: collapsedSections.includes(section),
+    onCollapsedChange: (collapsed) =>
+      setCollapsedSections((prev) => [...prev.filter((s) => s !== section), ...(collapsed ? [section] : [])]),
+    summary,
+  })
 
   // ---- 검색 실행 ----
   const clientRef = useRef<SearchClient | null>(null)
@@ -190,10 +213,11 @@ export function SearchPage() {
     // 1단(lg 미만)에서는 블록으로 둬야 맨 끝의 MobileBar 가 sticky 로 화면 아래에 붙는다 (grid 칸 안에선 안 움직임)
     <div className="max-lg:space-y-4 lg:grid lg:grid-cols-[380px_minmax(0,1fr)] lg:items-start lg:gap-4">
       <div className={cx('space-y-4', pane !== 'conditions' && 'max-lg:hidden')}>
-        <SearchPresets cond={cond} onLoad={setStored} />
+        <SearchPresets cond={cond} onLoad={setStored} collapse={collapse('presets', undefined)} />
 
         <Panel
           title="원하는 스킬"
+          collapse={collapse('required', requiredSummary(db, cond))}
           actions={
             cond.required.length > 0 && (
               <Button size="sm" variant="ghost" onClick={() => patch({ required: [], requiredDividers: [] })}>
@@ -212,6 +236,7 @@ export function SearchPage() {
 
         <Panel
           title="비선호 스킬"
+          collapse={collapse('excluded', excludedSummary(db, cond))}
           actions={
             cond.excluded.length > 0 && (
               <Button size="sm" variant="ghost" onClick={() => patch({ excluded: [] })}>
@@ -238,16 +263,34 @@ export function SearchPage() {
           </div>
         </Panel>
 
-        <Panel title="무기">
+        <Panel
+          title="장식주 여유분"
+          collapse={collapse(
+            'spare',
+            request.spareSlots.length > 0 ? <SlotList slots={request.spareSlots} size="sm" /> : '없음',
+          )}
+          actions={
+            request.spareSlots.length > 0 && (
+              <Button size="sm" variant="ghost" onClick={() => patch({ spareSlots: DEFAULT_CONDITIONS.spareSlots })}>
+                비우기
+              </Button>
+            )
+          }
+        >
+          <SpareSlotsCondition value={cond.spareSlots} onChange={(spareSlots) => patch({ spareSlots })} />
+        </Panel>
+
+        <Panel title="무기" collapse={collapse('weapon', weaponSummary(db, cond))}>
           <WeaponCondition cond={cond} onChange={patch} />
         </Panel>
 
-        <Panel title="호석">
+        <Panel title="호석" collapse={collapse('talisman', talismanSummary(db, cond, customTalismans))}>
           <TalismanCondition cond={cond} onChange={patch} />
         </Panel>
 
         <Panel
           title="제외할 방어구"
+          collapse={collapse('excludedArmor', excludedArmorSummary(db, cond))}
           actions={
             cond.excludedArmor.length > 0 && (
               <Button size="sm" variant="ghost" onClick={() => patch({ excludedArmor: [] })}>
@@ -262,7 +305,7 @@ export function SearchPage() {
           />
         </Panel>
 
-        <Panel title="옵션">
+        <Panel title="옵션" collapse={collapse('options', optionsSummary(cond))}>
           <div className="space-y-2.5">
             <Toggle
               checked={cond.includeLowRank}
@@ -316,6 +359,7 @@ export function SearchPage() {
               후보 {request.talismans.length}개{cond.excludeHr100 && ' · HR 100 장비 제외'}
               {excludedArmorCount > 0 && ` · 방어구 ${formatCount(excludedArmorCount)}개 제외`}
               {!request.useDecorations && ' · 장식주 없이'}
+              {request.spareSlots.length > 0 && ` · 장식주 여유분 ${request.spareSlots.length}개`}
             </p>
           </div>
           {running && (

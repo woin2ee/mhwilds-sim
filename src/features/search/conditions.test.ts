@@ -88,6 +88,21 @@ describe('검색 조건 → SearchRequest', () => {
     expect(requestKey(without)).not.toBe(requestKey(withDecorations))
   })
 
+  it('장식주 여유분은 종류·크기별 개수(0~5)로 저장하고, 요청에는 무기 먼저·크기 큰 순의 슬롯 목록으로 넘긴다', () => {
+    expect(normalizeConditions({ required: [], excluded: [] }).spareSlots).toEqual({ armor: [0, 0, 0], weapon: [0, 0, 0] })
+    const stored = { required: [], excluded: [], spareSlots: { armor: [1, 9, -1], weapon: ['2', 1.5] } } as unknown
+    expect(normalizeConditions(stored as Partial<SearchConditions>).spareSlots).toEqual({ armor: [1, 5, 0], weapon: [0, 0, 0] })
+    const spare = cond({ spareSlots: { armor: [2, 0, 1], weapon: [0, 1, 0] } })
+    expect(buildRequest(db, spare, []).spareSlots).toEqual([
+      { kind: 'weapon', level: 2 },
+      { kind: 'armor', level: 3 },
+      { kind: 'armor', level: 1 },
+      { kind: 'armor', level: 1 },
+    ])
+    expect(buildRequest(db, cond({}), []).spareSlots).toEqual([])
+    expect(requestKey(buildRequest(db, spare, []))).not.toBe(requestKey(buildRequest(db, cond({}), [])))
+  })
+
   it('HR 100 장비 제외는 그 방어구 id 를 excludedArmorIds 로 넘기고, 바꾸면 요청 키가 달라진다', () => {
     const off = buildRequest(db, cond({}), [])
     const on = buildRequest(db, cond({ excludeHr100: true }), [])

@@ -46,6 +46,7 @@ function request(overrides: Partial<SearchRequest>): SearchRequest {
     limit: 30,
     maxShortfall: 0,
     lockedSkills: [],
+    spareSlots: [],
     ...overrides,
   }
 }
@@ -70,6 +71,7 @@ function verifyItem(
   else expect(shortfallOf(summary, r.required)).toBe(shortfall)
   expect(summary.slots.every((s) => s.valid)).toBe(true)
   expect(unwantedSkillsOf(summary, r.excludedSkills).sort()).toEqual([...item.unwantedSkills].sort())
+  expect(fitsSpare(summary.freeSlots, r.spareSlots)).toBe(true)
   return summary
 }
 
@@ -90,6 +92,33 @@ const variantCountOf = (item: SearchResultItem) =>
     (sum: number, set) => sum + ARMOR_KINDS.reduce((n, kind) => n * Math.max(1, candidatesIn(item, kind, set).length), 1),
     0,
   )
+
+/** 결과를 실제 방어구·호석 조합으로 펼친 키 (α/β 는 함께 바꿀 수 있는 조합만) */
+const physical = (items: readonly SearchResultItem[]) =>
+  items.flatMap((item) => {
+    const talismans = item.talismans.length > 0 ? item.talismans.map((t) => `${t.type}:${t.id}`) : ['-']
+    return [{}, ...item.swapSets].flatMap((set) => {
+      let combos = ['']
+      for (const kind of ARMOR_KINDS) {
+        const ids = item.armor[kind].length > 0 ? candidatesIn(item, kind, set) : [0]
+        combos = combos.flatMap((c) => ids.map((id) => `${c}${id},`))
+      }
+      return combos.flatMap((c) => talismans.map((t) => c + t))
+    })
+  })
+
+/** 남는 슬롯에 장식주 여유분이 다 들어가는지: 종류마다 크기 k 이상 여유분 수 ≤ 레벨 k 이상 남는 슬롯 수 (k = 1, 2, 3) */
+const fitsSpare = (free: readonly Slot[], spare: readonly Slot[]) =>
+  (['armor', 'weapon'] as const).every((kind) =>
+    [1, 2, 3].every(
+      (k) =>
+        spare.filter((s) => s.kind === kind && s.level >= k).length <=
+        free.filter((s) => s.kind === kind && s.level >= k).length,
+    ),
+  )
+
+const armorSlot = (level: Slot['level']): Slot => ({ kind: 'armor', level })
+const weaponSlot = (level: Slot['level']): Slot => ({ kind: 'weapon', level })
 
 /** 응답의 모든 결과(+ 앞쪽 몇 개의 대체 방어구/호석)를 재검증 */
 function verify(r: SearchRequest, res: SearchResponse, customs: CustomTalisman[] = []) {
@@ -509,6 +538,80 @@ describe('runSearch', () => {
     })
   })
 
+  describe('장식주 여유분', () => {
+    /** 여유분 없이 찾은 결과(limit 안에 모두 든다) 중 남는 슬롯에 여유분이 들어가는 것 */
+    const fittingPlain = (r: SearchRequest) => {
+      const plain = runSearch(db, { ...r, spareSlots: [] })
+      expect(plain.truncated).toBe(false)
+      expect(plain.items).toHaveLength(plain.total)
+      return plain.items.filter((item) => fitsSpare(item.freeSlots, r.spareSlots))
+    }
+
+    it('방어구 여유분: 여유분 없이 찾은 결과 중 남는 슬롯에 여유분이 들어가는 조합을 빠짐없이 찾는다', () => {
+      // 방어구 장식주는 넣을 것이 부족분으로 정해져서, 같은 조합의 남는 슬롯은 여유분이 있어도 없어도 같다
+      const required = req(['쇄인룡의 굶주림', 2], ['약점 특효', 5], ['도전자', 5])
+      for (const spareSlots of [[armorSlot(3), armorSlot(1)], [armorSlot(3), armorSlot(3)], [armorSlot(2), armorSlot(2), armorSlot(1)]]) {
+        const r = request({ required, spareSlots, limit: 100_000 })
+        const res = runSearch(db, r)
+        expect(res.truncated).toBe(false)
+        expect(res.items.length).toBeGreaterThan(50)
+        const expected = fittingPlain(r)
+        expect(physical(res.items).sort()).toEqual(physical(expected).sort())
+        // 잎마다 DP 로 센 개수도 여유분을 넣어 센다 (§6.5)
+        expect(runSearch(db, { ...r, limit: 20 }).total).toBe(res.items.length)
+        verify(r, { ...res, items: res.items.slice(0, 30) })
+      }
+    })
+
+    it('장식주 없이 + 여유분: 방어구·호석 슬롯에 여유분이 들어가는 조합만', () => {
+      const r = request({
+        required: req(['약점 특효', 5], ['도전자', 5]),
+        useDecorations: false,
+        talismans: [],
+        spareSlots: [armorSlot(3), armorSlot(2)],
+        limit: 100_000,
+      })
+      const res = runSearch(db, r)
+      expect(res.truncated).toBe(false)
+      expect(res.items.length).toBeGreaterThan(50)
+      expect(physical(res.items).sort()).toEqual(physical(fittingPlain(r)).sort())
+      // 고그 α/β 처럼 시리즈 발동이 달라 따로 보이는 결과만 개수에서 빠진다 (여유분이 없어도 같다, §6.5)
+      const counted = runSearch(db, { ...r, limit: 20 }).total
+      expect(counted).toBeLessThanOrEqual(res.items.length)
+      expect(counted).toBeGreaterThan(res.items.length * 0.97)
+      verify(r, { ...res, items: res.items.slice(0, 30) })
+    })
+
+    it('무기 여유분: 무기 장식주를 넣고도 무기 슬롯이 남는 조합만, 안 되면 결과가 없다', () => {
+      const weapon = weaponOf({ type: 'db', id: 71 }) // 앙길바인 [3,3,3]
+      const required = req(['공격', 3], ['약점 특효', 3])
+      const plain = runSearch(db, request({ required, weapon }))
+      const r = request({ required, weapon, spareSlots: [weaponSlot(3), weaponSlot(3)] })
+      const res = runSearch(db, r)
+      expect(res.items.length).toBeGreaterThan(0)
+      expect(res.total).toBeLessThanOrEqual(plain.total)
+      verify(r, res)
+      // 공격을 채우려면 무기 슬롯을 하나는 써야 한다
+      expect(runSearch(db, { ...r, spareSlots: [3, 3, 3].map(() => weaponSlot(3)) }).total).toBe(0)
+    })
+
+    it('여유분이 남은 슬롯보다 많으면 빠르게 빈 결과', () => {
+      const r = request({ required: req(['약점 특효', 1]), spareSlots: Array.from({ length: 20 }, () => armorSlot(3)), maxShortfall: 99 })
+      const res = runSearch(db, r)
+      expect(res).toMatchObject({ items: [], total: 0, truncated: false, shortfall: 0 })
+      expect(res.elapsedMs).toBeLessThan(1000)
+    })
+
+    it('여유분이 크면 슬롯이 많은 방어구로 좁혀져 정렬 기준대로 찾는다', () => {
+      const r = request({ required: req(['약점 특효', 3], ['도전자', 3]), spareSlots: [armorSlot(3), armorSlot(3), armorSlot(3)], limit: 50 })
+      const res = runSearch(db, r)
+      expect(res.items).toHaveLength(50)
+      verify(r, res)
+      const scores = res.items.map((i) => slotScore(i.freeSlots))
+      expect(scores).toEqual([...scores].sort((a, b) => b - a))
+    })
+  })
+
   it('제외한 방어구와 하위 랭크 방어구는 후보에 없다', () => {
     const excludedPiece = armorByName(db, '슈바르카그리브γ')
     const r = request({ required: req(['약점 특효', 4]), excludedArmorIds: [excludedPiece.id], limit: 100 })
@@ -526,19 +629,6 @@ describe('runSearch', () => {
     const hunger = sid('쇄인룡의 굶주림')
     const lordsSoul = sid('주인의 혼')
     const gogma = weaponOf(dbWeaponChoice(db.weaponByGameKey('great-sword', 87)!.id, { setSkillId: hunger, groupSkillId: lordsSoul }))
-    /** 결과를 실제 방어구·호석 조합으로 펼친 키 (α/β 는 함께 바꿀 수 있는 조합만) */
-    const physical = (items: readonly SearchResultItem[]) =>
-      items.flatMap((item) => {
-        const talismans = item.talismans.length > 0 ? item.talismans.map((t) => `${t.type}:${t.id}`) : ['-']
-        return [{}, ...item.swapSets].flatMap((set) => {
-          let combos = ['']
-          for (const kind of ARMOR_KINDS) {
-            const ids = item.armor[kind].length > 0 ? candidatesIn(item, kind, set) : [0]
-            combos = combos.flatMap((c) => ids.map((id) => `${c}${id},`))
-          }
-          return combos.flatMap((c) => talismans.map((t) => c + t))
-        })
-      })
     /** 레벨을 모두 합쳐 s 만큼 낮추는 모든 방법 (스킬별로 낮출 레벨) */
     const lowerings = (levels: readonly number[], s: number): number[][] => {
       if (levels.length === 0) return s === 0 ? [[]] : []
@@ -596,6 +686,12 @@ describe('runSearch', () => {
           useDecorations: false,
           lockedSkills: req(['약점 특효', 5], ['회피 성능', 3]).map((p) => p.skillId),
         },
+        1,
+      ],
+      [
+        // 여유분은 낮추지 않는다: Lv3 슬롯 3개를 비워 두려면 원하는 스킬을 낮춰야 한다
+        '장식주 여유분 (방어구 ③×3)',
+        { required: req(['약점 특효', 5], ['도전자', 5], ['연격', 5]), spareSlots: [3, 3, 3].map(() => armorSlot(3)) },
         1,
       ],
     ])('%s: 레벨을 그만큼 낮춘 검색들에서 나오는 조합을 빠짐없이 찾는다', (_, overrides, expected) => {
@@ -764,6 +860,7 @@ describe('일반화된 경로 (합성 데이터)', () => {
       limit: 10,
       maxShortfall: 0,
       lockedSkills: [],
+      spareSlots: [],
     }
     const res = runSearch(synthetic, r)
     expect(res.items.length).toBeGreaterThan(0)
@@ -813,6 +910,7 @@ describe('일반화된 경로 (합성 데이터)', () => {
       limit: 10,
       maxShortfall: 99,
       lockedSkills: [],
+      spareSlots: [],
     }
     expect(runSearch(smallDb, { ...r, maxShortfall: 0 }).total).toBe(0)
     const marked = runSearch(smallDb, r)
@@ -825,5 +923,66 @@ describe('일반화된 경로 (합성 데이터)', () => {
       const summary = computeBuild(smallDb, resultToBuild(smallDb, res.items[0], r))
       expect(missingRequirements(summary, r.required)).toEqual([{ skillId: 2, required: 3, current: 3 - res.shortfall }])
     }
+  })
+
+  it('장식주 여유분: 남는 슬롯 점수가 가장 큰 배치에 안 들어가면 다른 장식주로 여유분을 남긴다', () => {
+    // 무기 슬롯 [3,1,1] 에 스킬 2·5 를 Lv1 장식주 둘로 채우면 Lv3 이 남고(점수 9), 둘을 함께 주는 Lv3 장식주면 Lv1 둘이 남는다
+    const composite: GameData = {
+      ...data,
+      skills: [...data.skills, skill(5, 'weapon', 1)],
+      armor: data.armor.filter((a) => a.id <= 5).map((a) => ({ ...a, skills: [], slots: [] })),
+      decorations: [
+        { id: 1, gameId: 1, name: names('s2'), kind: 'weapon', size: 1, rarity: 1, skills: [{ skillId: 2, level: 1 }] },
+        { id: 2, gameId: 2, name: names('s5'), kind: 'weapon', size: 1, rarity: 1, skills: [{ skillId: 5, level: 1 }] },
+        {
+          id: 3,
+          gameId: 3,
+          name: names('s2+s5'),
+          kind: 'weapon',
+          size: 3,
+          rarity: 1,
+          skills: [
+            { skillId: 2, level: 1 },
+            { skillId: 5, level: 1 },
+          ],
+        },
+      ],
+      weapons: [{ ...data.weapons[0], slots: [3, 1, 1] }],
+    }
+    const compositeDb = new GameDb(composite)
+    const r: SearchRequest = {
+      required: [
+        { skillId: 2, level: 1 },
+        { skillId: 5, level: 1 },
+      ],
+      excludedSkills: [],
+      excludeMode: 'mark',
+      weapon: { choice: { type: 'db', id: 1 }, skills: [], slots: [3, 1, 1] },
+      talismans: [],
+      includeLowRank: false,
+      transcend: false,
+      useDecorations: true,
+      excludedArmorIds: [],
+      sort: 'slots',
+      limit: 10,
+      maxShortfall: 0,
+      lockedSkills: [],
+      spareSlots: [],
+    }
+    const freeOf = (spareSlots: Slot[]) => {
+      const res = runSearch(compositeDb, { ...r, spareSlots })
+      return res.items.map((item) => {
+        const summary = computeBuild(compositeDb, resultToBuild(compositeDb, item, r))
+        expect(missingRequirements(summary, r.required)).toEqual([])
+        expect(summary.slots.every((s) => s.valid)).toBe(true)
+        expect(slotKey(summary.freeSlots)).toEqual(slotKey(item.freeSlots))
+        return slotKey(item.freeSlots).join('')
+      })
+    }
+    expect(freeOf([])).toEqual(['w3'])
+    expect(freeOf([weaponSlot(3)])).toEqual(['w3'])
+    expect(freeOf([weaponSlot(1), weaponSlot(1)])).toEqual(['w1w1'])
+    // 슬롯 둘을 비우면서 Lv3 를 남기는 배치는 없다
+    expect(freeOf([weaponSlot(3), weaponSlot(1)])).toEqual([])
   })
 })

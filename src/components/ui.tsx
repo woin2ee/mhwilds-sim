@@ -1,5 +1,5 @@
 // 공통 UI 기본 요소. 색상은 index.css 의 의미 기반 토큰(bg-surface, text-muted 등)만 사용한다.
-import type { ButtonHTMLAttributes, ReactNode } from 'react'
+import { useId, type ButtonHTMLAttributes, type ReactNode } from 'react'
 import { cx } from '../lib/cx'
 
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger'
@@ -39,27 +39,86 @@ export function Button({
   )
 }
 
+/** 접을 수 있는 패널: 제목 줄 어디를 눌러도 접고 펴고, 접으면 actions 대신 summary(지금 값 요약)를 보인다 */
+export interface PanelCollapse {
+  collapsed: boolean
+  onCollapsedChange: (collapsed: boolean) => void
+  /** 접었을 때 제목 옆에 보일 지금 값 요약 */
+  summary?: ReactNode
+}
+
 export function Panel({
   title,
   actions,
   children,
   className,
+  collapse,
 }: {
   title?: ReactNode
   actions?: ReactNode
   children: ReactNode
   className?: string
+  collapse?: PanelCollapse
 }) {
+  const bodyId = useId()
+  const folded = collapse?.collapsed === true
   return (
     <section className={cx('rounded-lg border border-line bg-surface', className)}>
-      {(title || actions) && (
-        <header className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-2.5">
-          <h2 className="text-sm font-semibold">{title}</h2>
-          {actions && <div className="flex flex-wrap items-center justify-end gap-1.5">{actions}</div>}
+      {collapse ? (
+        // 제목 버튼의 ::after 가 줄 전체를 덮어 어디를 눌러도 접고 편다. actions 는 그 위(z-10)에 둔다
+        <header
+          className={cx(
+            'relative flex items-center gap-2 px-4 py-2.5 hover:bg-surface-2/60',
+            folded ? 'rounded-lg' : 'rounded-t-lg border-b border-line',
+          )}
+        >
+          <h2 className="shrink-0 text-sm font-semibold">
+            <button
+              type="button"
+              aria-expanded={!folded}
+              aria-controls={bodyId}
+              onClick={() => collapse.onCollapsedChange(!folded)}
+              className="flex cursor-pointer items-center gap-1.5 text-left after:absolute after:inset-0"
+            >
+              <ChevronIcon className={cx('size-3.5 shrink-0 text-muted transition-transform', folded && '-rotate-90')} />
+              {title}
+            </button>
+          </h2>
+          {folded
+            ? collapse.summary && <div className="min-w-0 flex-1 truncate text-right text-xs text-muted">{collapse.summary}</div>
+            : actions && (
+                <div className="relative z-10 ml-auto flex flex-wrap items-center justify-end gap-1.5">{actions}</div>
+              )}
         </header>
+      ) : (
+        (title || actions) && (
+          <header className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-2.5">
+            <h2 className="text-sm font-semibold">{title}</h2>
+            {actions && <div className="flex flex-wrap items-center justify-end gap-1.5">{actions}</div>}
+          </header>
+        )
       )}
-      <div className="p-4">{children}</div>
+      <div id={bodyId} hidden={folded} className="p-4">
+        {children}
+      </div>
     </section>
+  )
+}
+
+function ChevronIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      className={className}
+    >
+      <path d="m6 9 6 6 6-6" />
+    </svg>
   )
 }
 

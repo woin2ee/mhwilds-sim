@@ -2,12 +2,14 @@
 import { describe, expect, it } from 'vitest'
 import { loadTestDb, skillIdByName } from '../../test/testDb'
 import { resolveWeapon } from '../equipment'
-import type { WeaponChoice } from '../types'
+import type { Slot, WeaponChoice } from '../types'
 import { runSearch } from './engine'
 import type { SearchRequest, SearchTalisman } from './types'
 
 const db = loadTestDb()
 const req = (...pairs: [string, number][]) => pairs.map(([name, level]) => ({ skillId: skillIdByName(db, name), level }))
+/** 방어구 장식주 여유분 */
+const spare = (...levels: Slot['level'][]): Slot[] => levels.map((level) => ({ kind: 'armor', level }))
 
 function weaponOf(choice: WeaponChoice | null): SearchRequest['weapon'] {
   const resolved = resolveWeapon(db, choice)
@@ -47,6 +49,7 @@ const base: SearchRequest = {
   limit: 300,
   maxShortfall: 0,
   lockedSkills: [],
+  spareSlots: [],
 }
 
 const CASES: [string, Partial<SearchRequest>][] = [
@@ -90,6 +93,10 @@ const CASES: [string, Partial<SearchRequest>][] = [
   ['장식주 없이: 약특5 도전5 연격3', { required: req(['약점 특효', 5], ['도전자', 5], ['연격', 3]), useDecorations: false }],
   ['장식주 없이: 약특5 도전5', { required: req(['약점 특효', 5], ['도전자', 5]), useDecorations: false }],
   ['장식주 없이: 약특1 (상한 도달 예상)', { required: req(['약점 특효', 1]), useDecorations: false }],
+  // 장식주 여유분 (§6.8): 남는 슬롯에 더 끼울 장식주 자리
+  ['여유분 ③③: 약특5 도전5 연격3', { required: req(['약점 특효', 5], ['도전자', 5], ['연격', 3]), spareSlots: spare(3, 3) }],
+  ['여유분 ③③③: 약특1', { required: req(['약점 특효', 1]), spareSlots: spare(3, 3, 3) }],
+  ['여유분 ③②: 장식주 없이 약특5 도전5', { required: req(['약점 특효', 5], ['도전자', 5]), useDecorations: false, spareSlots: spare(3, 2) }],
   // 조건을 채우는 조합이 없어 가장 적게 모자란 조합을 찾는 경우 (결과 칸의 −N = 모자란 레벨 합)
   [
     '모자란 조합: 7스킬 최대',
@@ -119,6 +126,14 @@ const CASES: [string, Partial<SearchRequest>][] = [
   [
     '모자란 조합: 무기 스킬 없이 공격5 간파5 약특5 (상한 도달 예상)',
     { required: req(['공격', 5], ['간파', 5], ['약점 특효', 5]), maxShortfall: 99 },
+  ],
+  [
+    '모자란 조합: 여유분 ③③ + 7스킬 최대',
+    {
+      required: req(['약점 특효', 5], ['도전자', 5], ['연격', 5], ['힘의 해방', 5], ['회피 성능', 5], ['회피 거리 UP', 3], ['체술', 3]),
+      spareSlots: spare(3, 3),
+      maxShortfall: 99,
+    },
   ],
 ]
 

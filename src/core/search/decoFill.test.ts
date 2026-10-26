@@ -1,7 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import type { Decoration, SlotLevel } from '../../data/types'
 import type { SlotKind } from '../types'
-import { assignDecorations, DecoFiller, removeDominated, SimpleFill, type ConcreteSlot, type FillDeco } from './decoFill'
+import {
+  assignDecorations,
+  DecoFiller,
+  fitsSizes,
+  NO_SPARE,
+  removeDominated,
+  SimpleFill,
+  type ConcreteSlot,
+  type FillDeco,
+  type SizeCounts,
+  type SlotCounts,
+  type SpareSizes,
+} from './decoFill'
 
 let nextId = 1
 function deco(kind: SlotKind, size: SlotLevel, pts: number[], unwanted: number[] = []): FillDeco {
@@ -75,7 +87,7 @@ describe('DecoFiller', () => {
     expect(filler.fill([2, 0], [0, 1, 0], [0, 0, 0], 5)).toBeNull()
   })
 
-  it('허용치가 있을 때 모든 배치를 넣어 본 결과와 같다 (무작위, 고정한 스킬 포함)', () => {
+  it('허용치가 있을 때 모든 배치를 넣어 본 결과와 같다 (무작위, 고정한 스킬·장식주 여유분 포함)', () => {
     // mulberry32: 실패하면 같은 사례로 다시 볼 수 있게 고정 시드
     let seed = 20261024
     const random = () => {
@@ -97,21 +109,28 @@ describe('DecoFiller', () => {
       const deficits = Array.from({ length: skills }, () => int(4))
       const tolerance = int(3)
       const locked = Array.from({ length: skills }, () => random() < 0.3)
+      // 장식주 여유분 (절반은 없이)
+      const spare: SpareSizes = random() < 0.5 ? NO_SPARE : { armor: [int(1), int(1), int(1)], weapon: [int(1), 0, int(1)] }
 
       // 슬롯마다 비우거나 들어가는 장식주 하나를 넣는 모든 경우
       const slots = (['armor', 'weapon'] as const).flatMap((kind) =>
         (kind === 'armor' ? armor : weapon).flatMap((n, i) => Array.from({ length: n }, () => ({ kind, level: i + 1 }))),
       )
       let best: { short: number; score: number } | null = null
+      /** 비워 둔 슬롯의 종류별 레벨별 개수 */
+      const free: Record<SlotKind, SlotCounts> = { armor: [0, 0, 0], weapon: [0, 0, 0] }
       const visit = (i: number, covered: number[], score: number) => {
         if (i === slots.length) {
           if (deficits.some((d, k) => locked[k] && covered[k] < d)) return
+          if (!fitsSizes(free.armor, spare.armor) || !fitsSizes(free.weapon, spare.weapon)) return
           const short = deficits.reduce((s, d, k) => s + Math.max(0, d - covered[k]), 0)
           if (!best || short < best.short || (short === best.short && score > best.score)) best = { short, score }
           return
         }
         const slot = slots[i]
+        free[slot.kind][slot.level - 1]++
         visit(i + 1, covered, score + slot.level * slot.level)
+        free[slot.kind][slot.level - 1]--
         for (const d of decos) {
           if (d.kind === slot.kind && d.size <= slot.level) visit(i + 1, covered.map((c, k) => c + d.pts[k]), score)
         }
@@ -119,8 +138,17 @@ describe('DecoFiller', () => {
       visit(0, deficits.map(() => 0), 0)
       const expected = best as { short: number; score: number } | null
 
-      const result = new DecoFiller(decos, skills, locked).fill(deficits, armor, weapon, tolerance)
-      const label = JSON.stringify({ round, decos: decos.map((d) => [d.kind, d.size, d.pts]), armor, weapon, deficits, tolerance, locked })
+      const result = new DecoFiller(decos, skills, locked, spare).fill(deficits, armor, weapon, tolerance)
+      const label = JSON.stringify({
+        round,
+        decos: decos.map((d) => [d.kind, d.size, d.pts]),
+        armor,
+        weapon,
+        deficits,
+        tolerance,
+        locked,
+        spare,
+      })
       if (!expected || expected.short > tolerance) {
         expect(result, label).toBeNull()
         continue
@@ -131,6 +159,20 @@ describe('DecoFiller', () => {
       expect(deficits.reduce((s, d, k) => s + Math.max(0, d - covered[k]), 0), label).toBe(result!.short)
       expect(deficits.every((d, k) => !locked[k] || covered[k] >= d), label).toBe(true)
     }
+  })
+
+  it('장식주 여유분이 남는 배치를 고른다', () => {
+    // 무기 슬롯 [3,1,1]: Lv1 장식주 둘이면 Lv3 이 남고(9), 두 스킬을 함께 주는 Lv3 장식주면 Lv1 둘이 남는다(2)
+    const decos = [deco('weapon', 1, [1, 0]), deco('weapon', 1, [0, 1]), deco('weapon', 3, [1, 1])]
+    const weapon: SlotCounts = [2, 0, 1]
+    expect(new DecoFiller(decos, 2).fill([1, 1], [0, 0, 0], weapon)?.score).toBe(9)
+    const keepTwo = new DecoFiller(decos, 2, [], { armor: [0, 0, 0], weapon: [2, 0, 0] })
+    expect(keepTwo.fill([1, 1], [0, 0, 0], weapon)).toMatchObject({ score: 2, decos: [decos[2]] })
+    // 다 남기고 부족분을 채울 수 없으면 null, 부족분이 없어도 여유분이 안 들어가면 null
+    expect(new DecoFiller(decos, 2, [], { armor: [0, 0, 0], weapon: [2, 0, 1] }).fill([1, 1], [0, 0, 0], weapon)).toBeNull()
+    expect(new DecoFiller([], 0, [], { armor: [0, 0, 1], weapon: [0, 0, 0] }).fill([], [3, 3, 0], [0, 0, 0])).toBeNull()
+    // 크기 1 여유분은 더 큰 슬롯에 남아도 된다
+    expect(new DecoFiller([], 0, [], { armor: [2, 0, 0], weapon: [0, 0, 0] }).fill([], [0, 1, 1], [0, 0, 0])?.score).toBe(13)
   })
 
   it('비선호 장식주는 다른 방법이 없을 때만 쓴다', () => {
@@ -152,7 +194,7 @@ describe('SimpleFill', () => {
     expect(new DecoFiller([deco('armor', 1, [1, 0])], 2).simpleDecos()).toBeNull()
   })
 
-  it('DecoFiller 와 같은 결과 (무작위)', () => {
+  it('DecoFiller 와 같은 결과 (무작위, 장식주 여유분 포함)', () => {
     let seed = 20261026
     const random = () => {
       seed = (seed + 0x6d2b79f5) | 0
@@ -166,11 +208,12 @@ describe('SimpleFill', () => {
       const decos = Array.from({ length: skills }, (_, i) =>
         deco('armor', (1 + int(2)) as SlotLevel, Array.from({ length: skills }, (_, k) => (k === i ? 1 : 0))),
       )
-      const filler = new DecoFiller(decos, skills)
-      const simple = new SimpleFill(filler.simpleDecos()!)
+      const spare: SizeCounts = random() < 0.5 ? [0, 0, 0] : [int(2), int(1), int(1)]
+      const filler = new DecoFiller(decos, skills, [], { armor: spare, weapon: [0, 0, 0] })
+      const simple = new SimpleFill(filler.simpleDecos()!, spare)
       const armor: [number, number, number] = [int(4), int(4), int(4)]
       const deficits = Array.from({ length: skills }, () => int(3))
-      const label = JSON.stringify({ round, sizes: decos.map((d) => d.size), armor, deficits })
+      const label = JSON.stringify({ round, sizes: decos.map((d) => d.size), armor, deficits, spare })
       const expected = filler.fill(deficits, armor, [0, 0, 0])
       const result = simple.fill(deficits, armor)
       if (!expected) {

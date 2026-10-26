@@ -5,6 +5,32 @@ import type { EquipKey, Slot, SlotKind } from '../types'
 /** 레벨별 슬롯 개수 [Lv1, Lv2, Lv3] */
 export type SlotCounts = [number, number, number]
 
+/** 장식주 크기별 개수 [크기1, 크기2, 크기3] */
+export type SizeCounts = [number, number, number]
+
+/**
+ * 장식주 여유분 (DESIGN.md §6.8): 다 채우고 남는 슬롯에 종류별로 이 크기의 장식주를 하나씩 더 끼울 수 있어야 한다.
+ * 채우기는 맡은 종류의 슬롯만 받으므로(방어구 채우기의 무기 슬롯은 [0,0,0]) 맡지 않는 종류는 [0,0,0] 으로 둔다
+ */
+export interface SpareSizes {
+  armor: SizeCounts
+  weapon: SizeCounts
+}
+
+export const NO_SPARE: Readonly<SpareSizes> = { armor: [0, 0, 0], weapon: [0, 0, 0] }
+
+/**
+ * 크기별 장식주 n 이 레벨별 슬롯 a 에 다 들어가는지.
+ * 레벨이 포함 관계라 '크기 k 이상 장식주 수 ≤ 레벨 k 이상 슬롯 수' (k = 3, 2, 1) 이면 들어간다
+ */
+export function fitsSizes(a: Readonly<SlotCounts>, n: Readonly<SizeCounts>): boolean {
+  return n[2] <= a[2] && n[1] + n[2] <= a[1] + a[2] && n[0] + n[1] + n[2] <= a[0] + a[1] + a[2]
+}
+
+const addSizes = (a: Readonly<SizeCounts>, b: Readonly<SizeCounts>): SizeCounts => [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
+
+const isZero = (n: Readonly<SizeCounts>) => n[0] === 0 && n[1] === 0 && n[2] === 0
+
 export interface FillDeco {
   decoration: Decoration
   kind: SlotKind
@@ -67,7 +93,8 @@ export function removeDominated(decos: readonly FillDeco[]): FillDeco[] {
 
 /**
  * 메모이제이션 장식주 채우기. 상태 = (스킬별 부족분, 방어구 슬롯 개수, 무기 슬롯 개수).
- * 장식주는 들어갈 수 있는 가장 작은 슬롯에 넣는다 (슬롯 레벨이 포함 관계라 교환 논법상 항상 최적).
+ * 장식주는 들어갈 수 있는 가장 작은 슬롯에 넣는다 (슬롯 레벨이 포함 관계라 교환 논법상 항상 최적: 남는 슬롯의 레벨 k 이상 개수가
+ * k 마다 가장 많아서, 장식주 여유분도 이 배치에서 안 들어가면 어떤 배치에서도 안 들어간다).
  */
 export class DecoFiller {
   private readonly memo = new Map<string, FillResult | null>()
@@ -77,9 +104,21 @@ export class DecoFiller {
   private readonly potential: Record<SlotKind, [number, number, number]>
   /** 스킬(로컬 인덱스)별 고정 여부: 허용치가 있어도 모자란 채로 두지 않는다 */
   private readonly locked: readonly boolean[]
+  /** 다 채우고 남는 슬롯에 들어가야 하는 장식주 여유분 */
+  private readonly spare: Readonly<SpareSizes>
+  private readonly hasSpare: boolean
+  /** 여유분이 차지하는 슬롯의 잠재력 하한: 크기 s 장식주는 레벨 s 이상 슬롯을 쓰고, 잠재력은 레벨이 높을수록 크거나 같다 */
+  private readonly sparePotential: number
 
-  constructor(decos: readonly FillDeco[], skillCount: number, locked: readonly boolean[] = []) {
+  constructor(
+    decos: readonly FillDeco[],
+    skillCount: number,
+    locked: readonly boolean[] = [],
+    spare: Readonly<SpareSizes> = NO_SPARE,
+  ) {
     this.locked = locked
+    this.spare = spare
+    this.hasSpare = !isZero(spare.armor) || !isZero(spare.weapon)
     const usable = removeDominated(decos)
     this.bySkill = Array.from({ length: skillCount }, (_, i) =>
       usable
@@ -94,6 +133,11 @@ export class DecoFiller {
         pot[level - 1] = Math.max(pot[level - 1], total)
       }
     }
+    let sparePotential = 0
+    for (const kind of ['armor', 'weapon'] as const) {
+      for (let size = 0; size < 3; size++) sparePotential += spare[kind][size] * this.potential[kind][size]
+    }
+    this.sparePotential = sparePotential
   }
 
   /**
@@ -149,11 +193,15 @@ export class DecoFiller {
         total += d[i]
       }
     }
-    if (first < 0) return { score: slotScore(a) + slotScore(w), decos: [], unwanted: [], short: 0 }
+    if (first < 0) {
+      if (this.hasSpare && !(fitsSizes(a, this.spare.armor) && fitsSizes(w, this.spare.weapon))) return null
+      return { score: slotScore(a) + slotScore(w), decos: [], unwanted: [], short: 0 }
+    }
 
     const pa = this.potential.armor
     const pw = this.potential.weapon
-    const capacity = a[0] * pa[0] + a[1] * pa[1] + a[2] * pa[2] + w[0] * pw[0] + w[1] * pw[1] + w[2] * pw[2]
+    const capacity =
+      a[0] * pa[0] + a[1] * pa[1] + a[2] * pa[2] + w[0] * pw[0] + w[1] * pw[1] + w[2] * pw[2] - this.sparePotential
     if (total - capacity > tolerance) return null
 
     let best: FillResult | null = null
@@ -184,31 +232,34 @@ export class DecoFiller {
   }
 }
 
-/** 장식주 크기별 개수 [크기1, 크기2, 크기3] */
-export type SizeCounts = [number, number, number]
-
 /**
  * 스킬마다 그 스킬 1레벨 장식주가 하나뿐일 때의 채우기 (DecoFiller.simpleDecos, 허용치 0).
  * 넣을 장식주가 부족분으로 정해지므로 고를 것이 없다: 레벨이 포함 관계라 '크기 k 이상 장식주 수 ≤ 레벨 k 이상 슬롯 수'
- * (k = 3, 2, 1) 이면 다 들어가고, 큰 것부터 들어가는 가장 작은 슬롯에 넣으면 남는 슬롯 점수가 가장 크다 (DecoFiller 와 같은 결과)
+ * (k = 3, 2, 1) 이면 다 들어가고, 큰 것부터 들어가는 가장 작은 슬롯에 넣으면 남는 슬롯 점수가 가장 크다 (DecoFiller 와 같은 결과).
+ * 장식주 여유분(spare)은 넣을 장식주에 더해 같은 식으로 본다: 그 배치의 남는 슬롯이 레벨 k 이상 개수가 k 마다 가장 많아서
+ * 넣을 장식주 + 여유분이 다 들어가면 남는 슬롯에 여유분이 들어간다
  */
 export class SimpleFill {
   /** 스킬(로컬 인덱스)별 장식주 */
   readonly decos: readonly FillDeco[]
+  /** 방어구 장식주 여유분 */
+  readonly spare: Readonly<SizeCounts>
 
-  constructor(decos: readonly FillDeco[]) {
+  constructor(decos: readonly FillDeco[], spare: Readonly<SizeCounts> = [0, 0, 0]) {
     this.decos = decos
+    this.spare = spare
   }
 
+  /** 넣을 장식주의 크기별 개수 */
   sizes(deficits: readonly number[]): SizeCounts {
     const n: SizeCounts = [0, 0, 0]
     for (let i = 0; i < deficits.length; i++) n[this.decos[i].size - 1] += deficits[i]
     return n
   }
 
-  /** 크기별 장식주 n 이 방어구 슬롯 a 에 다 들어가는지 */
-  static fits(a: Readonly<SlotCounts>, n: Readonly<SizeCounts>): boolean {
-    return n[2] <= a[2] && n[1] + n[2] <= a[1] + a[2] && n[0] + n[1] + n[2] <= a[0] + a[1] + a[2]
+  /** 넣을 장식주 n 에 여유분을 더한 크기별 개수: 이것이 다 들어가는 슬롯이어야 결과가 된다 */
+  withSpare(n: Readonly<SizeCounts>): SizeCounts {
+    return addSizes(n, this.spare)
   }
 
   /** 다 넣고 남는 슬롯 (다 들어갈 때만) */
@@ -227,10 +278,10 @@ export class SimpleFill {
     return [r1, r2, r3]
   }
 
-  /** DecoFiller.fill(deficits, a, [0,0,0], 0) 과 같은 결과 */
+  /** DecoFiller.fill(deficits, a, [0,0,0], 0) 과 같은 결과 (DecoFiller 의 방어구 여유분 = spare) */
   fill(deficits: readonly number[], a: Readonly<SlotCounts>): FillResult | null {
     const n = this.sizes(deficits)
-    if (!SimpleFill.fits(a, n)) return null
+    if (!fitsSizes(a, this.withSpare(n))) return null
     const decos: FillDeco[] = []
     for (let i = 0; i < deficits.length; i++) for (let k = 0; k < deficits[i]; k++) decos.push(this.decos[i])
     return { score: slotScore(SimpleFill.free(a, n)), decos, unwanted: [], short: 0 }

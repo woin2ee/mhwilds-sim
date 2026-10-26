@@ -11,7 +11,7 @@ import {
 import { resolveWeapon } from '../equipment'
 import { armorDefense, armorSlots, canTranscend } from '../transcend'
 import type { CustomTalisman, Slot, SlotKind } from '../types'
-import { DecoFiller, slotScore, type FillDeco, type SlotCounts } from './decoFill'
+import { DecoFiller, slotScore, type FillDeco, type SizeCounts, type SlotCounts, type SpareSizes } from './decoFill'
 import type { SearchRequest, SearchTalisman } from './types'
 
 /**
@@ -130,6 +130,8 @@ export interface Threshold {
   pot: [number, number, number]
   /** 깊이 d 이후 남은 부위들의 최대 잠재력 합 */
   remaining: Float64Array
+  /** 방어구 장식주 여유분이 비워 둘 슬롯의 잠재력 하한 (크기 s 여유분은 레벨 s 이상 슬롯 하나를 쓴다, §6.8) */
+  sparePot: number
 }
 
 export interface Prepared {
@@ -157,6 +159,8 @@ export interface Prepared {
   jointFill: Fillers | null
   /** 방어구가 무기 풀 스킬을 주지 않아 무기 풀 판정을 호석 단계에서 끝낼 수 있는지 */
   weaponPrecheck: boolean
+  /** 장식주 여유분: 종류별로 남는 슬롯에 더 끼울 수 있어야 하는 장식주 크기별 개수 (§6.8) */
+  spare: SpareSizes
   bounds: {
     /** 장식주로 못 채우는 요구 스킬 */
     noneIndices: number[]
@@ -169,6 +173,11 @@ export interface Prepared {
     thresholds: Threshold[]
     /** 고정한 방어구 풀 스킬만으로 만든 임계 묶음 (모자란 조합 찾기에서 다 채울 수 있는지 따로 본다) */
     lockedThresholds: Threshold[]
+    /**
+     * [d] 남은 부위마다 레벨 k 이상 슬롯이 가장 많은 클래스의 그 개수를 더한 값 [Lv1 이상, Lv2 이상, Lv3].
+     * 방어구 장식주 여유분이 들어갈 슬롯이 남은 부위를 다 더해도 모자라면 컷 (§6.8)
+     */
+    remainingAtLeast: [number, number, number][]
   }
   /** computeBuild 검증용: 요청의 사용자 호석 */
   customTalismans: CustomTalisman[]
@@ -422,6 +431,17 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
   const weaponIdx = poolIndices('weapon')
   const bothIdx = poolIndices('both')
 
+  // ---- 장식주 여유분 (§6.8): 채우기마다 맡은 종류의 슬롯에 남겨야 하는 장식주 ----
+  const spare: SpareSizes = { armor: [0, 0, 0], weapon: [0, 0, 0] }
+  for (const slot of request.spareSlots) {
+    if ((slot.kind === 'armor' || slot.kind === 'weapon') && slot.level >= 1 && slot.level <= 3) spare[slot.kind][slot.level - 1]++
+  }
+  const NONE: SizeCounts = [0, 0, 0]
+  const spareFor = (kinds: readonly SlotKind[]): SpareSizes => ({
+    armor: kinds.includes('armor') ? spare.armor : NONE,
+    weapon: kinds.includes('weapon') ? spare.weapon : NONE,
+  })
+
   const makeFiller = (indices: number[], kinds: readonly SlotKind[], allowUnwanted: boolean) => {
     const decos: FillDeco[] = []
     for (const decoration of allowedDecos) {
@@ -436,6 +456,7 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
       decos,
       indices.length,
       indices.map((i) => required[i].locked),
+      spareFor(kinds),
     )
   }
   const makeFillers = (indices: number[], kinds: readonly SlotKind[]): Fillers => ({
@@ -472,7 +493,8 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
         for (const i of indices) total += Math.min(required[i].need, pointsOf(deco.skills, required[i].skillId))
         for (let level = deco.size; level <= 3; level++) pot[level - 1] = Math.max(pot[level - 1], total)
       }
-      list.push({ indices, pot, remaining: new Float64Array(ARMOR_KINDS.length + 1) })
+      const sparePot = spare.armor[0] * pot[0] + spare.armor[1] * pot[1] + spare.armor[2] * pot[2]
+      list.push({ indices, pot, remaining: new Float64Array(ARMOR_KINDS.length + 1), sparePot })
     }
     return list
   }
@@ -636,6 +658,7 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
   const remainingBonus = Array.from({ length: depthCount + 1 }, () => new Int32Array(bonuses.length))
   const noneIndices = poolIndices('none')
   const remainingNone = new Int32Array(depthCount + 1)
+  const remainingAtLeast = Array.from({ length: depthCount + 1 }, (): [number, number, number] => [0, 0, 0])
   for (let d = depthCount - 1; d >= 0; d--) {
     const kindClasses = classes[d]
     let noneMax = 0
@@ -645,6 +668,11 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
       noneMax = Math.max(noneMax, sum)
     }
     remainingNone[d] = remainingNone[d + 1] + noneMax
+    // 클래스 [0] 옵션의 슬롯이 그 클래스 모든 옵션의 슬롯을 덮는다
+    const [s1, s2, s3] = [0, 1, 2].map((k) =>
+      Math.max(0, ...kindClasses.map((c) => c.slotCounts.slice(k).reduce((sum, n) => sum + n, 0))),
+    )
+    remainingAtLeast[d] = [remainingAtLeast[d + 1][0] + s1, remainingAtLeast[d + 1][1] + s2, remainingAtLeast[d + 1][2] + s3]
     for (let i = 0; i < required.length; i++) {
       let max = 0
       for (const cls of kindClasses) max = Math.max(max, cls.pts[i])
@@ -683,6 +711,7 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
     weaponFill,
     jointFill,
     weaponPrecheck,
+    spare,
     bounds: {
       noneIndices,
       remainingPts,
@@ -690,6 +719,7 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
       remainingBonus,
       thresholds,
       lockedThresholds,
+      remainingAtLeast,
     },
     customTalismans,
   }

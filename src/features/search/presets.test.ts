@@ -43,9 +43,21 @@ describe('검색 조건 저장', () => {
     const conditions: Partial<SearchConditions> = { ...old.conditions }
     delete conditions.weaponSetSkillId
     delete conditions.excludeHr100
+    delete conditions.spareSlots
     const loaded = presetConditions({ ...old, conditions: conditions as typeof old.conditions }, cond({}))
     expect(loaded.weaponSetSkillId).toBeNull()
     expect(loaded.excludeHr100).toBe(false)
+    expect(loaded.spareSlots).toEqual({ armor: [0, 0, 0], weapon: [0, 0, 0] })
+    // 예전 조건은 장식주 여유분이 없는 지금 조건과 같은 조건이다 ('수정됨'이 붙지 않는다)
+    expect(conditionsKey(conditions)).toBe(conditionsKey(cond({})))
+  })
+
+  it('장식주 여유분은 저장한 조건에 담고, 다르면 다른 조건이다', () => {
+    const spare = cond({ spareSlots: { armor: [0, 0, 2], weapon: [0, 0, 0] } })
+    const saved = newPreset('여유분', spare)
+    expect(saved.conditions.spareSlots).toEqual({ armor: [0, 0, 2], weapon: [0, 0, 0] })
+    expect(presetConditions(saved, cond({})).spareSlots).toEqual(spare.spareSlots)
+    expect(conditionsKey(spare)).not.toBe(conditionsKey(cond({})))
   })
 
   it('같은 조건 키: 정렬·꺼 둔 표시가 없는 것과 false·필드 순서는 무시하고, 레벨이 다르면 다르다', () => {

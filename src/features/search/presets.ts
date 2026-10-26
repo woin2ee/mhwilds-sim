@@ -79,7 +79,7 @@ export function conditionsKey(cond: Partial<SearchConditions>): string {
 }
 
 /** 켜 둔 원하는 스킬 (목록 순서). 예: "약점 특효5 · 도전자5" */
-function skillsText(db: GameDb, cond: SearchConditions, max: number): { text: string; rest: number } {
+export function skillsText(db: GameDb, cond: SearchConditions, max: number): { text: string; rest: number } {
   const on = sortRequired(db, cond.required).filter((r) => !r.off && db.skills.has(r.skillId))
   const text = on
     .slice(0, max)
@@ -88,8 +88,8 @@ function skillsText(db: GameDb, cond: SearchConditions, max: number): { text: st
   return { text, rest: Math.max(0, on.length - max) }
 }
 
-/** 무기 표시. short 면 무기 종류만 (이름의 앞부분), 아니면 무기 이름 */
-function weaponText(db: GameDb, cond: SearchConditions, short: boolean): string {
+/** 무기 표시. short 면 무기 종류만 (이름의 앞부분), 아니면 무기 이름 (미지정이면 빈 문자열) */
+export function weaponText(db: GameDb, cond: SearchConditions, short: boolean): string {
   if (cond.weaponMode === 'custom') return '슬롯 직접 지정'
   const weapon = cond.weaponMode === 'db' && cond.weaponId !== null ? db.weapons.get(cond.weaponId) : undefined
   if (!weapon) return ''

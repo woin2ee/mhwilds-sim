@@ -3,7 +3,7 @@ import { resolveTalisman, resolveWeapon } from '../../core/equipment'
 import { customWeaponChoice, dbWeaponChoice, gogmaSkillsOf } from '../../core/gogmaArtian'
 import { hr100ArmorIds, isHr100Talisman } from '../../core/hunterRank'
 import type { ExcludeMode, SearchRequest, SearchSort, SearchTalisman } from '../../core/search/types'
-import type { CustomTalisman, TalismanRef, WeaponChoice } from '../../core/types'
+import type { CustomTalisman, Slot, SlotKind, TalismanRef, WeaponChoice } from '../../core/types'
 import type { GameDb } from '../../data/db'
 import {
   WEAPON_KINDS,
@@ -36,6 +36,15 @@ export interface RequiredDivider {
   index: number
 }
 
+/**
+ * 장식주 여유분: 종류마다 결과에 더 끼울 장식주 수 [크기1, 크기2, 크기3]. 남는 슬롯에 그만큼 들어가야 한다
+ * (크기 k 장식주는 레벨 k 이상 슬롯 하나, DESIGN.md §6.8)
+ */
+export type SpareSlots = Record<SlotKind, [number, number, number]>
+
+/** 장식주 여유분 한 칸(종류·크기)에 고를 수 있는 최대 개수 */
+export const SPARE_MAX = 5
+
 export interface SearchConditions {
   required: RequiredSkill[]
   /** 원하는 스킬 목록의 구분선 (예전 저장값엔 없음 = 없음) */
@@ -63,6 +72,8 @@ export interface SearchConditions {
   excludedArmor: ExcludedArmor[]
   transcend: boolean
   useDecorations: boolean
+  /** 장식주 여유분 (예전 저장값엔 없음 = 없음) */
+  spareSlots: SpareSlots
   sort: SearchSort
 }
 
@@ -85,6 +96,7 @@ export const DEFAULT_CONDITIONS: SearchConditions = {
   excludedArmor: [],
   transcend: false,
   useDecorations: true,
+  spareSlots: { armor: [0, 0, 0], weapon: [0, 0, 0] },
   sort: 'slots',
 }
 
@@ -113,7 +125,33 @@ export function normalizeConditions(stored: Partial<SearchConditions>): SearchCo
   cond.customWeaponSlots = [0, 1, 2].map((i) => Math.max(0, Math.min(3, Number(slots[i]) || 0)))
   cond.requiredDividers = Array.isArray(cond.requiredDividers) ? cond.requiredDividers.filter(isRequiredDivider) : []
   cond.excludedArmor = Array.isArray(cond.excludedArmor) ? cond.excludedArmor.filter(isExcludedArmor) : []
+  cond.spareSlots = normalizeSpareSlots(cond.spareSlots)
   return cond
+}
+
+/** 장식주 여유분 저장값: 종류마다 크기 3칸을 0~SPARE_MAX 정수로 (모양이 틀린 칸은 0) */
+export function normalizeSpareSlots(value: unknown): SpareSlots {
+  const v = typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {}
+  const counts = (kind: SlotKind): [number, number, number] => {
+    const list: unknown[] = Array.isArray(v[kind]) ? v[kind] : []
+    const at = (i: number) => {
+      const n = list[i]
+      return typeof n === 'number' && Number.isInteger(n) ? Math.max(0, Math.min(SPARE_MAX, n)) : 0
+    }
+    return [at(0), at(1), at(2)]
+  }
+  return { armor: counts('armor'), weapon: counts('weapon') }
+}
+
+/** 장식주 여유분 → 슬롯 목록. 남은 슬롯 요약과 같은 순서 (무기 먼저, 같은 종류면 크기 큰 순) */
+export function spareSlotList(spare: SpareSlots): Slot[] {
+  const slots: Slot[] = []
+  for (const kind of ['weapon', 'armor'] as const) {
+    for (const level of [3, 2, 1] as const) {
+      for (let i = 0; i < spare[kind][level - 1]; i++) slots.push({ kind, level })
+    }
+  }
+  return slots
 }
 
 /**
@@ -290,6 +328,7 @@ export function buildRequest(
     includeLowRank: cond.includeLowRank,
     transcend: cond.transcend,
     useDecorations: cond.useDecorations,
+    spareSlots: spareSlotList(cond.spareSlots),
     excludedArmorIds: excludedArmorIdsOf(db, cond),
     sort: cond.sort,
     limit: RESULT_LIMIT,

@@ -9,6 +9,7 @@ import {
   DEFAULT_CONDITIONS,
   isRequiredDivider,
   normalizeConditions,
+  normalizeSpareSlots,
   type RequiredDivider,
   type RequiredSkill,
   type TalismanMode,
@@ -353,6 +354,8 @@ function restoreConditions(
     excludeHr100: bool(raw.excludeHr100, d.excludeHr100),
     transcend: bool(raw.transcend, d.transcend),
     useDecorations: bool(raw.useDecorations, d.useDecorations),
+    // id 가 없는 값이라 저장값과 같은 검사로 읽는다 (없거나 틀린 칸은 0)
+    spareSlots: normalizeSpareSlots(raw.spareSlots),
   }
 
   // 무기·호석은 그 모드일 때만 알린다 (다른 모드에서는 조건에 남아 있기만 하고 검색에 쓰지 않는다)

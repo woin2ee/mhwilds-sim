@@ -42,6 +42,12 @@ export interface SearchRequest {
   transcend: boolean
   /** false 면 장식주를 쓰지 않는다: 방어구·호석·무기 자체 스킬만으로 찾고 슬롯은 모두 남긴다 */
   useDecorations: boolean
+  /**
+   * 장식주 여유분 (DESIGN.md §6.8): 결과의 남는 슬롯에 이 크기·종류의 장식주를 하나씩 더 끼울 수 있어야 한다
+   * (레벨이 같거나 큰 같은 종류의 남는 슬롯 하나에 하나씩). 예) [{ kind: 'armor', level: 3 }] = 방어구 Lv3 슬롯 하나를 비워 둔다.
+   * 빈 배열 = 조건 없음
+   */
+  spareSlots: Slot[]
   /** 후보에서 뺄 방어구 id */
   excludedArmorIds: number[]
   sort: SearchSort
