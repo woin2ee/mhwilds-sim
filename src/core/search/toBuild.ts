@@ -6,7 +6,7 @@ import type { SearchRequest, SearchResultItem } from './types'
 
 /**
  * 방어구 장식주(id)를 슬롯(레벨 내림차순)에 다시 넣는다: 큰 장식주부터 들어가는 가장 작은 빈 슬롯에.
- * 다 넣지 못하면 null. 대표보다 슬롯이 적은 대체 방어구로 바꿀 때 그 부위 장식주를 옮겨 담는다
+ * 다 넣지 못하면 null. α/β 짝으로 바꿀 때 그 부위 장식주를 옮겨 담는다
  */
 export function placeArmorDecorations(
   db: GameDb,
@@ -33,7 +33,8 @@ export function placeArmorDecorations(
 /**
  * 검색 결과를 수동 세팅용 BuildState 로 바꾼다.
  * variant 로 부위별 대체 방어구(item.armor[kind] 중 하나)와 대체 호석(item.talismans 중 하나)을 고를 수 있다.
- * 대체 방어구가 대표와 슬롯이 같으면 장식주 배치를 그대로 쓰고, 슬롯이 적으면 그 부위 장식주를 그 슬롯에 다시 넣는다.
+ * 대체 방어구는 대표와 슬롯이 같아 장식주 배치를 그대로 쓰고, α/β 짝(item.swaps)이면 그 장식주를 빼고
+ * 그 부위 장식주를 짝의 슬롯에 다시 넣는다 (그 부위에 안 들어가면 방어구 장식주를 모두 다시 넣는다).
  */
 export function resultToBuild(
   db: GameDb,
@@ -55,13 +56,55 @@ export function resultToBuild(
   }
   for (const kind of ARMOR_KINDS) {
     const choice = build.armor[kind]
-    const rep = db.armor.get(item.armor[kind][0] ?? -1)
-    if (!choice || !rep || choice.id === rep.id) continue
+    const jewels = choice ? item.swaps[choice.id]?.jewels : undefined
+    if (!choice || !jewels || jewels.length === 0) continue
     const piece = db.armor.get(choice.id)
     if (!piece) continue
-    const slots = armorSlots(piece, choice.transcend)
-    if (slots.join() === armorSlots(rep, request.transcend && canTranscend(rep)).join()) continue
-    build.decorations[kind] = placeArmorDecorations(db, slots, build.decorations[kind]) ?? build.decorations[kind]
+    for (const jewel of jewels) removeDecoration(build, kind, jewel)
+    const placed = placeArmorDecorations(db, armorSlots(piece, choice.transcend), build.decorations[kind])
+    if (placed) build.decorations[kind] = placed
+    else replaceArmorDecorations(db, build)
   }
   return build
+}
+
+/** 장식주 하나를 뺀다: 그 부위에서 먼저, 없으면 다른 방어구 부위에서 */
+function removeDecoration(build: BuildState, kind: ArmorKind, id: number): void {
+  for (const key of [kind, ...ARMOR_KINDS.filter((k) => k !== kind)]) {
+    const slots = build.decorations[key]
+    const at = slots.indexOf(id)
+    if (at >= 0) {
+      slots[at] = null
+      return
+    }
+  }
+}
+
+/** 방어구 5부위의 장식주를 모두 모아 큰 것부터 들어가는 가장 작은 슬롯에 다시 넣는다 (못 넣으면 그대로 둔다) */
+function replaceArmorDecorations(db: GameDb, build: BuildState): void {
+  const slots: { kind: ArmorKind; index: number; level: SlotLevel }[] = []
+  for (const kind of ARMOR_KINDS) {
+    const choice = build.armor[kind]
+    const piece = choice ? db.armor.get(choice.id) : undefined
+    if (piece) armorSlots(piece, choice!.transcend).forEach((level, index) => slots.push({ kind, index, level }))
+  }
+  const decorations = ARMOR_KINDS.flatMap((kind) => build.decorations[kind])
+    .flatMap((id) => {
+      const decoration = id === null ? undefined : db.decorations.get(id)
+      return decoration ? [decoration] : []
+    })
+    .sort((a, b) => b.size - a.size)
+  const placed = new Map<(typeof slots)[number], number>()
+  for (const decoration of decorations) {
+    let target: (typeof slots)[number] | undefined
+    for (const slot of slots) {
+      if (placed.has(slot) || slot.level < decoration.size) continue
+      if (!target || slot.level < target.level) target = slot
+    }
+    if (!target) return
+    placed.set(target, decoration.id)
+  }
+  for (const kind of ARMOR_KINDS) {
+    build.decorations[kind] = slots.filter((s) => s.kind === kind).map((s) => placed.get(s) ?? null)
+  }
 }

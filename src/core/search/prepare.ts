@@ -1,6 +1,13 @@
 // 검색 준비: 요청 정리, 후보 필터, 동등 클래스 압축, 장식주 채우기 준비, 가지치기 테이블 (DESIGN.md §6.1~6.3)
 import type { GameDb } from '../../data/db'
-import { ARMOR_KINDS, type ArmorKind, type ArmorPiece, type SkillPoint, type SlotLevel } from '../../data/types'
+import {
+  ARMOR_KINDS,
+  type ArmorKind,
+  type ArmorPiece,
+  type Decoration,
+  type SkillPoint,
+  type SlotLevel,
+} from '../../data/types'
 import { resolveWeapon } from '../equipment'
 import { armorDefense, armorSlots, canTranscend } from '../transcend'
 import type { CustomTalisman, Slot, SlotKind } from '../types'
@@ -38,29 +45,69 @@ export function bonusShortfall(bonus: BonusRequirement, pieces: number): number 
   return short
 }
 
-export interface ArmorClass {
+/**
+ * α/β 바꾸기 (§6.2.1): 같은 탐색 클래스의 짝 옵션(β)에 장식주 jewels 를 넣은 것과 스킬이 같고, 그 장식주가 들어가던 슬롯 extra 만
+ * 없는 옵션(α). 짝으로 만든 결과와 스킬·남는 슬롯이 같으면 따로 결과로 내지 않고 짝 결과의 대체 후보가 된다
+ */
+export interface OptionSwap {
+  /** 짝 옵션(β)의 options 인덱스 */
+  partner: number
+  /** 원하는 스킬 점수가 클래스 점수(= 짝)보다 많은 만큼 (jewels 가 주던 점수) */
+  delta: Int32Array
+  /** 짝에 넣으면 이 옵션과 스킬이 같아지는 방어구 장식주 (원하는 스킬) */
+  jewels: Decoration[]
+  /** 짝에만 있는 슬롯. jewels 가 딱 맞게 들어간다 */
+  extra: SlotCounts
+  /** 짝과 다른 시리즈/그룹 스킬 id: 결과마다 발동 단계가 같은지 본다 */
+  bonusDiff: number[]
+}
+
+/** 서로 바꿔 껴도 스킬·남는 슬롯이 그대로인 방어구 (스킬·시리즈/그룹 스킬·초월 반영 슬롯이 모두 같다). 결과 하나에 옵션 하나 */
+export interface ArmorOption {
   /** 방어력(초월 반영) 내림차순, [0] = 대표 */
   members: ArmorPiece[]
+  slots: SlotLevel[]
+  slotCounts: SlotCounts
+  defense: number
+  /** 시리즈/그룹 스킬 id (정렬) */
+  bonusIds: number[]
+  swap: OptionSwap | null
+}
+
+/** 잎에서 함께 세는 옵션 묶음: 슬롯이 같은 옵션들, 또는 α 옵션 하나 (§6.5) */
+export interface OptionGroup {
+  slotCounts: SlotCounts
+  /** options 인덱스, 방어력 내림차순 */
+  options: number[]
+  /** 가장 높은 방어력 */
+  defense: number
+  swap: OptionSwap | null
+}
+
+/**
+ * 탐색 단위 (§6.2): 원하는 스킬 점수·시리즈/그룹 소속·비선호가 같고 슬롯이 [0] 의 슬롯에 들어가는 옵션들.
+ * α 옵션은 원하는 스킬 점수가 delta 만큼 더 많다. 가지치기는 [0] 의 점수·슬롯(모든 옵션을 덮는다)으로 한다
+ */
+export interface ArmorClass {
+  options: ArmorOption[]
+  groups: OptionGroup[]
   /** 요구 스킬별 점수 (요구 레벨에서 자름) */
   pts: Int32Array
   /** 시리즈/그룹 요구 스킬별 소속 여부 */
   bonus: Uint8Array
+  /** options[0] 의 슬롯 */
   slots: SlotLevel[]
   slotCounts: SlotCounts
   unwanted: number[]
+  /** 옵션 중 가장 높은 방어력 */
   defense: number
   /** 임계 레벨 t(1~3)별 가지치기 상한: 해당 스킬 점수 합 + 슬롯 잠재력 */
   potential: [number, number, number]
-  /**
-   * 요구 스킬 점수·시리즈/그룹·비선호는 같고 슬롯·방어력이 이 클래스보다 같거나 못한 방어구 (슬롯 많은 순).
-   * 탐색에서는 빼고, 결과에서 그 부위 장식주가 들어가면 대체 후보로 붙는다 (§6.2)
-   */
-  fewerSlots: { piece: ArmorPiece; slots: SlotLevel[] }[]
 }
 
 export interface TalismanClass {
-  /** 요청 순서, [0] = 대표. 빈 배열 = 호석 없음 */
-  members: SearchTalisman[]
+  /** 스킬까지 같은 호석끼리 묶은 옵션 (요청 순서, 옵션마다 [0] = 대표). [[]] = 호석 없음 */
+  options: SearchTalisman[][]
   pts: Int32Array
   slots: Slot[]
   armorSlots: SlotCounts
@@ -95,7 +142,15 @@ export interface Prepared {
   /** kinds 와 같은 순서 */
   classes: ArmorClass[][]
   talismans: TalismanClass[]
-  weapon: { present: boolean; pts: Int32Array; slots: SlotLevel[]; slotCounts: SlotCounts; defense: number }
+  weapon: {
+    present: boolean
+    pts: Int32Array
+    slots: SlotLevel[]
+    slotCounts: SlotCounts
+    defense: number
+    /** 거극 아티어 무기에 붙은 시리즈/그룹 스킬 (α/β 바꾸기의 발동 비교에 센다) */
+    bonusIds: number[]
+  }
   armorFill: Fillers
   weaponFill: Fillers
   /** 'both' 스킬이 있을 때만: 방어구·무기 슬롯을 함께 쓰는 채우기 */
@@ -137,6 +192,170 @@ function countSlots(levels: readonly SlotLevel[]): SlotCounts {
 /** 슬롯(레벨 내림차순)이 자리마다 같거나 커서 small 에 들어가는 장식주가 big 에도 모두 들어가는지 */
 const coversSlots = (big: readonly SlotLevel[], small: readonly SlotLevel[]) =>
   big.length >= small.length && small.every((level, i) => big[i] >= level)
+
+/** 스킬 id → 레벨 (같은 스킬이 여러 번 있으면 더한다) */
+function levelsOf(skills: readonly SkillPoint[]): Map<number, number> {
+  const levels = new Map<number, number>()
+  for (const s of skills) levels.set(s.skillId, (levels.get(s.skillId) ?? 0) + s.level)
+  return levels
+}
+
+const levelsKey = (levels: ReadonlyMap<number, number>) =>
+  [...levels]
+    .sort((a, b) => a[0] - b[0])
+    .map(([id, level]) => `${id}:${level}`)
+    .join(',')
+
+/** 탐색 클래스를 만들기 전의 옵션과 그 키 */
+interface StrictOption {
+  option: ArmorOption
+  levels: Map<number, number>
+  pts: Int32Array
+  bonus: Uint8Array
+  unwanted: number[]
+  /** 탐색 클래스 키: 원하는 스킬 점수·시리즈/그룹 소속·비선호 */
+  same: string
+}
+
+/** 스킬·시리즈/그룹 스킬·초월 반영 슬롯이 모두 같은 방어구끼리 옵션으로 묶는다. 슬롯 점수 → 방어력 → 대표 id 순 */
+function strictOptions(
+  pieces: readonly ArmorPiece[],
+  transcend: boolean,
+  required: readonly PointRequirement[],
+  bonuses: readonly BonusRequirement[],
+  excluded: ReadonlySet<number>,
+): StrictOption[] {
+  const byKey = new Map<string, StrictOption>()
+  const defenses = new Map<ArmorPiece, number>()
+  for (const piece of pieces) {
+    const pieceTranscend = transcend && canTranscend(piece)
+    const slots = [...armorSlots(piece, pieceTranscend)].sort((a, b) => b - a)
+    defenses.set(piece, armorDefense(piece, pieceTranscend).max)
+    const levels = levelsOf(piece.skills)
+    const bonusIds = [...piece.bonusSkillIds].sort((a, b) => a - b)
+    const key = `${levelsKey(levels)}|${bonusIds.join(',')}|${slots.join('')}`
+    let strict = byKey.get(key)
+    if (!strict) {
+      const pts = Int32Array.from(required, (r) => Math.min(r.need, levels.get(r.skillId) ?? 0))
+      const bonus = Uint8Array.from(bonuses, (b) => (bonusIds.includes(b.skillId) ? 1 : 0))
+      const unwanted = unwantedOf(piece.skills, excluded)
+      strict = {
+        option: { members: [], slots, slotCounts: countSlots(slots), defense: 0, bonusIds, swap: null },
+        levels,
+        pts,
+        bonus,
+        unwanted,
+        same: `${pts.join(',')}|${bonus.join('')}|${unwanted.join(',')}`,
+      }
+      byKey.set(key, strict)
+    }
+    strict.option.members.push(piece)
+  }
+  for (const { option } of byKey.values()) {
+    option.members.sort((a, b) => defenses.get(b)! - defenses.get(a)! || a.id - b.id)
+    option.defense = defenses.get(option.members[0])!
+  }
+  return [...byKey.values()].sort(
+    (a, b) =>
+      slotScore(b.option.slotCounts) - slotScore(a.option.slotCounts) ||
+      b.option.defense - a.option.defense ||
+      a.option.members[0].id - b.option.members[0].id,
+  )
+}
+
+/**
+ * α/β 짝 (§6.2.1): α 의 스킬 = β 의 스킬 + 원하는 스킬 장식주 jewels (α 의 그 스킬 레벨은 요구 레벨 이하), β 의 슬롯 = α 의 슬롯 +
+ * jewels 와 크기가 같은 슬롯, 시리즈/그룹 요구 스킬 소속·비선호가 같다 (jewels 가 없으면 시리즈/그룹 스킬만 다른 방어구).
+ * 짝(β)은 strictList 순서로 먼저 나온 옵션이고 α 를 여럿 가질 수 있다. 짝이 된 옵션은 옮기지 않고, 옮긴 옵션은 짝이 되지 않는다.
+ * 반환: 옮길 α → 짝 β 와 바꾸기 정보 (partner 는 클래스를 만든 뒤 채운다)
+ */
+function findSwaps(
+  strictList: readonly StrictOption[],
+  required: readonly PointRequirement[],
+  requiredIndex: ReadonlyMap<number, number>,
+  swapJewel: ReadonlyMap<number, Decoration>,
+): Map<StrictOption, { partner: StrictOption; swap: Omit<OptionSwap, 'partner'> }> {
+  const moves = new Map<StrictOption, { partner: StrictOption; swap: Omit<OptionSwap, 'partner'> }>()
+  const anchors = new Set<StrictOption>()
+  for (const beta of strictList) {
+    if (moves.has(beta)) continue
+    for (const alpha of strictList) {
+      if (alpha === beta || moves.has(alpha) || anchors.has(alpha)) continue
+      const swap = swapOf(alpha, beta, required, requiredIndex, swapJewel)
+      if (!swap) continue
+      moves.set(alpha, { partner: beta, swap })
+      anchors.add(beta)
+    }
+  }
+  return moves
+}
+
+function swapOf(
+  alpha: StrictOption,
+  beta: StrictOption,
+  required: readonly PointRequirement[],
+  requiredIndex: ReadonlyMap<number, number>,
+  swapJewel: ReadonlyMap<number, Decoration>,
+): Omit<OptionSwap, 'partner'> | null {
+  if (alpha.option.slots.length > beta.option.slots.length) return null
+  if (alpha.bonus.join('') !== beta.bonus.join('') || alpha.unwanted.join(',') !== beta.unwanted.join(',')) return null
+  // β 의 슬롯 = α 의 슬롯 + extra (레벨 내림차순)
+  const extra = [...beta.option.slots]
+  for (const level of alpha.option.slots) {
+    const i = extra.indexOf(level)
+    if (i < 0) return null
+    extra.splice(i, 1)
+  }
+  const jewels: Decoration[] = []
+  const delta = new Int32Array(required.length)
+  for (const skillId of new Set([...alpha.levels.keys(), ...beta.levels.keys()])) {
+    const level = alpha.levels.get(skillId) ?? 0
+    const diff = level - (beta.levels.get(skillId) ?? 0)
+    if (diff === 0) continue
+    const jewel = swapJewel.get(skillId)
+    const index = requiredIndex.get(skillId)
+    // β 에 장식주를 넣어 α 가 되는 차이만: 원하는 스킬이고, 넣은 장식주가 다 요구 레벨 안에 든다
+    if (diff < 0 || !jewel || index === undefined || level > required[index].need) return null
+    for (let k = 0; k < diff; k++) jewels.push(jewel)
+    delta[index] = diff
+  }
+  // 장식주와 짝에만 있는 슬롯의 크기가 같으면 β 에 장식주를 넣은 것과 α 는 어떤 조합에서도 남는 슬롯까지 같다 (§6.2.1)
+  if (jewels.length !== extra.length) return null
+  const sizes = jewels.map((j) => j.size).sort((a, b) => b - a)
+  if (!sizes.every((size, i) => extra[i] === size)) return null
+  const count = (ids: readonly number[], id: number) => ids.filter((x) => x === id).length
+  const bonusDiff = [...new Set([...alpha.option.bonusIds, ...beta.option.bonusIds])]
+    .filter((id) => count(alpha.option.bonusIds, id) !== count(beta.option.bonusIds, id))
+    .sort((a, b) => a - b)
+  // 스킬·슬롯·시리즈/그룹 스킬이 모두 같으면 같은 옵션이다
+  if (jewels.length === 0 && bonusDiff.length === 0) return null
+  return { delta, jewels, extra: countSlots(extra), bonusDiff }
+}
+
+/** 잎 DP 묶음: α 가 아닌 옵션은 슬롯이 같은 것끼리, α 옵션은 하나씩 */
+function optionGroups(options: readonly ArmorOption[]): OptionGroup[] {
+  const groups: OptionGroup[] = []
+  const bySlots = new Map<string, OptionGroup>()
+  options.forEach((option, index) => {
+    if (option.swap) {
+      groups.push({ slotCounts: option.slotCounts, options: [index], defense: option.defense, swap: option.swap })
+      return
+    }
+    const key = option.slots.join('')
+    let group = bySlots.get(key)
+    if (!group) {
+      group = { slotCounts: option.slotCounts, options: [], defense: 0, swap: null }
+      bySlots.set(key, group)
+      groups.push(group)
+    }
+    group.options.push(index)
+  })
+  for (const group of groups) {
+    group.options.sort((a, b) => options[b].defense - options[a].defense || a - b)
+    group.defense = options[group.options[0]].defense
+  }
+  return groups
+}
 
 /** 요청을 탐색 가능한 형태로 정리한다. 요구 스킬이 없거나 처음부터 불가능하면 null. */
 export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
@@ -237,6 +456,7 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
     slots: weaponLevels,
     slotCounts: countSlots(weaponLevels),
     defense: resolvedWeapon?.defense.max ?? 0,
+    bonusIds: resolvedWeapon?.bonusSkillIds ?? [],
   }
 
   // ---- 임계 레벨별 방어구 슬롯 잠재력 ----
@@ -267,7 +487,7 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
     return value
   }
 
-  // ---- 방어구 동등 클래스 ----
+  // ---- 방어구 탐색 클래스 (§6.2) ----
   const excludedArmor = new Set(request.excludedArmorIds)
   // 결과 정렬 기준(engine.ts)과 같은 순서: 슬롯 점수 → 방어력, 방어력순이면 반대
   const bySlots = request.sort !== 'defense'
@@ -275,6 +495,15 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
     const slots = slotScore(b.slotCounts) - slotScore(a.slotCounts)
     const defense = b.defense - a.defense
     return bySlots ? slots || defense : defense || slots
+  }
+  // α/β 바꾸기에 쓰는 장식주: 원하는 점수형 스킬마다 그 스킬만 1레벨 주는 방어구 장식주 (가장 작은 것)
+  const requiredIndex = new Map(required.map((r, i) => [r.skillId, i]))
+  const swapJewel = new Map<number, Decoration>()
+  for (const deco of allowedDecos) {
+    if (deco.kind !== 'armor' || deco.skills.length !== 1 || deco.skills[0].level !== 1) continue
+    const skillId = deco.skills[0].skillId
+    const prev = swapJewel.get(skillId)
+    if (requiredIndex.has(skillId) && (!prev || deco.size < prev.size)) swapJewel.set(skillId, deco)
   }
   const classesByKind = new Map<ArmorKind, ArmorClass[]>()
   for (const kind of ARMOR_KINDS) {
@@ -284,64 +513,44 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
         !excludedArmor.has(p.id) &&
         !(excludeMode && p.skills.some((s) => excluded.has(s.skillId))),
     )
-    const groups = new Map<
-      string,
-      { pieces: { piece: ArmorPiece; defense: number }[]; cls: ArmorClass; same: string }
-    >()
-    for (const piece of candidates) {
-      const transcend = request.transcend && canTranscend(piece)
-      const pts = Int32Array.from(required, (r) => Math.min(r.need, pointsOf(piece.skills, r.skillId)))
-      const bonus = Uint8Array.from(bonuses, (b) => (piece.bonusSkillIds.includes(b.skillId) ? 1 : 0))
-      const slots = armorSlots(piece, transcend)
-      const unwanted = unwantedOf(piece.skills, excluded)
-      const same = `${pts.join(',')}|${bonus.join('')}|${unwanted.join(',')}`
-      const key = `${same}|${slots.join('')}`
-      const defense = armorDefense(piece, transcend).max
-      let group = groups.get(key)
-      if (!group) {
-        const cls: ArmorClass = {
-          members: [],
-          pts,
-          bonus,
-          slots,
-          slotCounts: countSlots(slots),
-          unwanted,
-          defense: 0,
-          potential: [0, 0, 0],
-          fewerSlots: [],
-        }
-        group = { pieces: [], cls, same }
-        groups.set(key, group)
-      }
-      group.pieces.push({ piece, defense })
-    }
-    for (const { pieces, cls } of groups.values()) {
-      pieces.sort((a, b) => b.defense - a.defense || a.piece.id - b.piece.id)
-      cls.members = pieces.map((p) => p.piece)
-      cls.defense = pieces[0].defense
-    }
-    // 요구 스킬 점수·시리즈/그룹·비선호가 같고 슬롯·방어력이 모두 같거나 못한 클래스는 나은 클래스에 붙인다 (예: 무구한 용관α → β).
-    // 그 클래스로 되는 조합은 나은 클래스로도 같은 장식주로 되고 정렬 기준도 같거나 앞서므로 탐색에서 뺀다
-    const ordered = [...groups.values()].sort(
-      (a, b) => slotScore(b.cls.slotCounts) - slotScore(a.cls.slotCounts) || b.cls.defense - a.cls.defense,
-    )
+    const strictList = strictOptions(candidates, request.transcend, required, bonuses, excluded)
+    const moves = findSwaps(strictList, required, requiredIndex, swapJewel)
+    // 원하는 스킬 점수·시리즈/그룹 소속·비선호가 같고 슬롯이 들어가는 첫 클래스(슬롯 많은 순)에 붙인다. α 는 짝의 클래스로
     const classes: ArmorClass[] = []
     const sameOf = new Map<ArmorClass, string>()
-    for (const { cls, same } of ordered) {
-      const owner = classes.find(
-        (c) => sameOf.get(c) === same && coversSlots(c.slots, cls.slots) && c.defense >= cls.defense,
-      )
-      if (owner) {
-        owner.fewerSlots.push(...cls.members.map((piece) => ({ piece, slots: cls.slots })))
-      } else {
+    const home = new Map<StrictOption, { cls: ArmorClass; index: number }>()
+    for (const strict of strictList) {
+      if (moves.has(strict)) continue
+      let cls = classes.find((c) => sameOf.get(c) === strict.same && coversSlots(c.slots, strict.option.slots))
+      if (!cls) {
+        cls = {
+          options: [],
+          groups: [],
+          pts: strict.pts,
+          bonus: strict.bonus,
+          slots: strict.option.slots,
+          slotCounts: strict.option.slotCounts,
+          unwanted: strict.unwanted,
+          defense: 0,
+          potential: [0, 0, 0],
+        }
         classes.push(cls)
-        sameOf.set(cls, same)
+        sameOf.set(cls, strict.same)
       }
+      home.set(strict, { cls, index: cls.options.length })
+      cls.options.push(strict.option)
+    }
+    for (const [alpha, { partner, swap }] of moves) {
+      const { cls, index } = home.get(partner)!
+      alpha.option.swap = { ...swap, partner: index }
+      cls.options.push(alpha.option)
     }
     if (classes.length === 0) {
       // 후보가 하나도 없으면 미장착
+      const empty: ArmorOption = { members: [], slots: [], slotCounts: [0, 0, 0], defense: 0, bonusIds: [], swap: null }
       classes.push({
-        members: [],
+        options: [empty],
+        groups: [],
         pts: new Int32Array(required.length),
         bonus: new Uint8Array(bonuses.length),
         slots: [],
@@ -349,10 +558,11 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
         unwanted: [],
         defense: 0,
         potential: [0, 0, 0],
-        fewerSlots: [],
       })
     }
     for (const cls of classes) {
+      cls.defense = Math.max(...cls.options.map((o) => o.defense))
+      cls.groups = optionGroups(cls.options)
       thresholds.forEach((th, ti) => {
         cls.potential[ti] = potentialOf(cls, th)
       })
@@ -365,7 +575,7 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
   const kinds = [...ARMOR_KINDS].sort((a, b) => classesByKind.get(a)!.length - classesByKind.get(b)!.length)
   const classes = kinds.map((k) => classesByKind.get(k)!)
 
-  // ---- 호석 동등 클래스 ----
+  // ---- 호석 탐색 클래스: 원하는 스킬 점수·슬롯·비선호가 같은 호석. 그 안에서 스킬까지 같은 호석끼리 옵션 ----
   const talismanCandidates: SearchTalisman[] = []
   for (const t of request.talismans) {
     if (t.ref.type === 'fixed') {
@@ -375,30 +585,38 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
       talismanCandidates.push(t)
     }
   }
-  const talismanGroups = new Map<string, TalismanClass>()
+  const talismanGroups = new Map<string, { cls: TalismanClass; bySkills: Map<string, SearchTalisman[]> }>()
   for (const t of talismanCandidates) {
     const unwanted = unwantedOf(t.skills, excluded)
     if (excludeMode && unwanted.length > 0) continue
     const pts = Int32Array.from(required, (r) => Math.min(r.need, pointsOf(t.skills, r.skillId)))
     const key = `${pts.join(',')}|${t.slots.map((s) => `${s.kind[0]}${s.level}`).join('')}|${unwanted.join(',')}`
-    let cls = talismanGroups.get(key)
-    if (!cls) {
-      cls = {
-        members: [],
+    let group = talismanGroups.get(key)
+    if (!group) {
+      const cls: TalismanClass = {
+        options: [],
         pts,
         slots: t.slots,
         armorSlots: countSlots(t.slots.filter((s) => s.kind === 'armor').map((s) => s.level)),
         weaponSlots: countSlots(t.slots.filter((s) => s.kind === 'weapon').map((s) => s.level)),
         unwanted,
       }
-      talismanGroups.set(key, cls)
+      group = { cls, bySkills: new Map() }
+      talismanGroups.set(key, group)
     }
-    cls.members.push(t)
+    const skillsKey = levelsKey(levelsOf(t.skills))
+    let option = group.bySkills.get(skillsKey)
+    if (!option) {
+      option = []
+      group.bySkills.set(skillsKey, option)
+      group.cls.options.push(option)
+    }
+    option.push(t)
   }
-  const talismans = [...talismanGroups.values()]
+  const talismans = [...talismanGroups.values()].map((g) => g.cls)
   if (talismans.length === 0) {
     talismans.push({
-      members: [],
+      options: [[]],
       pts: new Int32Array(required.length),
       slots: [],
       armorSlots: [0, 0, 0],

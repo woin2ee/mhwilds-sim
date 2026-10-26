@@ -18,7 +18,7 @@ import { useAppState } from '../../state/context'
 import { useToast } from '../../state/toast'
 import { COMPARE_MAX } from '../compare/compareRows'
 import { SaveBuildDialog } from '../saved/SaveBuildDialog'
-import { buildKey, isAlternative, type CompareEntry, type ResultVariant } from './compareList'
+import { buildKey, isAlternative, selectArmor, type CompareEntry, type ResultVariant } from './compareList'
 import { chipLevel, formatCount, shortfallLabel } from './format'
 
 type Expandable = ArmorKind | 'talisman'
@@ -383,15 +383,39 @@ export function ResultCard({
         }
       })
     }
+    // 시리즈/그룹 스킬이 후보마다 다르면 다른 것만 보인다 (모두 같은 것은 빼고)
+    const pieces = item.armor[key].flatMap((id) => db.armor.get(id) ?? [])
+    const common = pieces.reduce<number[]>(
+      (ids, piece, i) => (i === 0 ? [...piece.bonusSkillIds] : ids.filter((id) => piece.bonusSkillIds.includes(id))),
+      [],
+    )
     return item.armor[key].flatMap((id) => {
       const piece = db.armor.get(id)
       if (!piece) return []
       const transcend = request.transcend && canTranscend(piece)
       const slots = armorSlots(piece, transcend)
-      // 대표보다 슬롯이 적은 대체 방어구도 있어서 슬롯을 같이 보인다
-      const meta = `슬롯 ${slots.length > 0 ? slots.join('-') : '없음'} · 방어 ${armorDefense(piece, transcend).max}`
-      return [{ key: String(id), name: nameOf(piece.name), detail: extraSkillsText(piece.skills), meta }]
+      const notes = [`슬롯 ${slots.length > 0 ? slots.join('-') : '없음'}`, `방어 ${armorDefense(piece, transcend).max}`]
+      // α/β: 대표에 넣은 장식주 대신 그 스킬을 방어구가 갖고 있어 그 장식주를 빼면 결과가 같다
+      const jewels = item.swaps[id]?.jewels ?? []
+      if (jewels.length > 0) notes.unshift(`${jewelsText(jewels)} 없이`)
+      // 이 결과에서는 발동이 같지만 어느 시리즈/그룹 스킬이 붙었는지는 다르다
+      const bonus = piece.bonusSkillIds
+        .filter((skillId) => !common.includes(skillId))
+        .map((skillId) => skillName(db, skillId))
+        .join(' · ')
+      const detail = [extraSkillsText(piece.skills), bonus].filter(Boolean).join(' · ')
+      return [{ key: String(id), name: nameOf(piece.name), detail, meta: notes.join(' · ') }]
     })
+  }
+  const jewelsText = (ids: readonly number[]) => {
+    const counts = new Map<number, number>()
+    for (const id of ids) counts.set(id, (counts.get(id) ?? 0) + 1)
+    return [...counts]
+      .flatMap(([id, count]) => {
+        const deco = db.decorations.get(id)
+        return deco ? [`${nameOf(deco.name)}${count > 1 ? `×${count}` : ''}`] : []
+      })
+      .join(', ')
   }
   const selectedIndex = (key: Expandable) => {
     if (key === 'talisman') return variant.talismanIndex ?? 0
@@ -399,8 +423,16 @@ export function ResultCard({
     return Math.max(0, item.armor[key].findIndex((x) => x === id))
   }
   const selectAlternative = (key: Expandable, i: number) => {
-    if (key === 'talisman') setVariant((v) => ({ ...v, talismanIndex: i }))
-    else setVariant((v) => ({ ...v, [key]: item.armor[key][i] }))
+    if (key === 'talisman') {
+      setVariant((v) => ({ ...v, talismanIndex: i }))
+      return
+    }
+    const next = selectArmor(item, variant, key, item.armor[key][i])
+    setVariant(next.variant)
+    if (next.reset.length > 0) {
+      const kinds = next.reset.map((k) => ARMOR_KIND_LABEL[k]).join('·')
+      toast(`함께 바꾸면 시리즈·그룹 스킬이 달라져서 다른 부위(${kinds})는 대표로 되돌렸어요`)
+    }
   }
 
   const weapon = summary.equipment.weapon

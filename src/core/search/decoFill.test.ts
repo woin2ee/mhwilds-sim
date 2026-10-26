@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Decoration, SlotLevel } from '../../data/types'
 import type { SlotKind } from '../types'
-import { assignDecorations, DecoFiller, removeDominated, type ConcreteSlot, type FillDeco } from './decoFill'
+import { assignDecorations, DecoFiller, removeDominated, SimpleFill, type ConcreteSlot, type FillDeco } from './decoFill'
 
 let nextId = 1
 function deco(kind: SlotKind, size: SlotLevel, pts: number[], unwanted: number[] = []): FillDeco {
@@ -139,6 +139,48 @@ describe('DecoFiller', () => {
     const filler = new DecoFiller([clean, dirty], 1)
     expect(filler.fill([1], [1, 0, 1], [0, 0, 0])?.unwanted).toEqual([])
     expect(filler.fill([1], [1, 0, 0], [0, 0, 0])?.unwanted).toEqual([99])
+  })
+})
+
+describe('SimpleFill', () => {
+  it('스킬마다 1레벨 장식주가 하나뿐일 때만 쓴다', () => {
+    expect(new DecoFiller([deco('armor', 1, [1, 0]), deco('armor', 2, [0, 1])], 2).simpleDecos()).not.toBeNull()
+    // 2레벨 장식주, 두 스킬 장식주, 한 스킬에 장식주 둘(지배되지 않음), 장식주 없는 스킬
+    expect(new DecoFiller([deco('armor', 3, [2])], 1).simpleDecos()).toBeNull()
+    expect(new DecoFiller([deco('armor', 3, [1, 1])], 2).simpleDecos()).toBeNull()
+    expect(new DecoFiller([deco('armor', 1, [1]), deco('armor', 3, [2])], 1).simpleDecos()).toBeNull()
+    expect(new DecoFiller([deco('armor', 1, [1, 0])], 2).simpleDecos()).toBeNull()
+  })
+
+  it('DecoFiller 와 같은 결과 (무작위)', () => {
+    let seed = 20261026
+    const random = () => {
+      seed = (seed + 0x6d2b79f5) | 0
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+    }
+    const int = (max: number) => Math.floor(random() * (max + 1))
+    for (let round = 0; round < 2000; round++) {
+      const skills = 1 + int(4)
+      const decos = Array.from({ length: skills }, (_, i) =>
+        deco('armor', (1 + int(2)) as SlotLevel, Array.from({ length: skills }, (_, k) => (k === i ? 1 : 0))),
+      )
+      const filler = new DecoFiller(decos, skills)
+      const simple = new SimpleFill(filler.simpleDecos()!)
+      const armor: [number, number, number] = [int(4), int(4), int(4)]
+      const deficits = Array.from({ length: skills }, () => int(3))
+      const label = JSON.stringify({ round, sizes: decos.map((d) => d.size), armor, deficits })
+      const expected = filler.fill(deficits, armor, [0, 0, 0])
+      const result = simple.fill(deficits, armor)
+      if (!expected) {
+        expect(result, label).toBeNull()
+        continue
+      }
+      const ids = (r: typeof result) => r!.decos.map((d) => d.decoration.id).sort((a, b) => a - b)
+      expect(result?.score, label).toBe(expected.score)
+      expect(ids(result), label).toEqual(ids(expected))
+    }
   })
 })
 

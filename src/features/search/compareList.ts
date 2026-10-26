@@ -52,6 +52,32 @@ export function isAlternative(item: SearchResultItem, variant: ResultVariant): b
   return armor || (talismanIndex > 0 && talismanIndex < item.talismans.length)
 }
 
+/**
+ * kind 부위에서 대체 방어구 id 를 고른 선택. α/β 바꾸기(item.swaps)는 함께 바꿀 수 있는 조합(item.swapSets)이 정해져 있어서,
+ * 안 되는 조합이 되면 다른 부위의 바꾸기는 대표로 되돌린다 (reset = 되돌린 부위)
+ */
+export function selectArmor(
+  item: SearchResultItem,
+  variant: ResultVariant,
+  kind: ArmorKind,
+  id: number,
+): { variant: ResultVariant; reset: ArmorKind[] } {
+  const next: ResultVariant = { ...variant, [kind]: id }
+  const swapped = ARMOR_KINDS.flatMap((k) => {
+    const chosen = next[k]
+    const swap = chosen === undefined ? undefined : item.swaps[chosen]
+    return swap ? [[k, swap.key] as const] : []
+  })
+  if (swapped.length <= 1) return { variant: next, reset: [] }
+  const allowed = item.swapSets.some(
+    (set) => Object.keys(set).length === swapped.length && swapped.every(([k, key]) => set[k] === key),
+  )
+  if (allowed) return { variant: next, reset: [] }
+  const reset = swapped.map(([k]) => k).filter((k) => k !== kind)
+  for (const k of reset) delete next[k]
+  return { variant: next, reset }
+}
+
 /** build 가 이 결과의 대표 또는 대체 방어구·호석 조합이면 그 선택, 아니면 null */
 function variantIn(db: GameDb, item: SearchResultItem, request: SearchRequest, entry: CompareEntry): ResultVariant | null {
   const variant: ResultVariant = {}

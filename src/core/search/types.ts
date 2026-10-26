@@ -60,15 +60,26 @@ export interface SearchResultItem {
   /** React key 용 고유 값 */
   id: string
   /**
-   * 부위별 후보 방어구 id. 요구 스킬·시리즈/그룹·비선호 스킬이 대표([0])와 같은 방어구들로, 슬롯이 같은 것(방어력 높은 순) 뒤에
-   * 슬롯·방어력이 대표보다 못해도 그 부위 장식주가 다 들어가는 것이 온다 (resultToBuild 가 장식주를 다시 넣는다).
+   * 부위별 후보 방어구 id. 대표([0])로 바꿔 껴도 스킬·남는 슬롯이 그대로인 방어구들이다: 스킬·시리즈/그룹 스킬·슬롯이 대표와 같은 것
+   * (방어력 높은 순) 뒤에 α/β 바꾸기 후보(swaps)가 온다.
    * 나머지 값은 대표 기준. 빈 배열 = 해당 부위 미장착.
    */
   armor: Record<ArmorKind, number[]>
-  /** 서로 동등한 후보 호석 ([0]이 대표). 빈 배열 = 호석 없음 */
+  /** 스킬·슬롯이 같은 후보 호석 ([0]이 대표). 빈 배열 = 호석 없음 */
   talismans: TalismanRef[]
   /** 대표 조합 기준 장식주 배치 (BuildState.decorations 와 같은 형식) */
   decorations: Record<EquipKey, (number | null)[]>
+  /**
+   * α/β 바꾸기 (DESIGN.md §6.2.1): 대체 방어구 id → 그 방어구가 속한 바꾸기 후보(key = 그 후보의 첫 방어구 id)와 바꿀 때 빼는 장식주 id.
+   * 대표에 넣은 이 장식주의 스킬을 그 방어구가 스스로 갖고 그 장식주가 든 슬롯만 없어서, 빼면 스킬·남는 슬롯이 대표와 같다
+   * (장식주 없이 시리즈/그룹 스킬만 다른 방어구도 있다). resultToBuild 가 뺀다
+   */
+  swaps: Record<number, { key: number; jewels: number[] }>
+  /**
+   * 함께 바꿔도 결과가 같은 바꾸기 조합: 부위 → 바꾸기 후보 key (하나짜리 포함). 여기 없는 조합으로 여러 부위를 함께 바꾸면
+   * 시리즈/그룹 스킬이 달라진다
+   */
+  swapSets: Partial<Record<ArmorKind, number>>[]
   /** 대표 조합의 발동 스킬 레벨 (최대 레벨 적용, 시리즈/그룹 포함) */
   skillLevels: SkillPoint[]
   /** 대표 조합에 들어간 비선호 스킬 id */
@@ -77,7 +88,7 @@ export interface SearchResultItem {
   freeSlots: Slot[]
   /** 대표 조합 최대 방어력 (초월 반영) */
   defense: number
-  /** 방어구 부위별 후보 수의 곱 = 이 결과로 만들 수 있는 실제 방어구 조합 수 (호석 대체 후보는 제외) */
+  /** 이 결과로 만들 수 있는 실제 방어구 조합 수: 부위별 후보 수의 곱 (바꾸기 후보는 swapSets 조합만, 호석 대체 후보는 제외) */
   variantCount: number
 }
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { GameDb } from '../../data/db'
-import { ARMOR_KINDS, type GameData, type Skill, type SkillPoint } from '../../data/types'
-import { armorByName, loadTestDb, skillIdByName } from '../../test/testDb'
+import { ARMOR_KINDS, type ArmorKind, type GameData, type Skill, type SkillPoint } from '../../data/types'
+import { armorByName, decorationIdByName, loadTestDb, skillIdByName } from '../../test/testDb'
 import { activeSkillLevels, computeBuild, missingRequirements, unwantedSkillsOf } from '../calc'
 import { resolveWeapon } from '../equipment'
 import { customWeaponChoice, dbWeaponChoice, type GogmaSkills } from '../gogmaArtian'
@@ -73,6 +73,24 @@ function verifyItem(
   return summary
 }
 
+/** 결과의 스킬(시리즈/그룹 포함)·남는 슬롯: 같은 결과의 대체 후보를 골라도 이것은 바뀌면 안 된다 */
+const outcomeOf = (summary: ReturnType<typeof computeBuild>) =>
+  `${[...activeSkillLevels(summary)]
+    .sort((a, b) => a[0] - b[0])
+    .map(([id, level]) => `${id}:${level}`)
+    .join(',')}|${slotKey(summary.freeSlots).join('')}`
+
+/** 바꾸기 조합 set 일 때 그 부위 후보: 바꾸면 그 바꾸기 후보, 아니면 바꾸기 후보가 아닌 방어구 */
+const candidatesIn = (item: SearchResultItem, kind: ArmorKind, set: Partial<Record<ArmorKind, number>>) =>
+  item.armor[kind].filter((id) => (set[kind] === undefined ? !item.swaps[id] : item.swaps[id]?.key === set[kind]))
+
+/** 결과가 나타내는 실제 방어구 조합 수: 바꾸기 조합(안 바꾸는 것 포함)마다 부위별 후보 수의 곱 */
+const variantCountOf = (item: SearchResultItem) =>
+  [{}, ...item.swapSets].reduce(
+    (sum: number, set) => sum + ARMOR_KINDS.reduce((n, kind) => n * Math.max(1, candidatesIn(item, kind, set).length), 1),
+    0,
+  )
+
 /** 응답의 모든 결과(+ 앞쪽 몇 개의 대체 방어구/호석)를 재검증 */
 function verify(r: SearchRequest, res: SearchResponse, customs: CustomTalisman[] = []) {
   for (const item of res.items) {
@@ -83,12 +101,18 @@ function verify(r: SearchRequest, res: SearchResponse, customs: CustomTalisman[]
     for (const { skillId } of r.required) {
       expect(item.skillLevels.find((s) => s.skillId === skillId)?.level).toBe(levels.get(skillId))
     }
-    expect(item.variantCount).toBe(Object.values(item.armor).reduce((n, ids) => n * Math.max(1, ids.length), 1))
-    // 같은 결과로 묶인 대체 방어구·호석도 같은 장식주 배치로 조건을 만족해야 한다
+    expect(item.variantCount).toBe(variantCountOf(item))
+    // 같은 결과로 묶인 대체 방어구·호석·α/β 조합은 고르면 방어력만 바뀌고 스킬·남는 슬롯은 그대로다
+    const outcome = outcomeOf(summary)
     for (const [kind, ids] of Object.entries(item.armor)) {
-      for (const id of ids.slice(1, 4)) verifyItem(r, item, customs, { [kind]: id }, res.shortfall)
+      for (const id of ids.slice(1, 6)) {
+        expect(outcomeOf(verifyItem(r, item, customs, { [kind]: id }, res.shortfall))).toBe(outcome)
+      }
     }
-    item.talismans.slice(1, 4).forEach((_, i) => verifyItem(r, item, customs, { talismanIndex: i + 1 }, res.shortfall))
+    item.talismans.slice(1, 4).forEach((_, i) => {
+      expect(outcomeOf(verifyItem(r, item, customs, { talismanIndex: i + 1 }, res.shortfall))).toBe(outcome)
+    })
+    for (const set of item.swapSets) expect(outcomeOf(verifyItem(r, item, customs, set, res.shortfall))).toBe(outcome)
   }
   expect(res.items.length).toBeLessThanOrEqual(r.limit)
   expect(res.total).toBeGreaterThanOrEqual(res.items.length)
@@ -137,44 +161,94 @@ describe('runSearch', () => {
     for (const item of res.items) expect(resultToBuild(db, item, r).armor.legs?.id).toBe(legs)
   })
 
-  describe('슬롯만 적은 방어구 묶기', () => {
-    it('슬롯·방어력만 못한 방어구는 따로 결과로 내지 않고 나은 방어구의 대체 후보로 붙인다', () => {
-      // 무구한 용관α(슬롯 3-2)는 β(3-2-1)와 도전자·속성 흡수 점수, 백열룡의 맥동이 같고 방어력도 같다
+  describe('같은 결과 묶기 (α/β)', () => {
+    const outcomeOfItem = (r: SearchRequest, item: SearchResultItem) => outcomeOf(computeBuild(db, resultToBuild(db, item, r)))
+    /** 같은 계열(이름 끝 α·β·γ 를 뗀 이름)의 방어구 한 부위만 다르고 스킬·남는 슬롯이 같은 결과 쌍이 없다 */
+    const expectNoFamilyTwins = (r: SearchRequest, res: SearchResponse) => {
+      const family = (id: number | undefined) => db.armor.get(id ?? -1)?.name.ko.replace(/[αβγ]$/, '')
+      const outcomes = res.items.map((item) => outcomeOfItem(r, item))
+      for (let i = 0; i < res.items.length; i++) {
+        for (let j = i + 1; j < res.items.length; j++) {
+          const [a, b] = [res.items[i], res.items[j]]
+          if (outcomes[i] !== outcomes[j] || JSON.stringify(a.talismans[0]) !== JSON.stringify(b.talismans[0])) continue
+          const parts = ARMOR_KINDS.filter((k) => a.armor[k][0] !== b.armor[k][0])
+          if (parts.length === 1) expect(family(a.armor[parts[0]][0]), `#${i + 1} #${j + 1}`).not.toBe(family(b.armor[parts[0]][0]))
+        }
+      }
+    }
+
+    it('고르면 스킬이 바뀌는 방어구는 대체 후보로 묶지 않고 따로 결과로 낸다', () => {
+      // 회복 속도를 원하지 않으면 무구한 용관α(회복 속도 2, 슬롯 3-2)와 β(회복 속도 1, 3-2-1)는 스킬·남는 슬롯이 다른 결과다
       const r = request({ required: req(['백열룡의 맥동', 2], ['도전자', 5], ['속성 흡수', 2]), limit: 300 })
       const res = runSearch(db, r)
       verify(r, res)
       const alpha = armorByName(db, '무구한 용관α').id
       const beta = armorByName(db, '무구한 용관β').id
-      expect(res.items.some((item) => item.armor.head[0] === alpha)).toBe(false)
+      expect(res.items.some((item) => item.armor.head[0] === alpha)).toBe(true)
+      expect(res.items.some((item) => item.armor.head.includes(alpha) && item.armor.head.includes(beta))).toBe(false)
+    })
+
+    it('α/β 가 장식주를 끼냐 안 끼냐만 다르면 한 결과로 묶고, α 로 바꾸면 그 장식주를 뺀다', () => {
+      // 회복 속도를 원하면 무구한 용관β(3-2-1) + 조복주【1】 = 무구한 용관α(3-2): 스킬·남는 슬롯이 같다
+      const r = request({ required: req(['회복 속도', 3], ['도전자', 5], ['백열룡의 맥동', 2]), limit: 300 })
+      const res = runSearch(db, r)
+      verify(r, res)
+      const alpha = armorByName(db, '무구한 용관α').id
+      const beta = armorByName(db, '무구한 용관β').id
+      const jewel = decorationIdByName(db, '조복주【1】')
       const grouped = res.items.filter((item) => item.armor.head[0] === beta && item.armor.head.includes(alpha))
       expect(grouped.length).toBeGreaterThan(0)
       for (const item of grouped) {
-        // 같은 장식주로 조건을 채우고 남는 슬롯만 하나 줄어든다
-        const summary = verifyItem(r, item, [], { head: alpha })
-        expect(summary.freeSlots).toHaveLength(item.freeSlots.length - 1)
+        expect(item.swaps[alpha]).toEqual({ key: alpha, jewels: [jewel] })
+        // 빼는 장식주는 β 의 그 부위 슬롯에 넣어 둔다 (바꿔도 다른 부위 장식주는 그대로)
+        expect(item.decorations.head).toContain(jewel)
+        const swapped = resultToBuild(db, item, r, { head: alpha })
+        expect(swapped.decorations.head).not.toContain(jewel)
+        for (const kind of ARMOR_KINDS.filter((k) => k !== 'head')) expect(swapped.decorations[kind]).toEqual(item.decorations[kind])
+      }
+      expectNoFamilyTwins(r, res)
+    })
+
+    it('시리즈/그룹 스킬만 다른 방어구도 그 스킬 발동이 같으면 한 결과로 묶는다', () => {
+      // 고그그리브α·β 는 스킬·슬롯이 같고 거극룡의 묵시록과 함께 붙은 다른 몬스터의 시리즈 스킬만 다르다
+      const r = request({ required: req(['약점 특효', 5], ['힘의 해방', 5], ['도전자', 5], ['회피 성능', 5]), limit: 300 })
+      const res = runSearch(db, r)
+      verify(r, res)
+      const ids = ['고그그리브α', '고그그리브β'].map((name) => armorByName(db, name).id)
+      const grouped = res.items.filter((item) => ids.every((id) => item.armor.legs.includes(id)))
+      expect(grouped.length).toBeGreaterThan(0)
+      for (const item of grouped) expect(item.swaps[item.armor.legs[1]]?.jewels).toEqual([])
+      expectNoFamilyTwins(r, res)
+    })
+
+    it('여러 조건에서 같은 계열 α/β 한 부위만 다르고 스킬·남는 슬롯이 같은 결과가 따로 나오지 않는다', () => {
+      for (const required of [
+        req(['약점 특효', 5], ['도전자', 5], ['연격', 3], ['회피 성능', 3], ['체술', 2], ['귀마개', 2]),
+        req(['힘의 해방', 5], ['약점 특효', 5], ['회피 거리 UP', 3]),
+        req(['쇄인룡의 굶주림', 2], ['약점 특효', 5], ['도전자', 5]),
+      ]) {
+        const r = request({ required, limit: 150 })
+        const res = runSearch(db, r)
+        verify(r, res)
+        expectNoFamilyTwins(r, res)
       }
     })
 
-    it('슬롯이 적은 대체 후보로 바꾸면 그 부위 장식주를 그 슬롯에 다시 넣는다', () => {
-      const r = request({ required: req(['약점 특효', 5], ['도전자', 3], ['회피 성능', 2]), limit: 300 })
-      const res = runSearch(db, r)
-      const decosOf = (ids: readonly (number | null)[]) => ids.filter((id) => id !== null).sort()
-      let checked = 0
-      for (const item of res.items) {
-        for (const kind of ARMOR_KINDS) {
-          const rep = db.armor.get(item.armor[kind][0] ?? -1)
-          if (!rep || decosOf(item.decorations[kind]).length === 0) continue
-          for (const id of item.armor[kind].slice(1)) {
-            if (db.armor.get(id)!.slots.join() === rep.slots.join()) continue
-            expect(decosOf(resultToBuild(db, item, r, { [kind]: id }).decorations[kind])).toEqual(
-              decosOf(item.decorations[kind]),
-            )
-            verifyItem(r, item, [], { [kind]: id })
-            checked++
-          }
-        }
+    it('개수는 결과를 모두 펼친 수와 같다 (α/β 가 시리즈/그룹 발동 때문에 따로 보이는 결과만 빠진다)', () => {
+      // 장식주가 스킬마다 하나뿐이라 잎마다 넣을 수 있는지만 DP 로 센 개수 (§6.5) vs 결과를 하나하나 넣은 수
+      const countAll = (required: SkillPoint[]) => {
+        const r = request({ required, limit: 20 })
+        const all = runSearch(db, { ...r, limit: 100_000 })
+        expect(all.items.length).toBeGreaterThan(1000)
+        expect(all.items.length).toBeLessThan(100_000)
+        return { counted: runSearch(db, r).total, all: all.items.length }
       }
-      expect(checked).toBeGreaterThan(0)
+      const exact = countAll(req(['쇄인룡의 굶주림', 2], ['약점 특효', 5], ['도전자', 5]))
+      expect(exact.counted).toBe(exact.all)
+      // 고그 α/β 처럼 바꾸면 시리즈 발동이 달라지는 조합은 결과마다 봐서 따로 보이지만 개수에는 없다
+      const split = countAll(req(['약점 특효', 5], ['도전자', 5], ['연격', 5]))
+      expect(split.counted).toBeLessThan(split.all)
+      expect(split.counted).toBeGreaterThan(split.all * 0.97)
     })
   })
 
@@ -352,9 +426,10 @@ describe('runSearch', () => {
 
   it('탐색 상한·중단 요청에 걸리면 truncated', () => {
     const r = request({ required: req(['약점 특효', 1]) })
-    const limited = runSearch(db, r, { limits: { maxLeaves: 100 } })
+    const limited = runSearch(db, r, { limits: { maxLeaves: 2 } })
     expect(limited.truncated).toBe(true)
-    expect(limited.total).toBeLessThanOrEqual(100)
+    // 잎(탐색 클래스 조합) 하나에 결과가 여럿이라 개수는 상한보다 클 수 있다 (멈추기 전까지 센 수)
+    expect(limited.total).toBeLessThan(runSearch(db, r).total)
     verify(r, limited)
 
     let calls = 0
@@ -451,16 +526,18 @@ describe('runSearch', () => {
     const hunger = sid('쇄인룡의 굶주림')
     const lordsSoul = sid('주인의 혼')
     const gogma = weaponOf(dbWeaponChoice(db.weaponByGameKey('great-sword', 87)!.id, { setSkillId: hunger, groupSkillId: lordsSoul }))
-    /** 결과를 실제 방어구·호석 조합으로 펼친 키 */
+    /** 결과를 실제 방어구·호석 조합으로 펼친 키 (α/β 는 함께 바꿀 수 있는 조합만) */
     const physical = (items: readonly SearchResultItem[]) =>
       items.flatMap((item) => {
-        let combos = ['']
-        for (const kind of ARMOR_KINDS) {
-          const ids = item.armor[kind].length > 0 ? item.armor[kind] : [0]
-          combos = combos.flatMap((c) => ids.map((id) => `${c}${id},`))
-        }
         const talismans = item.talismans.length > 0 ? item.talismans.map((t) => `${t.type}:${t.id}`) : ['-']
-        return combos.flatMap((c) => talismans.map((t) => c + t))
+        return [{}, ...item.swapSets].flatMap((set) => {
+          let combos = ['']
+          for (const kind of ARMOR_KINDS) {
+            const ids = item.armor[kind].length > 0 ? candidatesIn(item, kind, set) : [0]
+            combos = combos.flatMap((c) => ids.map((id) => `${c}${id},`))
+          }
+          return combos.flatMap((c) => talismans.map((t) => c + t))
+        })
       })
     /** 레벨을 모두 합쳐 s 만큼 낮추는 모든 방법 (스킬별로 낮출 레벨) */
     const lowerings = (levels: readonly number[], s: number): number[][] => {

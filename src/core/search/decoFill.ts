@@ -113,6 +113,22 @@ export class DecoFiller {
     return this.memo.size
   }
 
+  /**
+   * 스킬마다 쓸 수 있는 장식주가 그 스킬 1레벨짜리 하나뿐이면 스킬별 장식주 (SimpleFill 을 쓸 수 있다), 아니면 null.
+   * 지금 데이터의 방어구 장식주는 모두 이렇다
+   */
+  simpleDecos(): FillDeco[] | null {
+    const decos: FillDeco[] = []
+    for (let i = 0; i < this.bySkill.length; i++) {
+      const list = this.bySkill[i]
+      if (list.length !== 1) return null
+      const deco = list[0]
+      if (deco.unwanted.length > 0 || !deco.pts.every((p, k) => p === (k === i ? 1 : 0))) return null
+      decos.push(deco)
+    }
+    return decos
+  }
+
   private solve(d: number[], a: SlotCounts, w: SlotCounts, tolerance: number): FillResult | null {
     // 부족분 합보다 큰 허용치는 부족분 합과 같다 (메모 키를 줄인다)
     if (tolerance > 0) tolerance = Math.min(tolerance, d.reduce((s, x) => s + x, 0))
@@ -165,6 +181,59 @@ export class DecoFiller {
       if (sub && isBetter(sub.short + 1, sub.unwanted, sub.score, best)) best = { ...sub, short: sub.short + 1 }
     }
     return best
+  }
+}
+
+/** 장식주 크기별 개수 [크기1, 크기2, 크기3] */
+export type SizeCounts = [number, number, number]
+
+/**
+ * 스킬마다 그 스킬 1레벨 장식주가 하나뿐일 때의 채우기 (DecoFiller.simpleDecos, 허용치 0).
+ * 넣을 장식주가 부족분으로 정해지므로 고를 것이 없다: 레벨이 포함 관계라 '크기 k 이상 장식주 수 ≤ 레벨 k 이상 슬롯 수'
+ * (k = 3, 2, 1) 이면 다 들어가고, 큰 것부터 들어가는 가장 작은 슬롯에 넣으면 남는 슬롯 점수가 가장 크다 (DecoFiller 와 같은 결과)
+ */
+export class SimpleFill {
+  /** 스킬(로컬 인덱스)별 장식주 */
+  readonly decos: readonly FillDeco[]
+
+  constructor(decos: readonly FillDeco[]) {
+    this.decos = decos
+  }
+
+  sizes(deficits: readonly number[]): SizeCounts {
+    const n: SizeCounts = [0, 0, 0]
+    for (let i = 0; i < deficits.length; i++) n[this.decos[i].size - 1] += deficits[i]
+    return n
+  }
+
+  /** 크기별 장식주 n 이 방어구 슬롯 a 에 다 들어가는지 */
+  static fits(a: Readonly<SlotCounts>, n: Readonly<SizeCounts>): boolean {
+    return n[2] <= a[2] && n[1] + n[2] <= a[1] + a[2] && n[0] + n[1] + n[2] <= a[0] + a[1] + a[2]
+  }
+
+  /** 다 넣고 남는 슬롯 (다 들어갈 때만) */
+  static free(a: Readonly<SlotCounts>, n: Readonly<SizeCounts>): SlotCounts {
+    let r3 = a[2] - n[2]
+    const take2 = Math.min(n[1], a[1])
+    let r2 = a[1] - take2
+    r3 -= n[1] - take2
+    const take1 = Math.min(n[0], a[0])
+    const r1 = a[0] - take1
+    let over1 = n[0] - take1
+    const up2 = Math.min(over1, r2)
+    r2 -= up2
+    over1 -= up2
+    r3 -= over1
+    return [r1, r2, r3]
+  }
+
+  /** DecoFiller.fill(deficits, a, [0,0,0], 0) 과 같은 결과 */
+  fill(deficits: readonly number[], a: Readonly<SlotCounts>): FillResult | null {
+    const n = this.sizes(deficits)
+    if (!SimpleFill.fits(a, n)) return null
+    const decos: FillDeco[] = []
+    for (let i = 0; i < deficits.length; i++) for (let k = 0; k < deficits[i]; k++) decos.push(this.decos[i])
+    return { score: slotScore(SimpleFill.free(a, n)), decos, unwanted: [], short: 0 }
   }
 }
 

@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { runSearch } from '../../core/search/engine'
 import { resultToBuild } from '../../core/search/toBuild'
-import type { SearchRequest, SearchResponse } from '../../core/search/types'
+import type { SearchRequest, SearchResponse, SearchResultItem } from '../../core/search/types'
 import { ARMOR_KINDS } from '../../data/types'
 import { loadTestDb, skillIdByName } from '../../test/testDb'
-import { buildKey, isAlternative, relinkEntries, type CompareEntry, type ResultVariant } from './compareList'
+import { buildKey, isAlternative, relinkEntries, selectArmor, type CompareEntry, type ResultVariant } from './compareList'
 import { DEFAULT_CONDITIONS, buildRequest, normalizeConditions } from './conditions'
 
 const db = loadTestDb()
@@ -94,5 +94,21 @@ describe('검색 결과 비교 목록', () => {
     expect(isAlternative(item, { [kind]: item.armor[kind][0] })).toBe(false)
     expect(isAlternative(item, { [kind]: -1 })).toBe(false)
     expect(isAlternative(item, { talismanIndex: 0 })).toBe(false)
+  })
+
+  it('α/β 바꾸기는 함께 바꿀 수 있는 조합만 고르고, 안 되는 조합이면 다른 부위를 대표로 되돌린다', () => {
+    // 머리 α(11)·다리 α(21)는 하나씩만 바꿀 수 있고, 머리 12 는 바꾸기 후보가 아닌 대체 방어구
+    const item: SearchResultItem = {
+      ...slotsResponse.items[0],
+      armor: { head: [10, 12, 11], chest: [30], arms: [40], waist: [50], legs: [20, 21] },
+      swaps: { 11: { key: 11, jewels: [1] }, 21: { key: 21, jewels: [] } },
+      swapSets: [{ head: 11 }, { legs: 21 }],
+    }
+    const head = selectArmor(item, {}, 'head', 11)
+    expect(head).toEqual({ variant: { head: 11 }, reset: [] })
+    expect(selectArmor(item, head.variant, 'legs', 21)).toEqual({ variant: { legs: 21 }, reset: ['head'] })
+    expect(selectArmor(item, { legs: 21 }, 'head', 12)).toEqual({ variant: { head: 12, legs: 21 }, reset: [] })
+    const both = { ...item, swapSets: [...item.swapSets, { head: 11, legs: 21 }] }
+    expect(selectArmor(both, head.variant, 'legs', 21)).toEqual({ variant: { head: 11, legs: 21 }, reset: [] })
   })
 })

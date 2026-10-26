@@ -14,7 +14,7 @@ export function compareRanked(a: Ranked, b: Ranked): number {
 /** 상위 capacity 개만 유지하는 최소 힙 (heap[0] = 현재 가장 뒤쪽 항목) */
 export class TopK<T extends Ranked> {
   private readonly heap: T[] = []
-  private readonly capacity: number
+  readonly capacity: number
 
   constructor(capacity: number) {
     this.capacity = Math.max(0, capacity)
