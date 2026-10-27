@@ -1,7 +1,7 @@
 import { createContext, useContext } from 'react'
 import type { SearchConditions } from './conditions'
 
-/** 스킬 검색 조건 (localStorage search-conditions:v1). 스킬 사전 탭에서도 원하는 스킬을 넣어서 앱 전체가 함께 쓴다 */
+/** 스킬 검색 조건 (localStorage search-conditions:v1). 사전 탭에서도 원하는 스킬을 넣어서 앱 전체가 함께 쓴다 */
 export interface SearchConditionsValue {
   /** 저장값에 빠진 필드를 기본값으로 채운 지금 조건 */
   cond: SearchConditions

@@ -234,7 +234,7 @@ export function applyRequiredLayout(
 
 type RequiredList = Pick<SearchConditions, 'required' | 'requiredDividers'>
 
-/** 원하는 스킬을 최대 레벨로 그 묶음의 끝(맨 아래 구분선보다 아래)에 넣는다. 이미 있으면 그대로 */
+/** 원하는 스킬을 최대 레벨로 그 묶음의 끝(맨 아래 구분선보다 아래)에 넣는다 (스킬 검색·사전 공용). 이미 있으면 그대로 */
 export function addRequiredSkill(db: GameDb, list: RequiredList, skill: Skill): RequiredList {
   if (list.required.some((r) => r.skillId === skill.id)) return list
   return applyRequiredLayout(db, list.required, list.requiredDividers, skill.kind, [

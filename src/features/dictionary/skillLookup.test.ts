@@ -6,8 +6,7 @@ import { SKILL_KIND_ORDER, buildSkillSearchIndex, searchSkills, skillSources } f
 const db = loadTestDb()
 const index = buildSkillSearchIndex(db)
 const skill = (koName: string) => db.skill(skillIdByName(db, koName))
-const names = (query: string, kind: Parameters<typeof searchSkills>[2] = null) =>
-  searchSkills(index, query, kind).map((m) => m.skill.name.ko)
+const names = (query: string) => searchSkills(index, query).map((m) => m.skill.name.ko)
 const matchOf = (query: string, koName: string) => searchSkills(index, query).find((m) => m.skill.name.ko === koName)
 
 describe('searchSkills', () => {
@@ -16,9 +15,8 @@ describe('searchSkills', () => {
     expect(all).toHaveLength(db.data.skills.length)
     const kinds = all.map((m) => SKILL_KIND_ORDER.indexOf(m.skill.kind))
     expect(kinds).toEqual([...kinds].sort((a, b) => a - b))
-    const weapons = names('', 'weapon')
+    const weapons = all.filter((m) => m.skill.kind === 'weapon').map((m) => m.skill.name.ko)
     expect(weapons).toEqual([...weapons].sort((a, b) => a.localeCompare(b, 'ko')))
-    expect(searchSkills(index, '', 'group').every((m) => m.skill.kind === 'group')).toBe(true)
   })
 
   it('이름이 맞는 스킬이 먼저, 앞부분이 맞는 이름이 더 앞', () => {
@@ -62,11 +60,6 @@ describe('searchSkills', () => {
       via: 'effect',
       hint: '무진장Ⅰ 추가 스태미나 게이지를 획득한다',
     })
-  })
-
-  it('종류를 고르면 그 종류에서만 찾는다', () => {
-    expect(searchSkills(index, '회심', 'armor').every((m) => m.skill.kind === 'armor')).toBe(true)
-    expect(names('회심', 'weapon')).toContain('간파')
   })
 })
 

@@ -71,7 +71,7 @@ interface SearchResultState {
 
 export function SearchPage() {
   const { db, customTalismans } = useAppState()
-  // 스킬 사전 탭에서도 원하는 스킬을 넣으므로 조건은 SearchConditionsProvider 가 들고 있다
+  // 사전 탭에서도 원하는 스킬을 넣으므로 조건은 SearchConditionsProvider 가 들고 있다
   const { cond, patch, replace } = useSearchConditions()
   const request = useMemo(() => buildRequest(db, cond, customTalismans), [db, cond, customTalismans])
   const excludedArmorCount = useMemo(() => excludedArmorIds(db, cond.excludedArmor).length, [db, cond.excludedArmor])

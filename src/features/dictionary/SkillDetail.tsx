@@ -23,6 +23,7 @@ import {
   type TalismanSource,
   type WeaponKindSource,
 } from './skillLookup'
+import type { DictionaryEntry } from './dictionarySearch'
 
 const isWeaponKindOrNull = (v: unknown): v is WeaponKind | null => v === null || WEAPON_KINDS.includes(v as WeaponKind)
 const isBoolean = (v: unknown): v is boolean => typeof v === 'boolean'
@@ -30,8 +31,8 @@ const isBoolean = (v: unknown): v is boolean => typeof v === 'boolean'
 /** 원하는 스킬 레벨 표시: Lv5, 시리즈·그룹 스킬은 '4부위 (Ⅱ)'·'3부위' */
 const levelLabel = (skill: Skill, level: number) => (isBonusSkill(skill) ? bonusRankLabel(skill, level) : `Lv${level}`)
 
-/** 스킬 사전 오른쪽(휴대폰은 '상세') 열: 스킬 설명·레벨 효과와 그 스킬을 얻는 곳 */
-export function SkillDetail({ skill }: { skill: Skill }) {
+/** 사전 오른쪽(휴대폰은 '상세') 열의 스킬: 스킬 설명·레벨 효과와 그 스킬을 얻는 곳. onOpen 은 방어구 세트를 사전에서 연다 */
+export function SkillDetail({ skill, onOpen }: { skill: Skill; onOpen: (entry: DictionaryEntry) => void }) {
   const { db, customTalismans } = useAppState()
   const sources = useMemo(() => skillSources(db, skill), [db, skill])
   const myTalismans = useMemo(
@@ -50,7 +51,7 @@ export function SkillDetail({ skill }: { skill: Skill }) {
       <SkillOverview skill={skill} />
       {sources.decorations.length > 0 && <DecorationPanel skill={skill} decorations={sources.decorations} />}
       {sources.weapons.length > 0 && <WeaponPanel skill={skill} groups={sources.weapons} />}
-      {sources.armorSets.length > 0 && <ArmorPanel skill={skill} sets={sources.armorSets} />}
+      {sources.armorSets.length > 0 && <ArmorPanel skill={skill} sets={sources.armorSets} onOpen={onOpen} />}
       {(sources.talismans.length > 0 || myTalismans.length > 0) && (
         <TalismanPanel skill={skill} fixed={sources.talismans} mine={myTalismans} />
       )}
@@ -245,7 +246,15 @@ function WeaponPanel({ skill, groups }: { skill: Skill; groups: WeaponKindSource
 }
 
 /** 방어구는 세트로 묶어 보이고, 눌러서 부위마다 슬롯·다른 스킬을 펼친다. 하위 랭크는 눌러야 보인다 */
-function ArmorPanel({ skill, sets }: { skill: Skill; sets: ArmorSetSource[] }) {
+function ArmorPanel({
+  skill,
+  sets,
+  onOpen,
+}: {
+  skill: Skill
+  sets: ArmorSetSource[]
+  onOpen: (entry: DictionaryEntry) => void
+}) {
   const [showLow, setShowLow] = usePersistentState('dictionary-low-rank:v1', false, isBoolean)
   const high = sets.filter((s) => !s.lowRank)
   const lowCount = sets.length - high.length
@@ -256,7 +265,7 @@ function ArmorPanel({ skill, sets }: { skill: Skill; sets: ArmorSetSource[] }) {
     <Panel title={<PanelTitle title="방어구" count={`${visible.length}세트 · ${pieces}부위`} />}>
       <ul className="-my-1.5 divide-y divide-line">
         {visible.map((source) => (
-          <ArmorSetRow key={source.set.id} skill={skill} source={source} />
+          <ArmorSetRow key={source.set.id} skill={skill} source={source} onOpen={onOpen} />
         ))}
       </ul>
       {lowCount > 0 && high.length > 0 && (
@@ -271,7 +280,15 @@ function ArmorPanel({ skill, sets }: { skill: Skill; sets: ArmorSetSource[] }) {
   )
 }
 
-function ArmorSetRow({ skill, source }: { skill: Skill; source: ArmorSetSource }) {
+function ArmorSetRow({
+  skill,
+  source,
+  onOpen,
+}: {
+  skill: Skill
+  source: ArmorSetSource
+  onOpen: (entry: DictionaryEntry) => void
+}) {
   const bonus = isBonusSkill(skill)
   const parts = source.pieces
     .map(({ piece, level }) => (bonus ? ARMOR_KIND_LABEL[piece.kind] : `${ARMOR_KIND_LABEL[piece.kind]} ${level}`))
@@ -306,6 +323,22 @@ function ArmorSetRow({ skill, source }: { skill: Skill; source: ArmorSetSource }
           {source.pieces.map(({ piece }) => (
             <ArmorPieceLine key={piece.id} piece={piece} skillId={skill.id} />
           ))}
+          <li>
+            {/* 한 부위만 붙었으면 그 방어구를 강조해서 연다 */}
+            <button
+              type="button"
+              onClick={() =>
+                onOpen({
+                  kind: 'armor',
+                  id: source.set.id,
+                  ...(source.pieces.length === 1 ? { pieceId: source.pieces[0].piece.id } : {}),
+                })
+              }
+              className="-ml-1 rounded px-1 text-xs text-accent hover:bg-surface-2 pointer-coarse:py-1.5 pointer-coarse:text-sm"
+            >
+              세트 전체 보기 →
+            </button>
+          </li>
         </ul>
       </details>
     </li>

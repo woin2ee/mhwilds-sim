@@ -1,4 +1,4 @@
-// 스킬 사전: 스킬 찾기(이름·단계 이름·장식주 이름·효과 글)와 스킬을 얻는 곳 모으기. 화면과 상관없는 순수 함수 (DESIGN.md §7.4)
+// 사전의 스킬: 스킬 찾기(이름·단계 이름·장식주 이름·효과 글)와 스킬을 얻는 곳 모으기. 화면과 상관없는 순수 함수 (DESIGN.md §7.4)
 import { isHr100Armor, isHr100Talisman } from '../../core/hunterRank'
 import { nameOf, type GameDb } from '../../data/db'
 import {
@@ -98,10 +98,10 @@ function namesHint(names: readonly string[]): string {
 /**
  * 검색어로 스킬을 찾는다. 스킬 이름(한·영·일, 초성) → 시리즈·그룹 단계 이름 → 장식주 이름 → 스킬 설명·레벨 효과 순서로 보고
  * 처음 맞은 까닭으로 묶어 이 순서로 늘어놓는다. 장식주 이름과 효과는 글이 많아서 초성·한 글자로는 찾지 않는다.
- * 검색어가 없으면 모든 스킬을 종류 → 이름 순서로 돌려준다. kind 를 주면 그 종류만.
+ * 검색어가 없으면 모든 스킬을 종류 → 이름 순서로 돌려준다.
  */
-export function searchSkills(index: SkillSearchIndex, query: string, kind: SkillKind | null = null): SkillMatch[] {
-  const entries = kind ? index.entries.filter((e) => e.skill.kind === kind) : index.entries
+export function searchSkills(index: SkillSearchIndex, query: string): SkillMatch[] {
+  const { entries } = index
   const q = normalize(query)
   if (!q) return entries.map((e) => ({ skill: e.skill, via: 'name' }))
   const wide = q.length >= 2 && !/^[ㄱ-ㅎ]+$/.test(q)

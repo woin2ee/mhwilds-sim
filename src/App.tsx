@@ -5,7 +5,7 @@ import { ToastProvider } from './components/ToastProvider'
 import { Badge } from './components/ui'
 import { GameDb, loadGameData } from './data/db'
 import { cx } from './lib/cx'
-import { SkillDictionary } from './features/dictionary/SkillDictionary'
+import { DictionaryPage } from './features/dictionary/DictionaryPage'
 import { ManualBuilder } from './features/manual/ManualBuilder'
 import { BackupPage } from './features/saved/BackupPage'
 import { SavedBuildsPage } from './features/saved/SavedBuildsPage'
@@ -31,7 +31,7 @@ export default function App() {
   return (
     <ToastProvider>
       <AppStateProvider db={db}>
-        {/* 스킬 검색 조건은 스킬 사전(원하는 스킬에 추가)도 함께 쓴다 */}
+        {/* 스킬 검색 조건은 사전(원하는 스킬에 추가)도 함께 쓴다 */}
         <SearchConditionsProvider>
           <Shell />
         </SearchConditionsProvider>
@@ -48,7 +48,7 @@ function Centered({ children }: { children: ReactNode }) {
 const TABS: { id: TabId; label: string }[] = [
   { id: 'manual', label: '수동 세팅' },
   { id: 'search', label: '스킬 검색' },
-  { id: 'dictionary', label: '스킬 사전' },
+  { id: 'dictionary', label: '사전' },
   { id: 'saved', label: '내 세팅' },
   { id: 'talismans', label: '내 호석' },
   { id: 'backup', label: '백업' },
@@ -113,7 +113,7 @@ function Shell() {
           <SearchPage />
         </div>
         <div hidden={tab !== 'dictionary'}>
-          <SkillDictionary />
+          <DictionaryPage />
         </div>
         <div hidden={tab !== 'saved'}>
           <SavedBuildsPage />

@@ -7,26 +7,26 @@ import { cx } from '../../lib/cx'
 import { normalize } from '../../lib/text'
 import { useDb } from '../../state/context'
 import {
-  SKILL_KIND_ORDER,
-  buildSkillSearchIndex,
-  isBonusSkill,
-  searchSkills,
-  type MatchVia,
-  type SkillMatch,
-} from './skillLookup'
+  buildDictionaryIndex,
+  searchDictionary,
+  type DictionaryEntry,
+  type DictionaryFilter,
+  type DictionaryItem,
+} from './dictionarySearch'
+import { isBonusSkill, type MatchVia } from './skillLookup'
 
-type KindFilter = SkillKind | 'all'
-
-const KIND_SHORT: Record<SkillKind, string> = { armor: '방어구', weapon: '무기', set: '시리즈', group: '그룹' }
-const KIND_OPTIONS: { value: KindFilter; label: string }[] = [
+const FILTER_OPTIONS: { value: DictionaryFilter; label: string }[] = [
   { value: 'all', label: '전체' },
-  ...SKILL_KIND_ORDER.map((value) => ({ value, label: KIND_SHORT[value] })),
+  { value: 'skill', label: '스킬' },
+  { value: 'armor', label: '방어구' },
 ]
 
-/** 검색어가 있을 때 묶음 제목. 단계 이름도 이름이라 함께 묶는다 */
+const KIND_SHORT: Record<SkillKind, string> = { armor: '방어구', weapon: '무기', set: '시리즈', group: '그룹' }
+
+/** 검색어가 있을 때 스킬 묶음 제목. 단계 이름도 이름이라 함께 묶는다 */
 const VIA_TITLE: Record<MatchVia, string> = {
-  name: '이름',
-  rank: '이름',
+  name: '스킬 이름',
+  rank: '스킬 이름',
   decoration: '장식주 이름',
   effect: '효과·설명',
 }
@@ -36,40 +36,53 @@ function skillMeta(skill: Skill): string {
   return isBonusSkill(skill) ? `${skill.ranks.map((r) => r.pieces).join('·')}부위` : `Lv${skill.maxLevel}`
 }
 
+const itemKey = (item: DictionaryItem) => (item.type === 'skill' ? `s${item.skill.id}` : `a${item.entry.set.id}`)
+
+function entryOf(item: DictionaryItem): DictionaryEntry {
+  if (item.type === 'skill') return { kind: 'skill', id: item.skill.id }
+  return { kind: 'armor', id: item.entry.set.id, ...(item.piece ? { pieceId: item.piece.id } : {}) }
+}
+
 /**
- * 스킬 사전 왼쪽(휴대폰은 '목록') 열: 검색 칸 + 종류 + 스킬 목록.
+ * 사전 왼쪽(휴대폰은 '목록') 열: 검색 칸 + 전체/스킬/방어구 + 목록.
  * 검색 칸에 포커스를 둔 채 ↑↓ 로 고르고 Enter 로 연다 (선택 상자 Combobox 와 같은 방식이라 목록 줄은 탭 순서에 넣지 않는다)
  */
-export function SkillList({
-  selectedId,
+export function DictionaryList({
+  selected,
   onSelect,
   inputRef,
   className,
 }: {
-  selectedId: number | null
-  onSelect: (skill: Skill) => void
+  selected: DictionaryEntry | null
+  onSelect: (entry: DictionaryEntry) => void
   inputRef: Ref<HTMLInputElement>
   className?: string
 }) {
   const db = useDb()
-  const index = useMemo(() => buildSkillSearchIndex(db), [db])
+  const index = useMemo(() => buildDictionaryIndex(db), [db])
   const [query, setQuery] = useState('')
-  const [kind, setKind] = useState<KindFilter>('all')
-  const matches = useMemo(() => searchSkills(index, query, kind === 'all' ? null : kind), [index, query, kind])
+  const [filter, setFilter] = useState<DictionaryFilter>('all')
+  const items = useMemo(() => searchDictionary(index, query, filter), [index, query, filter])
   const searching = normalize(query) !== ''
   const [active, setActive] = useState(0)
   const [focused, setFocused] = useState(false)
   const listId = useId()
   const listRef = useRef<HTMLUListElement>(null)
 
-  const groupOf = (match: SkillMatch) => (searching ? VIA_TITLE[match.via] : SKILL_KIND_LABEL[match.skill.kind])
+  const groupOf = (item: DictionaryItem) => {
+    if (item.type === 'armor') return searching ? '방어구' : `방어구 · 레어도 ${item.entry.rarity}`
+    return searching ? VIA_TITLE[item.via] : SKILL_KIND_LABEL[item.skill.kind]
+  }
   const groupCounts = new Map<string, number>()
-  for (const match of matches) groupCounts.set(groupOf(match), (groupCounts.get(groupOf(match)) ?? 0) + 1)
+  for (const item of items) groupCounts.set(groupOf(item), (groupCounts.get(groupOf(item)) ?? 0) + 1)
 
-  const changeQuery = (next: string) => {
-    setQuery(next)
+  const reset = () => {
     setActive(0)
     listRef.current?.scrollTo({ top: 0 })
+  }
+  const changeQuery = (next: string) => {
+    setQuery(next)
+    reset()
   }
   const moveActive = (next: number) => {
     setActive(next)
@@ -78,12 +91,12 @@ export function SkillList({
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault()
-      if (matches.length > 0) moveActive((active + (e.key === 'ArrowDown' ? 1 : -1) + matches.length) % matches.length)
+      if (items.length > 0) moveActive((active + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length)
     } else if (e.key === 'Enter') {
-      const match = matches[active] ?? matches[0]
-      if (!match) return
+      const item = items[active] ?? items[0]
+      if (!item) return
       e.preventDefault()
-      onSelect(match.skill)
+      onSelect(entryOf(item))
     } else if (e.key === 'Escape' && query) {
       e.preventDefault()
       changeQuery('')
@@ -97,17 +110,17 @@ export function SkillList({
           <input
             ref={inputRef}
             role="combobox"
-            aria-label="스킬 찾기"
+            aria-label="사전 찾기"
             aria-expanded
             aria-controls={listId}
             aria-autocomplete="list"
-            aria-activedescendant={focused && matches[active] ? `${listId}-${active}` : undefined}
+            aria-activedescendant={focused && items[active] ? `${listId}-${active}` : undefined}
             enterKeyHint="search"
             autoComplete="off"
             autoCorrect="off"
             autoCapitalize="off"
             spellCheck={false}
-            placeholder="이름·효과·장식주로 찾기 (초성 가능)"
+            placeholder="스킬·방어구·효과로 찾기 (초성 가능)"
             value={query}
             onChange={(e) => changeQuery(e.target.value)}
             onKeyDown={onKeyDown}
@@ -128,20 +141,18 @@ export function SkillList({
             </button>
           )}
         </div>
-        {/* 아주 좁은 화면(320px)에서는 개수가 다음 줄로 내려간다 */}
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <div className="flex items-center gap-2">
           <Segmented
             size="sm"
-            value={kind}
-            options={KIND_OPTIONS}
+            value={filter}
+            options={FILTER_OPTIONS}
             onChange={(next) => {
-              setKind(next)
-              setActive(0)
-              listRef.current?.scrollTo({ top: 0 })
+              setFilter(next)
+              reset()
             }}
-            ariaLabel="스킬 종류"
+            ariaLabel="찾을 종류"
           />
-          <span className="ml-auto shrink-0 text-xs text-muted tabular-nums">{matches.length}개</span>
+          <span className="ml-auto shrink-0 text-xs text-muted tabular-nums">{items.length}개</span>
         </div>
       </div>
 
@@ -149,23 +160,26 @@ export function SkillList({
         ref={listRef}
         id={listId}
         role="listbox"
-        aria-label="스킬 목록"
+        aria-label="사전 목록"
         className="py-1 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:overscroll-contain"
       >
-        {matches.length === 0 && (
+        {items.length === 0 && (
           <li className="px-3 py-6 text-center text-sm text-muted">
-            찾는 스킬이 없어요.
-            <span className="mt-1 block text-xs">스킬 이름·초성, 효과 글, 장식주 이름으로 찾을 수 있어요.</span>
+            찾는 스킬·방어구가 없어요.
+            <span className="mt-1 block text-xs">이름·초성, 스킬 효과 글, 장식주 이름으로 찾을 수 있어요.</span>
           </li>
         )}
-        {matches.map((match, i) => {
-          const { skill } = match
-          const group = groupOf(match)
+        {items.map((item, i) => {
+          const group = groupOf(item)
           // 묶음이 바뀌는 첫 줄 위에 묶음 이름을 붙인다
-          const header = i === 0 || groupOf(matches[i - 1]) !== group
-          const selected = skill.id === selectedId
+          const header = i === 0 || groupOf(items[i - 1]) !== group
+          const isSelected =
+            selected !== null &&
+            (item.type === 'skill'
+              ? selected.kind === 'skill' && selected.id === item.skill.id
+              : selected.kind === 'armor' && selected.id === item.entry.set.id)
           return (
-            <li key={skill.id} role="presentation">
+            <li key={itemKey(item)} role="presentation">
               {header && (
                 <div className="flex justify-between bg-surface px-3 pt-2.5 pb-1 text-[11px] font-semibold text-muted lg:sticky lg:top-0">
                   {group}
@@ -175,25 +189,26 @@ export function SkillList({
               <div
                 id={`${listId}-${i}`}
                 role="option"
-                aria-selected={selected}
+                aria-selected={isSelected}
                 data-index={i}
                 onMouseDown={(e) => e.preventDefault()}
                 onMouseEnter={() => setActive(i)}
-                onClick={() => onSelect(skill)}
+                onClick={() => onSelect(entryOf(item))}
                 className={cx(
                   'cursor-pointer px-3 py-1.5 text-sm hover:bg-surface-2 pointer-coarse:py-2.5',
                   focused && i === active && 'bg-surface-2',
-                  selected && 'font-semibold text-accent',
+                  isSelected && 'font-semibold text-accent',
                 )}
               >
                 <span className="flex items-center justify-between gap-2">
-                  <span className="truncate">{nameOf(skill.name)}</span>
+                  <span className="truncate">{nameOf(item.type === 'skill' ? item.skill.name : item.entry.set.name)}</span>
                   <span className="shrink-0 text-xs font-normal text-muted">
-                    {searching && `${KIND_SHORT[skill.kind]} · `}
-                    {skillMeta(skill)}
+                    {item.type === 'skill'
+                      ? `${searching ? `${KIND_SHORT[item.skill.kind]} · ` : ''}${skillMeta(item.skill)}`
+                      : `${searching ? '방어구 · ' : ''}레어도 ${item.entry.rarity}${item.entry.hr100 ? ' · HR 100' : ''}`}
                   </span>
                 </span>
-                {match.hint && <span className="block truncate text-xs font-normal text-muted">{match.hint}</span>}
+                {item.hint && <span className="block truncate text-xs font-normal text-muted">{item.hint}</span>}
               </div>
             </li>
           )

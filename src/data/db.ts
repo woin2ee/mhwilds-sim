@@ -95,7 +95,7 @@ export function nameOf(names: Names): string {
   return names[DISPLAY_LOCALE]
 }
 
-/** 표시 언어가 아닌 이름들 (스킬 사전에서 다른 언어 이름을 함께 보일 때). 빈 이름은 뺀다 */
+/** 표시 언어가 아닌 이름들 (사전에서 다른 언어 이름을 함께 보일 때). 빈 이름은 뺀다 */
 export function otherNamesOf(names: Names): { locale: Locale; name: string }[] {
   return LOCALES.filter((locale) => locale !== DISPLAY_LOCALE && names[locale]).map((locale) => ({
     locale,
