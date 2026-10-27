@@ -11,6 +11,7 @@ import { newId } from '../../lib/id'
 import { useDb } from '../../state/context'
 import {
   REQUIRED_KIND_ORDER,
+  addRequiredSkill,
   applyRequiredLayout,
   requiredLayout,
   type RequiredDivider,
@@ -424,13 +425,7 @@ export function RequiredSkills({
       <SkillSelect
         value={null}
         // 새 스킬은 그 묶음의 끝(맨 아래 구분선보다 아래)에 들어간다
-        onChange={(skill) =>
-          skill &&
-          setLayout(skill.kind, [
-            ...requiredLayout(db, required, dividers, skill.kind),
-            { type: 'skill', required: { skillId: skill.id, level: skill.maxLevel } },
-          ])
-        }
+        onChange={(skill) => skill && onChange(addRequiredSkill(db, { required, requiredDividers: dividers }, skill))}
         hiddenIds={hiddenIds}
         placeholder="원하는 스킬 추가 (초성 검색 가능)"
         ariaLabel="원하는 스킬 추가"

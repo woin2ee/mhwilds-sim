@@ -6,9 +6,11 @@ import type { SkillKind, SkillPoint } from '../../data/types'
 import { armorByName, loadTestDb, skillIdByName } from '../../test/testDb'
 import {
   DEFAULT_CONDITIONS,
+  addRequiredSkill,
   applyRequiredLayout,
   buildRequest,
   normalizeConditions,
+  removeRequiredSkill,
   requestKey,
   requiredLayout,
   sortRequired,
@@ -301,6 +303,19 @@ describe('원하는 스킬 묶음·순서', () => {
     const emptied = applyRequiredLayout(db, required, dividers, 'armor', layout.slice(1))
     expect(ids(emptied.required)).toEqual([attack])
     expect(emptied.requiredDividers).toEqual([line('w', 'weapon', 0)])
+  })
+
+  it('스킬 추가(스킬 사전·선택 상자)는 최대 레벨로 묶음 끝에 넣고, 이미 있으면 그대로, 빼면 넣기 전으로 돌아간다', () => {
+    const list = { required: points(weakness, attack), requiredDividers: [line('a', 'armor', 1)] }
+    const added = addRequiredSkill(db, list, db.skill(earplugs))
+    expect(shape(requiredLayout(db, added.required, added.requiredDividers, 'armor'))).toEqual([weakness, 'a', earplugs])
+    expect(added.required.find((r) => r.skillId === earplugs)?.level).toBe(db.skill(earplugs).maxLevel)
+    expect(addRequiredSkill(db, added, db.skill(earplugs))).toBe(added)
+    // 시리즈 스킬은 가장 높은 단계(4부위)로
+    expect(addRequiredSkill(db, list, db.skill(hunger)).required.at(-1)).toEqual({ skillId: hunger, level: 2 })
+    expect(removeRequiredSkill(db, added, earplugs)).toEqual(list)
+    // 구분선 위 스킬을 빼면 구분선이 한 칸 올라간다
+    expect(removeRequiredSkill(db, added, weakness).requiredDividers).toEqual([line('a', 'armor', 0)])
   })
 
   it('구분선 저장값은 모양을 검사하고, 검색 요청에는 들어가지 않는다', () => {

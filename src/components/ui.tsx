@@ -105,7 +105,8 @@ export function Panel({
   )
 }
 
-function ChevronIcon({ className }: { className?: string }) {
+/** 아래를 가리키는 꺾쇠. 접힌 쪽은 -rotate-90 으로 돌려 쓴다 */
+export function ChevronIcon({ className }: { className?: string }) {
   return (
     <svg
       viewBox="0 0 24 24"

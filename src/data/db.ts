@@ -1,11 +1,13 @@
 import {
   ARMOR_KINDS,
+  LOCALES,
   type ArmorKind,
   type ArmorPiece,
   type ArmorSet,
   type Decoration,
   type FixedTalisman,
   type GameData,
+  type Locale,
   type Names,
   type Skill,
   type Weapon,
@@ -86,9 +88,19 @@ function byId<T extends { id: number }>(rows: T[]): Map<number, T> {
   return new Map(rows.map((row) => [row.id, row]))
 }
 
+const DISPLAY_LOCALE: Locale = 'ko'
+
 /** 현재 표시 언어의 이름. 다국어 지원 시 여기만 바꾸면 된다. */
 export function nameOf(names: Names): string {
-  return names.ko
+  return names[DISPLAY_LOCALE]
+}
+
+/** 표시 언어가 아닌 이름들 (스킬 사전에서 다른 언어 이름을 함께 보일 때). 빈 이름은 뺀다 */
+export function otherNamesOf(names: Names): { locale: Locale; name: string }[] {
+  return LOCALES.filter((locale) => locale !== DISPLAY_LOCALE && names[locale]).map((locale) => ({
+    locale,
+    name: names[locale],
+  }))
 }
 
 export async function loadGameData(): Promise<GameData> {

@@ -12,6 +12,13 @@ const SHAPES: Record<Exclude<TabId, 'manual' | 'talismans'>, ReactNode> = {
       <path d="m15.3 15.3 5.2 5.2" />
     </>
   ),
+  // 펼친 책
+  dictionary: (
+    <>
+      <path d="M12 6.5C10 5 7.5 4.5 3.5 4.5v14c4 0 6.5.5 8.5 2 2-1.5 4.5-2 8.5-2v-14c-4 0-6.5.5-8.5 2z" />
+      <path d="M12 6.5v14" />
+    </>
+  ),
   // 책갈피
   saved: <path d="M18.5 21 12 17l-6.5 4V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2z" />,
   // 보관 상자

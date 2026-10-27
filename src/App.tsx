@@ -5,10 +5,12 @@ import { ToastProvider } from './components/ToastProvider'
 import { Badge } from './components/ui'
 import { GameDb, loadGameData } from './data/db'
 import { cx } from './lib/cx'
+import { SkillDictionary } from './features/dictionary/SkillDictionary'
 import { ManualBuilder } from './features/manual/ManualBuilder'
 import { BackupPage } from './features/saved/BackupPage'
 import { SavedBuildsPage } from './features/saved/SavedBuildsPage'
 import { SharedLinkHandler } from './features/saved/SharedLinkHandler'
+import { SearchConditionsProvider } from './features/search/SearchConditionsProvider'
 import { SearchPage } from './features/search/SearchPage'
 import { TalismanManager } from './features/talismans/TalismanManager'
 import { AppStateProvider } from './state/AppState'
@@ -29,7 +31,10 @@ export default function App() {
   return (
     <ToastProvider>
       <AppStateProvider db={db}>
-        <Shell />
+        {/* 스킬 검색 조건은 스킬 사전(원하는 스킬에 추가)도 함께 쓴다 */}
+        <SearchConditionsProvider>
+          <Shell />
+        </SearchConditionsProvider>
         <SharedLinkHandler />
       </AppStateProvider>
     </ToastProvider>
@@ -43,6 +48,7 @@ function Centered({ children }: { children: ReactNode }) {
 const TABS: { id: TabId; label: string }[] = [
   { id: 'manual', label: '수동 세팅' },
   { id: 'search', label: '스킬 검색' },
+  { id: 'dictionary', label: '스킬 사전' },
   { id: 'saved', label: '내 세팅' },
   { id: 'talismans', label: '내 호석' },
   { id: 'backup', label: '백업' },
@@ -51,7 +57,7 @@ const TABS: { id: TabId; label: string }[] = [
 /**
  * 탭 메뉴. bar 는 휴대폰용(폭을 똑같이 나눈 밑줄 탭), pills 는 데스크톱 헤더용.
  * 아이콘은 pills 는 이름 옆, bar 는 이름 위 (휴대폰 폭에서 옆에 두면 '수동 세팅'이 넘친다).
- * 태블릿 폭(md~lg) 헤더에서는 탭 5개 옆에 제목이 다 보이도록 아이콘을 뺀다
+ * 태블릿 폭(md~lg) 헤더에서는 탭 6개 옆에 제목이 다 보이도록 아이콘을 빼고 좌우 여백을 줄인다
  */
 function TabNav({ variant, className }: { variant: 'bar' | 'pills'; className?: string }) {
   const { tab, setTab } = useAppState()
@@ -65,7 +71,7 @@ function TabNav({ variant, className }: { variant: 'bar' | 'pills'; className?: 
           onClick={() => setTab(t.id)}
           className={cx(
             'flex items-center justify-center font-medium transition-colors',
-            variant === 'pills' && 'gap-1.5 rounded-md px-3 py-1.5 text-sm',
+            variant === 'pills' && 'gap-1.5 rounded-md px-2.5 py-1.5 text-sm lg:px-3',
             variant === 'pills' && (tab === t.id ? 'bg-accent text-accent-fg' : 'text-muted hover:bg-surface-2 hover:text-fg'),
             variant === 'bar' && 'relative h-12 flex-1 flex-col gap-0.5 text-xs',
             variant === 'bar' &&
@@ -105,6 +111,9 @@ function Shell() {
         </div>
         <div hidden={tab !== 'search'}>
           <SearchPage />
+        </div>
+        <div hidden={tab !== 'dictionary'}>
+          <SkillDictionary />
         </div>
         <div hidden={tab !== 'saved'}>
           <SavedBuildsPage />

@@ -8,6 +8,7 @@ import type { GameDb } from '../../data/db'
 import {
   WEAPON_KINDS,
   type FixedTalisman,
+  type Skill,
   type SkillKind,
   type SkillPoint,
   type SlotLevel,
@@ -229,6 +230,31 @@ export function applyRequiredLayout(
     required: sortRequired(db, [...required.filter((r) => !isKind(db, r.skillId, kind)), ...skills]),
     requiredDividers: [...dividers.filter((d) => d.kind !== kind), ...(skills.length > 0 ? lines : [])],
   }
+}
+
+type RequiredList = Pick<SearchConditions, 'required' | 'requiredDividers'>
+
+/** 원하는 스킬을 최대 레벨로 그 묶음의 끝(맨 아래 구분선보다 아래)에 넣는다. 이미 있으면 그대로 */
+export function addRequiredSkill(db: GameDb, list: RequiredList, skill: Skill): RequiredList {
+  if (list.required.some((r) => r.skillId === skill.id)) return list
+  return applyRequiredLayout(db, list.required, list.requiredDividers, skill.kind, [
+    ...requiredLayout(db, list.required, list.requiredDividers, skill.kind),
+    { type: 'skill', required: { skillId: skill.id, level: skill.maxLevel } },
+  ])
+}
+
+/** 원하는 스킬 하나를 뺀다. 그 묶음 구분선의 자리는 다시 센다 */
+export function removeRequiredSkill(db: GameDb, list: RequiredList, skillId: number): RequiredList {
+  const kind = db.skills.get(skillId)?.kind
+  if (!kind) return { ...list, required: list.required.filter((r) => r.skillId !== skillId) }
+  const items = requiredLayout(db, list.required, list.requiredDividers, kind)
+  return applyRequiredLayout(
+    db,
+    list.required,
+    list.requiredDividers,
+    kind,
+    items.filter((item) => item.type !== 'skill' || item.required.skillId !== skillId),
+  )
 }
 
 /**
