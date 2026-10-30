@@ -1,32 +1,18 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import { Dialog } from '../../components/Dialog'
 import { Button, Panel, type PanelCollapse } from '../../components/ui'
 import { NAME_MAX } from '../../core/savedBuilds'
 import { cx } from '../../lib/cx'
-import { requestPersistentStorage, usePersistentState } from '../../lib/storage'
+import { requestPersistentStorage } from '../../lib/storage'
 import { useDb } from '../../state/context'
-import { STORAGE_KEYS } from '../../state/storedValues'
 import { useToast } from '../../state/toast'
-import type { SearchConditions } from './conditions'
+import { useSearchConditions, useSearchPresets } from './conditionsContext'
 import { ExportPresets, ImportPresets } from './PresetTransferDialogs'
 import type { PresetImportResult } from './presetTransfer'
-import {
-  conditionsKey,
-  newPreset,
-  overwritePreset,
-  presetConditions,
-  presetSummary,
-  suggestPresetName,
-  validPresets,
-  type SearchPreset,
-} from './presets'
+import { newPreset, presetConditions, presetSummary, suggestPresetName, type SearchPreset } from './presets'
 
 const INPUT =
   'w-full rounded-md border border-line bg-surface-2 px-2.5 py-2 text-sm text-fg placeholder:text-muted focus:border-accent focus:outline-none'
-
-// 항목 하나가 깨져도 목록 전체를 버리지 않게 배열인지만 보고, 항목은 validPresets 로 거른다
-const isArray = (value: unknown): value is SearchPreset[] => Array.isArray(value)
-const isActiveId = (value: unknown): value is string | null => value === null || typeof value === 'string'
 
 type DialogState =
   | { type: 'save' }
@@ -37,76 +23,64 @@ type DialogState =
 
 /**
  * 저장한 검색 조건 (조건 열 맨 위). 무기를 바꾸면 크게 바뀌는 조건을 이름을 붙여 두고, 누르면 그 조건으로 바꾼다.
- * 마지막으로 불러오거나 저장한 조건(activeId, '사용 중')은 고친 뒤 덮어쓸 수 있고, '해제'하면 지금 조건은 그대로 두고
- * 연결만 끊어 저장한 조건과 상관없이 고친다. 아래 '내보내기'·'가져오기'로 다른 기기·친구와 코드나 파일로 주고받는다
+ * 마지막으로 불러오거나 저장한 조건('사용 중')은 고치는 대로 바로 저장되고(SearchConditionsProvider), '해제'하면 지금 조건은
+ * 그대로 두고 연결만 끊어 저장한 조건을 바꾸지 않고 고친다. 사용 중인 조건이 없으면 목록 위에 눈에 띄게 알린다.
+ * 아래 '내보내기'·'가져오기'로 다른 기기·친구와 코드나 파일로 주고받는다
  */
 export function SearchPresets({
-  cond,
-  onLoad,
   collapse,
 }: {
-  cond: SearchConditions
-  onLoad: (next: SearchConditions) => void
-  /** 접기 (요약은 이 목록이 만든다: 사용 중인 조건 이름이나 저장한 조건 수) */
+  /** 접기 (요약은 이 목록이 만든다: 사용 중인 조건 이름이나 선택한 조건 없음) */
   collapse?: PanelCollapse
 }) {
   const db = useDb()
   const toast = useToast()
-  const [stored, setStored] = usePersistentState<SearchPreset[]>(STORAGE_KEYS.searchPresets, [], isArray)
-  const presets = useMemo(() => validPresets(stored), [stored])
-  const [activeId, setActiveId] = usePersistentState<string | null>(STORAGE_KEYS.searchPresetActive, null, isActiveId)
+  const { cond, replace } = useSearchConditions()
+  const { presets, setPresets, active, setActiveId } = useSearchPresets()
   const [dialog, setDialog] = useState<DialogState>(null)
-  const currentKey = useMemo(() => conditionsKey(cond), [cond])
-  const active = presets.find((p) => p.id === activeId) ?? null
 
   /** current: 불러오기 바로 전 조건 (가져오기에서 제외할 방어구를 더한 직후면 더한 조건) */
   const load = (preset: SearchPreset, current = cond) => {
     const previous = current
-    const previousActive = activeId
-    onLoad(presetConditions(preset, current))
+    const previousActive = active?.id ?? null
+    replace(presetConditions(preset, current))
     setActiveId(preset.id)
     toast(`‘${preset.name}’ 조건을 불러왔어요`, {
       label: '되돌리기',
       onClick: () => {
-        onLoad(previous)
+        replace(previous)
         setActiveId(previousActive)
       },
     })
   }
   const saveNew = (name: string) => {
     const preset = newPreset(name, cond)
-    setStored([preset, ...presets])
+    setPresets([preset, ...presets])
     setActiveId(preset.id)
     void requestPersistentStorage()
-    toast(`조건을 저장했어요 · ${preset.name}`)
-  }
-  const overwrite = (target: SearchPreset, name: string) => {
-    const preset = overwritePreset(target, cond, name)
-    setStored(presets.map((p) => (p.id === preset.id ? preset : p)))
-    setActiveId(preset.id)
-    toast(`덮어썼어요 · ${preset.name}`)
+    toast(`조건을 저장했어요 · 이제 고치면 ‘${preset.name}’에 바로 저장돼요`)
   }
   const rename = (target: SearchPreset, name: string) => {
     const trimmed = name.trim().slice(0, NAME_MAX)
-    if (trimmed) setStored(presets.map((p) => (p.id === target.id ? { ...p, name: trimmed } : p)))
+    if (trimmed) setPresets(presets.map((p) => (p.id === target.id ? { ...p, name: trimmed } : p)))
   }
   const release = (target: SearchPreset) => {
     setActiveId(null)
-    toast(`‘${target.name}’ 해제했어요 · 지금 조건은 그대로 남아요`)
+    toast(`‘${target.name}’ 해제했어요 · 이제 고쳐도 이 조건은 그대로예요`)
   }
   const remove = (target: SearchPreset) => {
     if (!window.confirm(`‘${target.name}’ 조건을 삭제할까요?`)) return
-    setStored(presets.filter((p) => p.id !== target.id))
-    if (activeId === target.id) setActiveId(null)
+    setPresets(presets.filter((p) => p.id !== target.id))
+    if (active?.id === target.id) setActiveId(null)
     toast('삭제했어요')
   }
   const importDone = (result: PresetImportResult, withExcluded: boolean) => {
     // 제외할 방어구는 저장한 조건이 아니라 지금 조건의 제외 목록에 더한다
     const excluded = withExcluded && result.excludedArmor?.added ? result.excludedArmor : null
     const current = excluded ? { ...cond, excludedArmor: excluded.merged } : cond
-    if (excluded) onLoad(current)
+    if (excluded) replace(current)
     if (result.added.length > 0) {
-      setStored(result.presets)
+      setPresets(result.presets)
       void requestPersistentStorage()
     }
     setDialog(null)
@@ -122,33 +96,41 @@ export function SearchPresets({
     toast(message, count === 1 ? { label: '불러오기', onClick: () => load(first, current) } : undefined)
   }
 
-  const modifiedActive = active !== null && conditionsKey(active.conditions) !== currentKey
-  const summary = active
-    ? `${modifiedActive ? '수정됨' : '사용 중'} · ${active.name}`
-    : presets.length > 0
-      ? `${presets.length}개`
-      : '없음'
+  const summary = active ? (
+    `사용 중 · ${active.name}`
+  ) : presets.length > 0 ? (
+    <>
+      <span className="font-medium text-warn">선택한 조건 없음</span> · {presets.length}개
+    </>
+  ) : (
+    '없음'
+  )
 
   return (
     <Panel
       title="저장한 조건"
       collapse={collapse && { ...collapse, summary }}
       actions={
-        <Button size="sm" onClick={() => setDialog({ type: 'save' })}>
-          지금 조건 저장
+        <Button
+          size="sm"
+          title={active ? '사용 중인 조건은 그대로 두고, 지금 조건을 새 이름으로 하나 더 저장해요' : undefined}
+          onClick={() => setDialog({ type: 'save' })}
+        >
+          {active ? '다른 이름으로 저장' : '지금 조건 저장'}
         </Button>
       }
     >
+      {presets.length > 0 && <PresetStatus active={active} />}
       {presets.length === 0 ? (
         <p className="text-xs text-muted">
           무기마다 바뀌는 검색 조건(원하는 스킬·비선호·장식주 여유분·무기·호석·옵션)을 이름을 붙여 저장해 두고 불러올 수 있어요.
+          불러온 조건은 고치는 대로 바로 저장돼요.
         </p>
       ) : (
         <ul className="max-h-72 space-y-1.5 overflow-y-auto">
           {presets.map((preset) => {
             // 표시는 연결된(사용 중인) 조건에만: 해제한 뒤에는 값이 같아도 '사용 중'으로 보이지 않는다
-            const isActive = preset.id === activeId
-            const modified = isActive && conditionsKey(preset.conditions) !== currentKey
+            const isActive = preset.id === active?.id
             return (
               <li
                 key={preset.id}
@@ -166,8 +148,7 @@ export function SearchPresets({
                   {/* 이름은 길면 줄을 바꿔 다 보여 준다. 띄어쓰기 없이 긴 이름만 아무 데서나 끊는다 */}
                   <span className="flex items-start gap-1.5">
                     <span className="min-w-0 text-sm font-medium break-keep wrap-anywhere">{preset.name}</span>
-                    {isActive && !modified && <StateBadge className="border-accent/50 text-accent">사용 중</StateBadge>}
-                    {modified && <StateBadge className="border-warn/50 text-warn">수정됨</StateBadge>}
+                    {isActive && <StateBadge className="border-accent/50 text-accent">사용 중</StateBadge>}
                   </span>
                   <span className="block truncate text-xs text-muted">{presetSummary(db, preset.conditions)}</span>
                 </button>
@@ -176,7 +157,7 @@ export function SearchPresets({
                     size="sm"
                     variant="ghost"
                     aria-label={`${preset.name} 해제`}
-                    title="저장한 조건과 연결을 끊어요. 지금 조건은 그대로 두고 자유롭게 고칠 수 있어요"
+                    title="연결을 끊어요. 지금 조건은 그대로 두고, 고쳐도 이 조건에는 저장되지 않아요"
                     onClick={() => release(preset)}
                   >
                     해제
@@ -219,12 +200,15 @@ export function SearchPresets({
         </Button>
       </div>
 
-      <Dialog open={dialog?.type === 'save'} onClose={() => setDialog(null)} title="검색 조건 저장">
+      <Dialog
+        open={dialog?.type === 'save'}
+        onClose={() => setDialog(null)}
+        title={active ? '다른 이름으로 저장' : '검색 조건 저장'}
+      >
         <SaveForm
-          defaultName={active?.name ?? suggestPresetName(db, cond)}
+          defaultName={suggestPresetName(db, cond)}
           active={active}
-          onSaveNew={saveNew}
-          onOverwrite={(name) => active && overwrite(active, name)}
+          onSave={saveNew}
           onClose={() => setDialog(null)}
         />
       </Dialog>
@@ -244,6 +228,29 @@ export function SearchPresets({
         <ImportPresets presets={presets} excludedArmor={cond.excludedArmor} onImport={importDone} />
       </Dialog>
     </Panel>
+  )
+}
+
+/**
+ * 목록 위 지금 상태 (자동 저장이라 어느 조건에 저장되는지 늘 보여야 한다). 사용 중인 조건이 없으면 고쳐도 저장한 조건에
+ * 들어가지 않으니 노란 칸으로 눈에 띄게 알린다. 사용 중일 때는 조용한 한 줄 (밝은 테마의 주황 accent 와 노랑 warn 이
+ * 거의 같아서 칸 색만으로는 두 상태가 구분되지 않는다)
+ */
+function PresetStatus({ active }: { active: SearchPreset | null }) {
+  return active ? (
+    <p className="mb-2.5 flex items-start gap-1.5 text-xs break-keep wrap-anywhere text-muted">
+      <span aria-hidden className="text-good">
+        ✓
+      </span>
+      <span>
+        <span className="font-semibold text-fg">‘{active.name}’ 사용 중</span> · 고치면 바로 저장돼요
+      </span>
+    </p>
+  ) : (
+    <p className="mb-2.5 rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-xs break-keep text-warn">
+      <span className="font-semibold">선택한 조건 없음</span> · 고쳐도 저장한 조건에는 반영되지 않아요. 남겨 두려면
+      ‘지금 조건 저장’을 눌러 주세요.
+    </p>
   )
 }
 
@@ -286,29 +293,25 @@ function NameField({ name, onName }: { name: string; onName: (name: string) => v
   )
 }
 
-/** 새로 저장. 불러온 조건(active)이 있으면 '덮어쓰기'도 고를 수 있다 (내 세팅 저장과 같은 모양) */
+/**
+ * 지금 조건을 새 조건으로 저장하고 사용 중으로 둔다. 사용 중인 조건(active)은 고칠 때마다 이미 저장돼 있어서
+ * 덮어쓰기 없이 '다른 이름으로 저장'만 한다
+ */
 function SaveForm({
   defaultName,
   active,
-  onSaveNew,
-  onOverwrite,
+  onSave,
   onClose,
 }: {
   defaultName: string
   active: SearchPreset | null
-  onSaveNew: (name: string) => void
-  onOverwrite: (name: string) => void
+  onSave: (name: string) => void
   onClose: () => void
 }) {
   const [name, setName] = useState(defaultName)
-  const saveNew = () => {
-    onSaveNew(name)
-    onClose()
-  }
   const submit = (e: FormEvent) => {
     e.preventDefault()
-    if (active) onOverwrite(name)
-    else onSaveNew(name)
+    onSave(name)
     onClose()
   }
   return (
@@ -316,25 +319,16 @@ function SaveForm({
       <NameField name={name} onName={setName} />
       <p className="text-xs text-muted">
         {active
-          ? `‘${active.name}’에서 불러온 조건이에요. 덮어쓰거나 새 조건으로 저장할 수 있어요.`
-          : '원하는 스킬·비선호 스킬·장식주 여유분·무기·호석·옵션을 저장해요. 결과 정렬은 저장하지 않아요.'}
+          ? `‘${active.name}’에는 고친 내용이 이미 저장돼 있어요. 지금 조건을 새 이름으로 하나 더 저장하고, 이제부터는 새 조건에 저장해요.`
+          : '원하는 스킬·비선호 스킬·장식주 여유분·무기·호석·옵션을 저장해요. 결과 정렬은 저장하지 않아요. 저장한 뒤에는 고치는 대로 바로 저장돼요.'}
       </p>
       <div className="flex flex-wrap justify-end gap-2">
         <Button variant="ghost" onClick={onClose}>
           취소
         </Button>
-        {active ? (
-          <>
-            <Button onClick={saveNew}>새로 저장</Button>
-            <Button type="submit" variant="primary">
-              덮어쓰기
-            </Button>
-          </>
-        ) : (
-          <Button type="submit" variant="primary">
-            저장
-          </Button>
-        )}
+        <Button type="submit" variant="primary">
+          저장
+        </Button>
       </div>
     </form>
   )

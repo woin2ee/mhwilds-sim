@@ -61,6 +61,17 @@ export function overwritePreset(preset: SearchPreset, cond: SearchConditions, na
   }
 }
 
+/**
+ * 사용 중인 저장한 조건(id)에 지금 조건을 저장한다 (고칠 때마다 자동 저장). 이미 같은 조건이거나 그 조건이 없으면
+ * 받은 목록을 그대로 돌려줘서 저장값이 바뀌지 않는다
+ */
+export function saveToPreset(stored: SearchPreset[], id: string, cond: SearchConditions): SearchPreset[] {
+  const presets = validPresets(stored)
+  const target = presets.find((p) => p.id === id)
+  if (!target || conditionsKey(target.conditions) === conditionsKey(cond)) return stored
+  return presets.map((p) => (p === target ? overwritePreset(p, cond) : p))
+}
+
 /** 불러올 조건. 저장한 뒤 생긴 필드는 기본값으로 채우고(normalizeConditions), 정렬·제외할 방어구는 지금 것을 둔다 */
 export function presetConditions(preset: SearchPreset, current: SearchConditions): SearchConditions {
   return { ...normalizeConditions(preset.conditions), sort: current.sort, excludedArmor: current.excludedArmor }

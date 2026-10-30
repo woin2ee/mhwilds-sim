@@ -8,6 +8,7 @@ import {
   overwritePreset,
   presetConditions,
   presetSummary,
+  saveToPreset,
   suggestPresetName,
   validPresets,
 } from './presets'
@@ -48,7 +49,7 @@ describe('검색 조건 저장', () => {
     expect(loaded.weaponSetSkillId).toBeNull()
     expect(loaded.excludeHr100).toBe(false)
     expect(loaded.spareSlots).toEqual({ armor: [0, 0, 0], weapon: [0, 0, 0] })
-    // 예전 조건은 장식주 여유분이 없는 지금 조건과 같은 조건이다 ('수정됨'이 붙지 않는다)
+    // 예전 조건은 장식주 여유분이 없는 지금 조건과 같은 조건이다 (불러오기만 해서는 자동 저장으로 바뀌지 않는다)
     expect(conditionsKey(conditions)).toBe(conditionsKey(cond({})))
   })
 
@@ -85,6 +86,31 @@ describe('검색 조건 저장', () => {
     expect(next.id).toBe(saved.id)
     expect(next.name).toBe('활 속성')
     expect(next.conditions.includeLowRank).toBe(true)
+  })
+
+  it('자동 저장: 사용 중인 조건만 지금 조건으로 바꾸고, 이미 같거나 그 조건이 없으면 저장값을 그대로 둔다', () => {
+    const crit = sid('약점 특효')
+    const greatSwordPreset = newPreset('대검', cond({ required: [{ skillId: crit, level: 5 }] }))
+    const bow = newPreset('활', cond({}))
+    const stored = [greatSwordPreset, bow]
+    const edited = cond({ required: [{ skillId: crit, level: 4 }], sort: 'defense' })
+    const next = saveToPreset(stored, greatSwordPreset.id, edited)
+    expect(next[0]).toMatchObject({ id: greatSwordPreset.id, name: '대검' })
+    expect(next[0].conditions.required).toEqual([{ skillId: crit, level: 4 }])
+    expect(next[0].conditions).not.toHaveProperty('sort')
+    expect(next[1]).toBe(bow)
+    // 저장하지 않는 정렬·제외할 방어구만 바뀌었으면 같은 조건이라 저장값(배열)이 그대로다
+    const sortOnly = {
+      ...presetConditions(greatSwordPreset, cond({})),
+      sort: 'defense' as const,
+      excludedArmor: [{ type: 'piece' as const, id: db.data.armor[0].id }],
+    }
+    expect(saveToPreset(stored, greatSwordPreset.id, sortOnly)).toBe(stored)
+    expect(saveToPreset(next, greatSwordPreset.id, edited)).toBe(next)
+    expect(saveToPreset(stored, 'gone', edited)).toBe(stored)
+    // 저장할 때 형식이 깨진 항목은 뺀다 (다른 저장과 같게)
+    const broken = [...stored, null] as typeof stored
+    expect(saveToPreset(broken, bow.id, edited).map((p) => p.id)).toEqual([greatSwordPreset.id, bow.id])
   })
 
   it('저장값에서 형식이 맞지 않는 항목만 뺀다', () => {

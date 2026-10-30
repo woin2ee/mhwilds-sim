@@ -83,7 +83,7 @@ interface SearchResultState {
 export function SearchPage() {
   const { db, customTalismans } = useAppState()
   // 사전 탭에서도 원하는 스킬을 넣으므로 조건은 SearchConditionsProvider 가 들고 있다
-  const { cond, patch, replace } = useSearchConditions()
+  const { cond, patch } = useSearchConditions()
   const request = useMemo(() => buildRequest(db, cond, customTalismans), [db, cond, customTalismans])
   const excludedArmorCount = useMemo(() => excludedArmorIds(db, cond.excludedArmor).length, [db, cond.excludedArmor])
   const [collapsedSections, setCollapsedSections] = usePersistentState<Section[]>('search-collapsed:v1', [], isSectionList)
@@ -209,7 +209,7 @@ export function SearchPage() {
     // 1단(lg 미만)에서는 블록으로 둬야 맨 끝의 MobileBar 가 sticky 로 화면 아래에 붙는다 (grid 칸 안에선 안 움직임)
     <div className="max-lg:space-y-4 lg:grid lg:grid-cols-[380px_minmax(0,1fr)] lg:items-start lg:gap-4">
       <div className={cx('space-y-4', pane !== 'conditions' && 'max-lg:hidden')}>
-        <SearchPresets cond={cond} onLoad={replace} collapse={collapse('presets', undefined)} />
+        <SearchPresets collapse={collapse('presets', undefined)} />
 
         <Panel
           title="원하는 스킬"
