@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type MouseEvent } from 'react'
 import { SkillChip, type SkillTone } from '../../components/SkillChip'
 import { SlotBadge, SlotList } from '../../components/SlotBadge'
-import { Badge, Button } from '../../components/ui'
+import { Badge, Button, ChevronIcon } from '../../components/ui'
 import { activeSkillLevels, computeBuild, unwantedSkillsOf, type BuildSummary } from '../../core/calc'
 import { resolveTalisman } from '../../core/equipment'
 import { suggestName } from '../../core/savedBuilds'
@@ -22,6 +22,9 @@ import { buildKey, isAlternative, selectArmor, type CompareEntry, type ResultVar
 import { chipLevel, formatCount, shortfallLabel } from './format'
 
 type Expandable = ArmorKind | 'talisman'
+
+/** 카드를 눌러도 상세 창을 열지 않는 곳: 버튼·입력 요소, 카드 안에서 따로 연 내용(스킬 효과·대체 후보), 저장 창 */
+const OWN_CLICK = 'button, a, input, select, textarea, label, dialog, [data-own-click]'
 
 /** 결과 카드에서 비선호 스킬을 바로 넣고 빼는 데 쓰는 지금 검색 조건 (결과를 만든 요청과 다를 수 있다) */
 export interface ExcludeControl {
@@ -198,7 +201,7 @@ function AlternativeList({
   onSelect: (index: number) => void
 }) {
   return (
-    <ul className="max-h-56 overflow-auto rounded-md border border-line bg-surface-2 py-1">
+    <ul data-own-click className="max-h-56 cursor-auto overflow-auto rounded-md border border-line bg-surface-2 py-1">
       {options.map((o, i) => (
         <li key={o.key}>
           <button
@@ -237,7 +240,7 @@ function SkillDetail({
   const rank = skill.ranks.find((r) => r.level === chip.level)
   const bonus = skill.kind === 'set' || skill.kind === 'group'
   return (
-    <div className="space-y-1.5 rounded-md border border-line bg-surface-2 px-2.5 py-1.5 text-xs">
+    <div data-own-click className="cursor-auto space-y-1.5 rounded-md border border-line bg-surface-2 px-2.5 py-1.5 text-xs">
       {bonus ? (
         // 시리즈·그룹 스킬은 스킬 설명이 없고 단계마다 이름·효과가 있다
         <div className="space-y-0.5">
@@ -315,6 +318,9 @@ export function ResultCard({
   exclude,
   compare,
   onHide,
+  variant,
+  onVariantChange,
+  onOpenDetail,
 }: {
   item: SearchResultItem
   request: SearchRequest
@@ -323,10 +329,14 @@ export function ResultCard({
   compare: CompareControl
   /** 목록에서 이 카드를 숨긴다 (다시 검색하면 다시 보인다) */
   onHide: () => void
+  /** 고른 대체 방어구·호석. 상세 창도 같은 세팅을 보이도록 목록이 들고 있다 */
+  variant: ResultVariant
+  onVariantChange: (variant: ResultVariant) => void
+  /** 이 결과의 상세 창을 연다 (ResultList 가 그린다) */
+  onOpenDetail: () => void
 }) {
   const { db, customTalismans, openInManual } = useAppState()
   const toast = useToast()
-  const [variant, setVariant] = useState<ResultVariant>({})
   const [open, setOpen] = useState<Expandable | null>(null)
   const [saving, setSaving] = useState(false)
   /** 효과를 연 스킬 칩 */
@@ -424,11 +434,11 @@ export function ResultCard({
   }
   const selectAlternative = (key: Expandable, i: number) => {
     if (key === 'talisman') {
-      setVariant((v) => ({ ...v, talismanIndex: i }))
+      onVariantChange({ ...variant, talismanIndex: i })
       return
     }
     const next = selectArmor(item, variant, key, item.armor[key][i])
-    setVariant(next.variant)
+    onVariantChange(next.variant)
     if (next.reset.length > 0) {
       const kinds = next.reset.map((k) => ARMOR_KIND_LABEL[k]).join('·')
       toast(`함께 바꾸면 시리즈·그룹 스킬이 달라져서 다른 부위(${kinds})는 대표로 되돌렸어요`)
@@ -439,16 +449,36 @@ export function ResultCard({
   const shownResistances = ELEMENTS.filter(
     (element) => element === request.sort || request.minResistances.some((r) => r.element === element),
   )
+  // 카드 빈 곳이나 글자를 눌러도 상세 창을 연다. 키보드는 머리의 '#N' 버튼
+  const onCardClick = (event: MouseEvent<HTMLElement>) => {
+    const card = event.currentTarget
+    const target = event.target as Element
+    // 대화상자 같은 포털 안이나 버튼 등을 누른 것, 두 번 눌러 글자를 고르는 것, 끌어서 글자를 고른 것은 빼고
+    const own = target.closest(OWN_CLICK)
+    if (!card.contains(target) || (own && card.contains(own)) || event.detail > 1) return
+    if (window.getSelection()?.isCollapsed === false) return
+    onOpenDetail()
+  }
   return (
-    // 비선호 스킬이 든 결과도 카드 자체는 똑같이 두고, 그 스킬 칩·붙은 부위·장식주에만 표시한다. 비교 목록에 넣은 카드는 강조 테두리
+    // 비선호 스킬이 든 결과도 카드 자체는 똑같이 두고, 그 스킬 칩·붙은 부위·장식주에만 표시한다. 비교 목록에 넣은 카드는 강조 테두리.
+    // 카드를 누르면 목록 모양은 그대로 두고 상세 창을 띄운다
     <article
+      onClick={onCardClick}
       className={cx(
-        'space-y-2.5 rounded-lg border bg-surface p-3',
-        compared ? 'border-accent ring-1 ring-accent' : 'border-line',
+        'cursor-pointer space-y-2.5 rounded-lg border bg-surface p-3',
+        compared ? 'border-accent ring-1 ring-accent' : 'border-line hover:border-muted/60',
       )}
     >
       <header className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-        <span className="text-xs font-semibold text-muted">#{index}</span>
+        <button
+          type="button"
+          aria-haspopup="dialog"
+          title="상세 보기: 내성 · 부위별 장식주 · 스킬 효과"
+          onClick={onOpenDetail}
+          className="-my-1 -ml-1 inline-flex items-center gap-0.5 rounded px-1 py-1 text-xs font-semibold text-muted hover:bg-surface-2 hover:text-fg pointer-coarse:py-1.5"
+        >
+          <ChevronIcon className="size-3.5 -rotate-90" />#{index}
+        </button>
         <span className="text-sm">
           방어력 <span className="font-semibold tabular-nums">{summary.defense.max}</span>
         </span>

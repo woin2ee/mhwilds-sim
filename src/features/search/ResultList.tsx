@@ -9,7 +9,9 @@ import { ELEMENTS } from '../../data/types'
 import { useDb } from '../../state/context'
 import { useToast } from '../../state/toast'
 import { chipLevel, formatCount, shortfallLabel } from './format'
+import { NO_VARIANT, type ResultVariant } from './compareList'
 import { ResultCard, type CompareControl, type ExcludeControl } from './ResultCard'
+import { ResultDetailDialog } from './ResultDetail'
 
 const PAGE_SIZE = 30
 /** 정렬 버튼. 내성은 옆에서 속성을 하나 더 고른다 (요청의 정렬 값은 그 속성) */
@@ -37,12 +39,18 @@ function PagedCards({
   exclude,
   compare,
   onHide,
+  variants,
+  onVariantChange,
+  onOpenDetail,
 }: {
   entries: ShownItem[]
   request: SearchRequest
   exclude: ExcludeControl
   compare: CompareControl
   onHide: (entry: ShownItem) => void
+  variants: ReadonlyMap<string, ResultVariant>
+  onVariantChange: (id: string, variant: ResultVariant) => void
+  onOpenDetail: (id: string) => void
 }) {
   const [shown, setShown] = useState(PAGE_SIZE)
   return (
@@ -56,6 +64,9 @@ function PagedCards({
           exclude={exclude}
           compare={compare}
           onHide={() => onHide(entry)}
+          variant={variants.get(entry.item.id) ?? NO_VARIANT}
+          onVariantChange={(variant) => onVariantChange(entry.item.id, variant)}
+          onOpenDetail={() => onOpenDetail(entry.item.id)}
         />
       ))}
       {entries.length > shown && (
@@ -185,6 +196,11 @@ export function ResultList({
     () => items.flatMap((item, i) => (hidden.has(item.id) ? [] : [{ item, index: i + 1 }])),
     [items, hidden],
   )
+  // 카드에서 고른 대체 방어구·호석 (결과 id → 선택). 상세 창도 같은 세팅을 보인다
+  const [variants, setVariants] = useState<ReadonlyMap<string, ResultVariant>>(() => new Map())
+  const changeVariant = (id: string, variant: ResultVariant) => setVariants((prev) => new Map(prev).set(id, variant))
+  // 상세 창을 연 결과 (null 이면 닫힘)
+  const [detailId, setDetailId] = useState<string | null>(null)
   const hide = ({ item, index }: ShownItem) => {
     setHidden((prev) => new Set(prev).add(item.id))
     toast(`#${index} 결과를 숨겼어요`, {
@@ -223,54 +239,77 @@ export function ResultList({
   }
 
   return (
-    <div className="space-y-3">
-      {response.shortfall > 0 && <ShortfallNotice request={request} response={response} hasWeaponSkill={hasWeaponSkill} />}
+    <>
+      <div className="space-y-3">
+        {response.shortfall > 0 && (
+          <ShortfallNotice request={request} response={response} hasWeaponSkill={hasWeaponSkill} />
+        )}
 
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="text-sm">
-          <span className="font-semibold">결과 {formatCount(items.length)}건</span>
-          {response.total > items.length && (
-            <span className="text-muted">
-              {' '}
-              (전체 {formatCount(response.total)}건{atLeast} 중 상위)
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="text-sm">
+            <span className="font-semibold">결과 {formatCount(items.length)}건</span>
+            {response.total > items.length && (
+              <span className="text-muted">
+                {' '}
+                (전체 {formatCount(response.total)}건{atLeast} 중 상위)
+              </span>
+            )}
+            <span className="ml-2 text-xs text-muted">
+              {!request.useDecorations && '장식주 없이 · '}대체 방어구 포함 {formatCount(variantTotal)}개 조합 ·{' '}
+              {formatElapsed(response.elapsedMs)}
             </span>
-          )}
-          <span className="ml-2 text-xs text-muted">
-            {!request.useDecorations && '장식주 없이 · '}대체 방어구 포함 {formatCount(variantTotal)}개 조합 ·{' '}
-            {formatElapsed(response.elapsedMs)}
-          </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Segmented size="sm" ariaLabel="정렬" value={sortChoice} options={SORT_OPTIONS} onChange={changeSort} />
+            {sortElement && (
+              <Segmented
+                size="sm"
+                ariaLabel="정렬할 내성의 속성"
+                value={sortElement}
+                options={ELEMENT_OPTIONS}
+                onChange={onSortChange}
+              />
+            )}
+          </div>
         </div>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <Segmented size="sm" ariaLabel="정렬" value={sortChoice} options={SORT_OPTIONS} onChange={changeSort} />
-          {sortElement && (
-            <Segmented
-              size="sm"
-              ariaLabel="정렬할 내성의 속성"
-              value={sortElement}
-              options={ELEMENT_OPTIONS}
-              onChange={onSortChange}
-            />
-          )}
-        </div>
+
+        {hidden.size > 0 && (
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+            <span>숨긴 결과 {formatCount(hidden.size)}건 · 다시 검색하면 다시 보여요.</span>
+            <Button size="sm" onClick={() => setHidden(new Set())}>
+              모두 다시 보기
+            </Button>
+          </div>
+        )}
+
+        {response.truncated && (
+          <p className="rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-warn">
+            조합이 너무 많아 일부만 탐색했어요. 유망한 조합부터 찾기 때문에 상위 결과는 대부분 좋은 조합이지만 놓친 조합이 있을
+            수 있어요. 스킬을 추가하거나 레벨을 올리면 범위가 좁혀져요.
+          </p>
+        )}
+
+        <PagedCards
+          entries={entries}
+          request={request}
+          exclude={exclude}
+          compare={compare}
+          onHide={hide}
+          variants={variants}
+          onVariantChange={changeVariant}
+          onOpenDetail={setDetailId}
+        />
       </div>
 
-      {hidden.size > 0 && (
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
-          <span>숨긴 결과 {formatCount(hidden.size)}건 · 다시 검색하면 다시 보여요.</span>
-          <Button size="sm" onClick={() => setHidden(new Set())}>
-            모두 다시 보기
-          </Button>
-        </div>
-      )}
-
-      {response.truncated && (
-        <p className="rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-warn">
-          조합이 너무 많아 일부만 탐색했어요. 유망한 조합부터 찾기 때문에 상위 결과는 대부분 좋은 조합이지만 놓친 조합이 있을
-          수 있어요. 스킬을 추가하거나 레벨을 올리면 범위가 좁혀져요.
-        </p>
-      )}
-
-      <PagedCards entries={entries} request={request} exclude={exclude} compare={compare} onHide={hide} />
-    </div>
+      {/* 목록 밖에 둬서(닫혀 있으면 안 보이는 칸) 목록 간격이 그대로다 */}
+      <ResultDetailDialog
+        entries={entries}
+        openId={detailId}
+        onOpen={setDetailId}
+        request={request}
+        variants={variants}
+        compare={compare}
+      />
+    </>
   )
 }

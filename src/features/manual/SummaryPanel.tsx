@@ -13,20 +13,7 @@ import { contributionLabel, EQUIP_LABEL } from './labels'
 
 /** 수동 세팅 결과 요약: 발동 스킬, 시리즈/그룹 스킬, 방어력, 내성, 남은 슬롯 */
 export function SummaryPanel({ summary }: { summary: BuildSummary }) {
-  const db = useDb()
-  const groups = useMemo(() => {
-    const byName = (a: SkillTotal, b: SkillTotal) =>
-      b.level - a.level || skillName(db, a.skillId).localeCompare(skillName(db, b.skillId), 'ko')
-    const ofKind = (kind: 'armor' | 'weapon') =>
-      summary.skills.filter((s) => db.skills.get(s.skillId)?.kind === kind).sort(byName)
-    return [
-      { title: '방어구 스킬', skills: ofKind('armor') },
-      { title: '무기 스킬', skills: ofKind('weapon') },
-    ]
-  }, [db, summary])
-
   const invalid = summary.slots.filter((s) => !s.valid && s.decorationId !== null)
-  const usedSlots = summary.slots.length - summary.freeSlots.length
   const isEmpty = Object.keys(summary.equipment).length === 0
 
   return (
@@ -45,77 +32,113 @@ export function SummaryPanel({ summary }: { summary: BuildSummary }) {
             </ul>
           )}
 
-          {groups.map(
-            (group) =>
-              group.skills.length > 0 && (
-                <section key={group.title}>
-                  <SectionTitle aside={`${group.skills.length}개`}>{group.title}</SectionTitle>
-                  <ul>
-                    {group.skills.map((total) => (
-                      <SkillRow key={total.skillId} total={total} />
-                    ))}
-                  </ul>
-                </section>
-              ),
-          )}
-          {summary.skills.length === 0 && <p className="text-sm text-muted">발동 중인 스킬이 없습니다.</p>}
-
-          {summary.bonuses.length > 0 && (
-            <section>
-              <SectionTitle>시리즈 · 그룹 스킬</SectionTitle>
-              <ul className="divide-y divide-line">
-                {summary.bonuses.map((bonus) => (
-                  <BonusRow
-                    key={bonus.skillId}
-                    bonus={bonus}
-                    fromWeapon={summary.equipment.weapon?.bonusSkillIds.includes(bonus.skillId) ?? false}
-                  />
-                ))}
-              </ul>
-            </section>
-          )}
-
-          <section className="grid grid-cols-2 gap-3">
-            <div>
-              <SectionTitle>방어력</SectionTitle>
-              <p className="text-2xl font-bold tabular-nums">{summary.defense.max}</p>
-              <p className="text-xs text-muted">
-                기본 {summary.defense.base} · 강화 최대 {summary.defense.max}
-              </p>
-            </div>
-            <div className="min-w-0">
-              <SectionTitle aside={`${usedSlots}/${summary.slots.length} 사용`}>남은 슬롯</SectionTitle>
-              <div className="pt-1">
-                <SlotList slots={summary.freeSlots} empty="없음" sorted />
-              </div>
-            </div>
-          </section>
-
-          <section>
-            <SectionTitle>내성</SectionTitle>
-            <div className="grid grid-cols-5 gap-1 text-center">
-              {ELEMENTS.map((element) => {
-                const value = summary.resistances[element]
-                return (
-                  <div key={element} className="rounded-md bg-surface-2 py-1.5">
-                    <div className="text-[11px] text-muted">{ELEMENT_LABEL[element]}</div>
-                    <div
-                      className={cx(
-                        'text-sm font-semibold tabular-nums',
-                        value > 0 && 'text-good',
-                        value < 0 && 'text-bad',
-                      )}
-                    >
-                      {signed(value)}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </section>
+          <SkillSections summary={summary} />
+          <DefenseSection summary={summary} />
+          <ResistanceSection summary={summary} />
         </div>
       )}
     </Panel>
+  )
+}
+
+// 아래 묶음들은 세팅 검색 결과의 상세(features/search/ResultDetail)도 같이 쓴다
+
+/** 발동 스킬(방어구·무기 스킬, 누르면 효과·출처)과 시리즈·그룹 스킬. 감싸는 쪽의 space-y 가 묶음 사이를 띄운다 */
+export function SkillSections({ summary }: { summary: BuildSummary }) {
+  const db = useDb()
+  const groups = useMemo(() => {
+    const byName = (a: SkillTotal, b: SkillTotal) =>
+      b.level - a.level || skillName(db, a.skillId).localeCompare(skillName(db, b.skillId), 'ko')
+    const ofKind = (kind: 'armor' | 'weapon') =>
+      summary.skills.filter((s) => db.skills.get(s.skillId)?.kind === kind).sort(byName)
+    return [
+      { title: '방어구 스킬', skills: ofKind('armor') },
+      { title: '무기 스킬', skills: ofKind('weapon') },
+    ]
+  }, [db, summary])
+
+  return (
+    <>
+      {groups.map(
+        (group) =>
+          group.skills.length > 0 && (
+            <section key={group.title}>
+              <SectionTitle aside={`${group.skills.length}개`}>{group.title}</SectionTitle>
+              <ul>
+                {group.skills.map((total) => (
+                  <SkillRow key={total.skillId} total={total} />
+                ))}
+              </ul>
+            </section>
+          ),
+      )}
+      {summary.skills.length === 0 && <p className="text-sm text-muted">발동 중인 스킬이 없습니다.</p>}
+
+      {summary.bonuses.length > 0 && (
+        <section>
+          <SectionTitle>시리즈 · 그룹 스킬</SectionTitle>
+          <ul className="divide-y divide-line">
+            {summary.bonuses.map((bonus) => (
+              <BonusRow
+                key={bonus.skillId}
+                bonus={bonus}
+                fromWeapon={summary.equipment.weapon?.bonusSkillIds.includes(bonus.skillId) ?? false}
+              />
+            ))}
+          </ul>
+        </section>
+      )}
+    </>
+  )
+}
+
+/** 방어력(기본 · 강화 최대)과 남은 슬롯 */
+export function DefenseSection({ summary }: { summary: BuildSummary }) {
+  const usedSlots = summary.slots.length - summary.freeSlots.length
+  return (
+    <section className="grid grid-cols-2 gap-3">
+      <div>
+        <SectionTitle>방어력</SectionTitle>
+        <p className="text-2xl font-bold tabular-nums">{summary.defense.max}</p>
+        <p className="text-xs text-muted">
+          기본 {summary.defense.base} · 강화 최대 {summary.defense.max}
+        </p>
+      </div>
+      <div className="min-w-0">
+        <SectionTitle aside={`${usedSlots}/${summary.slots.length} 사용`}>남은 슬롯</SectionTitle>
+        <div className="pt-1">
+          <SlotList slots={summary.freeSlots} empty="없음" sorted />
+        </div>
+      </div>
+    </section>
+  )
+}
+
+/** 속성별 내성 합 (방어구 내성만, 스킬 효과는 더하지 않는다) */
+export function ResistanceSection({ summary }: { summary: BuildSummary }) {
+  return (
+    <section>
+      <SectionTitle>내성</SectionTitle>
+      <div className="grid grid-cols-5 gap-1 text-center">
+        {ELEMENTS.map((element) => {
+          const value = summary.resistances[element]
+          return (
+            <div key={element} className="rounded-md bg-surface-2 py-1.5">
+              <div className="text-[11px] text-muted">{ELEMENT_LABEL[element]}</div>
+              <div
+                className={cx(
+                  'text-sm font-semibold tabular-nums',
+                  value > 0 && 'text-good',
+                  value < 0 && 'text-bad',
+                )}
+              >
+                {signed(value)}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </section>
   )
 }
 

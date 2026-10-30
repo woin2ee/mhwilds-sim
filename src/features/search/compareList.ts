@@ -9,6 +9,9 @@ import type { CompareItem, CompareTrayItem } from '../compare/compareRows'
 /** 결과 카드에서 고른 대체 방어구(부위별 id)·대체 호석(item.talismans 의 순서) */
 export type ResultVariant = Partial<Record<ArmorKind, number>> & { talismanIndex?: number }
 
+/** 대체 방어구·호석을 고르지 않은 선택 (카드·상세 창이 세팅을 다시 계산하지 않게 같은 객체를 쓴다) */
+export const NO_VARIANT: ResultVariant = {}
+
 /** 비교 목록에 넣은 결과 하나 */
 export interface CompareEntry {
   /** 같은 세팅인지 가리는 키 (buildKey) */
