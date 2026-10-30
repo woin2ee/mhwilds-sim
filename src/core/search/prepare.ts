@@ -1,4 +1,5 @@
-// 검색 준비: 요청 정리, 후보 필터, 동등 클래스 압축, 장식주 채우기 준비, 가지치기 테이블 (DESIGN.md §6.1~6.3, 내성 조건 §6.9)
+// 검색 준비: 요청 정리, 후보 필터, 동등 클래스 압축, 장식주 채우기 준비, 가지치기 테이블
+// (DESIGN.md §6.1~6.3, 내성 조건 §6.9, 내성순 정렬 §6.10)
 import type { GameDb } from '../../data/db'
 import {
   ARMOR_KINDS,
@@ -65,8 +66,8 @@ export interface OptionSwap {
 }
 
 /**
- * 서로 바꿔 껴도 스킬·남는 슬롯이 그대로인 방어구 (스킬·시리즈/그룹 스킬·초월 반영 슬롯이 모두 같다, 내성 조건이 있으면 그 내성도).
- * 결과 하나에 옵션 하나
+ * 서로 바꿔 껴도 스킬·남는 슬롯이 그대로인 방어구 (스킬·시리즈/그룹 스킬·초월 반영 슬롯이 모두 같다, 내성 조건이나 내성순 정렬이
+ * 있으면 그 내성도). 결과 하나에 옵션 하나
  */
 export interface ArmorOption {
   /** 방어력(초월 반영) 내림차순, [0] = 대표 */
@@ -76,12 +77,12 @@ export interface ArmorOption {
   defense: number
   /** 시리즈/그룹 스킬 id (정렬) */
   bonusIds: number[]
-  /** 조건을 건 내성 (Prepared.resistances 순서, §6.9) */
+  /** Prepared.resElements 의 내성 (조건을 건 내성 §6.9, 내성순 정렬 속성 §6.10) */
   res: Int32Array
   swap: OptionSwap | null
 }
 
-/** 잎에서 함께 세는 옵션 묶음: 슬롯·조건을 건 내성이 같은 옵션들, 또는 α 옵션 하나 (§6.5) */
+/** 잎에서 함께 세는 옵션 묶음: 슬롯·내성(res)이 같은 옵션들, 또는 α 옵션 하나 (§6.5) */
 export interface OptionGroup {
   slotCounts: SlotCounts
   res: Int32Array
@@ -110,7 +111,7 @@ export interface ArmorClass {
   unwanted: number[]
   /** 옵션 중 가장 높은 방어력 */
   defense: number
-  /** 조건을 건 내성마다 옵션 중 가장 낮은·높은 값. 내성으로 나눈 클래스는 둘이 같다 (§6.9) */
+  /** Prepared.resElements 의 내성마다 옵션 중 가장 낮은·높은 값. 조건을 건 내성으로 나눈 클래스는 그 내성의 둘이 같다 (§6.9) */
   resMin: Int32Array
   resMax: Int32Array
   /** 임계 레벨 t(1~3)별 가지치기 상한: 해당 스킬 점수 합 + 슬롯 잠재력 */
@@ -151,6 +152,13 @@ export interface Prepared {
   bonuses: BonusRequirement[]
   /** 내성 조건 (§6.9, 속성 순서). 후보 방어구로 늘 채워지는 조건은 뺀다 */
   resistances: ResistanceMin[]
+  /**
+   * 옵션·묶음·클래스의 내성(res·resMin·resMax)이 담는 속성: 내성 조건(resistances 순서) 뒤에, 내성순 정렬(§6.10)의 속성이
+   * 조건에 없으면 그 속성. 옵션은 이 내성이 모두 같은 방어구끼리 묶고, 탐색 클래스는 조건을 건 내성으로만 나눈다
+   */
+  resElements: Element[]
+  /** 내성순 정렬 속성이 resElements 에서 몇 번째인지 (내성순이 아니면 -1) */
+  sortRes: number
   /** 비선호 스킬 (요구 스킬과 겹치면 제외, 정렬) */
   excluded: number[]
   /** 탐색 순서대로의 방어구 부위 (클래스 수가 적은 부위부터) */
@@ -242,14 +250,14 @@ interface StrictOption {
   same: string
 }
 
-/** 스킬·시리즈/그룹 스킬·초월 반영 슬롯·조건을 건 내성이 모두 같은 방어구끼리 옵션으로 묶는다. 슬롯 점수 → 방어력 → 대표 id 순 */
+/** 스킬·시리즈/그룹 스킬·초월 반영 슬롯·resElements 의 내성이 모두 같은 방어구끼리 옵션으로 묶는다. 슬롯 점수 → 방어력 → 대표 id 순 */
 function strictOptions(
   pieces: readonly ArmorPiece[],
   transcend: boolean,
   required: readonly PointRequirement[],
   bonuses: readonly BonusRequirement[],
   excluded: ReadonlySet<number>,
-  resistances: readonly ResistanceMin[],
+  resElements: readonly Element[],
 ): StrictOption[] {
   const byKey = new Map<string, StrictOption>()
   const defenses = new Map<ArmorPiece, number>()
@@ -259,8 +267,8 @@ function strictOptions(
     defenses.set(piece, armorDefense(piece, pieceTranscend).max)
     const levels = levelsOf(piece.skills)
     const bonusIds = [...piece.bonusSkillIds].sort((a, b) => a - b)
-    // 조건을 건 내성이 다르면 바꿔 꼈을 때 조건을 채우는지가 달라진다 (§6.9)
-    const res = Int32Array.from(resistances, (r) => piece.resistances[r.element])
+    // 조건을 건 내성이 다르면 바꿔 꼈을 때 조건을 채우는지가 달라지고(§6.9), 내성순 정렬 속성의 내성이 다르면 순위가 달라진다 (§6.10)
+    const res = Int32Array.from(resElements, (element) => piece.resistances[element])
     const key = `${levelsKey(levels)}|${bonusIds.join(',')}|${slots.join('')}|${res.join(',')}`
     let strict = byKey.get(key)
     if (!strict) {
@@ -362,7 +370,7 @@ function swapOf(
   return { delta, jewels, extra: countSlots(extra), bonusDiff }
 }
 
-/** 잎 DP 묶음: α 가 아닌 옵션은 슬롯·조건을 건 내성이 같은 것끼리, α 옵션은 하나씩 */
+/** 잎 DP 묶음: α 가 아닌 옵션은 슬롯·내성(res)이 같은 것끼리, α 옵션은 하나씩 */
 function optionGroups(options: readonly ArmorOption[]): OptionGroup[] {
   const groups: OptionGroup[] = []
   const bySlots = new Map<string, OptionGroup>()
@@ -566,14 +574,22 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
     if (high < min) return null
     if (low < min) resistances.push({ element, min })
   }
+  // ---- 내성순 정렬 (§6.10): 정렬 속성의 내성도 옵션을 나누는 내성에 넣는다 (조건에 없으면 조건 뒤에) ----
+  const resElements = resistances.map((r) => r.element)
+  let sortRes = -1
+  const sortElement = ELEMENTS.find((element) => element === request.sort)
+  if (sortElement) {
+    sortRes = resElements.indexOf(sortElement)
+    if (sortRes < 0) sortRes = resElements.push(sortElement) - 1
+  }
 
   // ---- 방어구 탐색 클래스 (§6.2) ----
-  // 결과 정렬 기준(engine.ts)과 같은 순서: 슬롯 점수 → 방어력, 방어력순이면 반대
-  const bySlots = request.sort !== 'defense'
+  // 결과 정렬 기준(engine.ts)과 같은 순서: 슬롯 점수 → 방어력, 방어력순이면 반대, 내성순이면 그 내성(클래스에서 가장 높은 값)부터
   const byResultOrder = (a: ArmorClass, b: ArmorClass) => {
     const slots = slotScore(b.slotCounts) - slotScore(a.slotCounts)
     const defense = b.defense - a.defense
-    return bySlots ? slots || defense : defense || slots
+    if (sortRes >= 0) return b.resMax[sortRes] - a.resMax[sortRes] || slots || defense
+    return request.sort === 'defense' ? defense || slots : slots || defense
   }
   // α/β 바꾸기에 쓰는 장식주: 원하는 점수형 스킬마다 그 스킬만 1레벨 주는 방어구 장식주 (가장 작은 것)
   const requiredIndex = new Map(required.map((r, i) => [r.skillId, i]))
@@ -584,9 +600,13 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
     const prev = swapJewel.get(skillId)
     if (requiredIndex.has(skillId) && (!prev || deco.size < prev.size)) swapJewel.set(skillId, deco)
   }
-  /** 부위 하나의 탐색 클래스. splitRes 면 조건을 건 내성이 같은 옵션끼리만 묶는다 (§6.9) */
+  /**
+   * 부위 하나의 탐색 클래스. splitRes 면 조건을 건 내성이 같은 옵션끼리만 묶는다 (§6.9).
+   * 내성순 정렬 속성으로는 나누지 않는다: 나누면 넓은 검색의 잎이 크게 늘어 상한에 걸린다.
+   * 잎의 순위 상한은 장식주가 다 들어가는 조합으로 따로 구한다 (engine 의 bestFitRes, §6.10)
+   */
   const classesOf = (kind: ArmorKind, splitRes: boolean): ArmorClass[] => {
-    const strictList = strictOptions(candidatesOf.get(kind)!, request.transcend, required, bonuses, excluded, resistances)
+    const strictList = strictOptions(candidatesOf.get(kind)!, request.transcend, required, bonuses, excluded, resElements)
     const moves = findSwaps(strictList, required, requiredIndex, swapJewel)
     // 원하는 스킬 점수·시리즈/그룹 소속·비선호(splitRes 면 조건을 건 내성도)가 같고 슬롯이 들어가는 첫 클래스(슬롯 많은 순)에
     // 붙인다. α 는 짝의 클래스로
@@ -595,7 +615,7 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
     const home = new Map<StrictOption, { cls: ArmorClass; index: number }>()
     for (const strict of strictList) {
       if (moves.has(strict)) continue
-      const same = splitRes ? `${strict.same}|${strict.option.res.join(',')}` : strict.same
+      const same = splitRes ? `${strict.same}|${strict.option.res.subarray(0, resistances.length).join(',')}` : strict.same
       let cls = classes.find((c) => sameOf.get(c) === same && coversSlots(c.slots, strict.option.slots))
       if (!cls) {
         cls = {
@@ -607,8 +627,8 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
           slotCounts: strict.option.slotCounts,
           unwanted: strict.unwanted,
           defense: 0,
-          resMin: new Int32Array(resistances.length),
-          resMax: new Int32Array(resistances.length),
+          resMin: new Int32Array(resElements.length),
+          resMax: new Int32Array(resElements.length),
           potential: [0, 0, 0],
         }
         classes.push(cls)
@@ -630,7 +650,7 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
         slotCounts: [0, 0, 0],
         defense: 0,
         bonusIds: [],
-        res: new Int32Array(resistances.length),
+        res: new Int32Array(resElements.length),
         swap: null,
       }
       classes.push({
@@ -642,14 +662,14 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
         slotCounts: [0, 0, 0],
         unwanted: [],
         defense: 0,
-        resMin: new Int32Array(resistances.length),
-        resMax: new Int32Array(resistances.length),
+        resMin: new Int32Array(resElements.length),
+        resMax: new Int32Array(resElements.length),
         potential: [0, 0, 0],
       })
     }
     for (const cls of classes) {
       cls.defense = Math.max(...cls.options.map((o) => o.defense))
-      resistances.forEach((_, j) => {
+      resElements.forEach((_, j) => {
         cls.resMin[j] = Math.min(...cls.options.map((o) => o.res[j]))
         cls.resMax[j] = Math.max(...cls.options.map((o) => o.res[j]))
       })
@@ -659,8 +679,13 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
       })
     }
     // 유망한 클래스부터 탐색 (상한에 걸려 중단돼도 좋은 결과가 먼저 나오도록). 잠재력이 같으면 결과 정렬 기준 순.
-    // 장식주 없이 찾으면 잠재력이 모두 0 이고 리프가 모두 결과라서 정렬 기준 순서만 남는다
-    classes.sort((a, b) => b.potential[0] - a.potential[0] || byResultOrder(a, b))
+    // 장식주 없이 찾으면 잠재력이 모두 0 이고 리프가 모두 결과라서 정렬 기준 순서만 남는다.
+    // 내성순은 정렬 속성 내성이 높은 클래스부터: 잠재력부터 보면 넓은 검색이 중단될 때 내성이 낮은 결과만 남는다 (§6.10)
+    classes.sort((a, b) =>
+      sortRes >= 0
+        ? b.resMax[sortRes] - a.resMax[sortRes] || b.potential[0] - a.potential[0] || byResultOrder(a, b)
+        : b.potential[0] - a.potential[0] || byResultOrder(a, b),
+    )
     return classes
   }
   const classesByKind = new Map(ARMOR_KINDS.map((kind) => [kind, classesOf(kind, true)]))
@@ -783,6 +808,8 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
     required,
     bonuses,
     resistances,
+    resElements,
+    sortRes,
     excluded: [...excluded].sort((a, b) => a - b),
     kinds,
     classes,

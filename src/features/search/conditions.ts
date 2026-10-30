@@ -112,6 +112,9 @@ export const DEFAULT_CONDITIONS: SearchConditions = {
   sort: 'slots',
 }
 
+/** 결과 정렬 저장값으로 읽는 값 (속성이면 그 내성순, DESIGN.md §6.10) */
+const SORTS: readonly string[] = ['slots', 'defense', ...ELEMENTS]
+
 export const RESULT_LIMIT = 200
 /**
  * 조건을 모두 채우는 조합이 없을 때 대신 보여 줄 조합이 모자라도 되는 레벨 합의 상한.
@@ -139,6 +142,8 @@ export function normalizeConditions(stored: Partial<SearchConditions>): SearchCo
   cond.excludedArmor = Array.isArray(cond.excludedArmor) ? cond.excludedArmor.filter(isExcludedArmor) : []
   cond.spareSlots = normalizeSpareSlots(cond.spareSlots)
   cond.minResistances = normalizeMinResistances(cond.minResistances)
+  // 모르는 정렬(다른 버전에서 동기화된 값 등)은 기본값으로
+  if (!SORTS.includes(cond.sort)) cond.sort = DEFAULT_CONDITIONS.sort
   return cond
 }
 

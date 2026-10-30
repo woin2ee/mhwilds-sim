@@ -9,8 +9,11 @@ import type { EquipKey, Slot, TalismanRef, WeaponChoice } from '../types'
  */
 export type ExcludeMode = 'exclude' | 'mark'
 
-/** 결과 정렬 기준. 엔진은 이 기준으로 상위 limit 개를 고른다. */
-export type SearchSort = 'slots' | 'defense'
+/**
+ * 결과 정렬 기준. 엔진은 이 기준으로 상위 limit 개를 고른다.
+ * 속성(fire …)이면 그 속성의 방어구 내성 합(스킬 효과는 빼고, 화면의 내성과 같은 값)이 높은 순 (DESIGN.md §6.10)
+ */
+export type SearchSort = 'slots' | 'defense' | Element
 
 /** 검색에서 고정되는 무기. UI가 resolveWeapon 으로 풀어서 넘긴다. */
 export interface SearchWeapon {

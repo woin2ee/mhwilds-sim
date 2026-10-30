@@ -12,7 +12,7 @@ import type { EquipKey } from '../../core/types'
 import { nameOf, type GameDb } from '../../data/db'
 import { signed, skillName, skillPointsText, talismanName } from '../../data/format'
 import { ARMOR_KIND_LABEL, ELEMENT_LABEL } from '../../data/labels'
-import { ARMOR_KINDS, type ArmorKind, type Skill, type SkillPoint } from '../../data/types'
+import { ARMOR_KINDS, ELEMENTS, type ArmorKind, type Skill, type SkillPoint } from '../../data/types'
 import { cx } from '../../lib/cx'
 import { useAppState } from '../../state/context'
 import { useToast } from '../../state/toast'
@@ -436,6 +436,9 @@ export function ResultCard({
   }
 
   const weapon = summary.equipment.weapon
+  const shownResistances = ELEMENTS.filter(
+    (element) => element === request.sort || request.minResistances.some((r) => r.element === element),
+  )
   return (
     // 비선호 스킬이 든 결과도 카드 자체는 똑같이 두고, 그 스킬 칩·붙은 부위·장식주에만 표시한다. 비교 목록에 넣은 카드는 강조 테두리
     <article
@@ -449,11 +452,11 @@ export function ResultCard({
         <span className="text-sm">
           방어력 <span className="font-semibold tabular-nums">{summary.defense.max}</span>
         </span>
-        {/* 내성 조건을 건 속성의 내성 합 (대체 방어구를 골라도 그대로다) */}
-        {request.minResistances.length > 0 && (
+        {/* 내성 조건을 건 속성·내성순 정렬 속성의 내성 합 (대체 방어구를 골라도 그대로다) */}
+        {shownResistances.length > 0 && (
           <span className="text-xs text-muted">
             내성{' '}
-            {request.minResistances.map(({ element }, i) => (
+            {shownResistances.map((element, i) => (
               <span key={element}>
                 {i > 0 && ' · '}
                 {ELEMENT_LABEL[element]}{' '}

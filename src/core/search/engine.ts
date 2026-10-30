@@ -95,6 +95,8 @@ interface LeafState {
   ways: number
   /** 가장 높은 방어력 (무기 포함) */
   defense: number
+  /** 가장 높은 내성순 정렬 속성 내성 (내성순이 아니면 0, §6.10) */
+  res: number
   from: { prev: LeafState; group: OptionGroup }[]
 }
 
@@ -102,12 +104,15 @@ interface LeafState {
 interface CountStep {
   slots: SlotCounts
   count: number
+  /** 그중 가장 높은 정렬 속성 내성 (내성순이 아니면 0, bestFitRes) */
+  res: number
 }
 
 /** 상위 결과 후보로 펼칠 때 같이 넘기는 값 */
 interface Candidate {
   score: number
-  tertiary: number
+  /** 비선호 스킬이 없으면 1 (순위 키의 마지막) */
+  clean: number
   armorFill: FillResult
   weaponFill: FillResult
   /** α 를 모두 짝으로 바꾼 결과와 장식주·남는 슬롯이 같다 (시리즈/그룹 발동이 같으면 그 결과의 대체 후보) */
@@ -152,7 +157,8 @@ class Searcher {
   private readonly hooks: EngineHooks
   private readonly limits: SearchLimits
   private readonly started: number
-  private readonly bySlots: boolean
+  /** 결과 정렬 기준 (accepts). 속성으로 정렬하면 내성순 (§6.10) */
+  private readonly order: 'slots' | 'defense' | 'resistance'
   /** 방어구 슬롯을 쓰는 채우기 (both 풀이 있으면 무기 슬롯도 함께) */
   private readonly armorFillers: Fillers
   /** 엄격 검색이고 방어구 장식주가 스킬마다 1레벨 하나뿐이면: 부족분만으로 채우기가 정해진다 (§6.4) */
@@ -183,6 +189,10 @@ class Searcher {
   private weaponResult: FillResult | null = null
   /** countFits 상태 배열 (다시 쓴다, 쓴 칸은 비워 둔다) */
   private countBuffers: [Float64Array, Float64Array] = [new Float64Array(0), new Float64Array(0)]
+  /** bestFitRes 상태 배열 (다시 쓴다, 쓴 칸은 -Infinity 로 비워 둔다) */
+  private resBuffers: [Float64Array, Float64Array] = [new Float64Array(0), new Float64Array(0)]
+  /** accepts 가 순위 키를 넣어 묻는 데 다시 쓰는 키 (결과마다 불려서 새로 만들지 않는다, 힙에는 넣지 않는다) */
+  private readonly probe: Ranked = { primary: 0, secondary: 0, tertiary: 0, quaternary: 0, seq: 0 }
   private readonly stepCache = new WeakMap<ArmorClass, Map<number | string, CountStep[]>>()
 
   /** 모자란 조합 찾기인지 (bound 의 처음 값이 0 보다 큼) */
@@ -211,7 +221,7 @@ class Searcher {
     this.hooks = hooks
     this.limits = { ...DEFAULT_LIMITS, ...hooks.limits }
     this.started = started
-    this.bySlots = request.sort !== 'defense'
+    this.order = prepared.sortRes >= 0 ? 'resistance' : request.sort === 'defense' ? 'defense' : 'slots'
     this.armorFillers = prepared.jointFill ?? prepared.armorFill
     this.relaxed = maxShortfall > 0
     this.bound = maxShortfall
@@ -295,7 +305,8 @@ class Searcher {
     const { pts, bonus, resMax, slotCounts } = cls
     for (let i = 0; i < pts.length; i++) this.points[i] += sign * pts[i]
     for (let j = 0; j < bonus.length; j++) this.bonusPieces[j] += sign * bonus[j]
-    for (let j = 0; j < resMax.length; j++) this.resSum[j] += sign * resMax[j]
+    // 조건을 건 내성만 (내성순 정렬 속성은 그 뒤에 있다)
+    for (let j = 0; j < this.resSum.length; j++) this.resSum[j] += sign * resMax[j]
     for (let level = 0; level < 3; level++) this.armorSlots[level] += sign * slotCounts[level]
   }
 
@@ -449,11 +460,15 @@ class Searcher {
     }
     if (this.simple) {
       // 장식주가 부족분으로 정해진다: 개수는 넣을 수 있는지만 보면 되고(§6.5), 상위 결과에 들 수 있을 때만 옵션 조합을 펼친다.
-      // 대표 옵션들(슬롯이 가장 많음)의 남는 슬롯·가장 높은 방어력이 이 잎의 상한이다
+      // 대표 옵션들(슬롯이 가장 많음)의 남는 슬롯·가장 높은 방어력·장식주가 다 들어가는 조합의 가장 높은 정렬 속성 내성이
+      // 이 잎의 상한이다
       const deficits = this.deficits(this.points, this.armorFillers, null)
       this.total += this.countSimple(deficits)
-      const tertiary = unwanted ? 0 : 1
-      if (this.accepts(owner.score + weaponFill.score, maxDefense, tertiary)) this.expand(baseShort, weaponFill, unwanted)
+      const simple = this.simple
+      const maxRes = this.p.sortRes >= 0 ? this.bestFitRes(simple.withSpare(simple.sizes(deficits))) : 0
+      if (this.accepts(owner.score + weaponFill.score, maxDefense, maxRes, unwanted ? 0 : 1)) {
+        this.expand(baseShort, weaponFill, unwanted)
+      }
       return
     }
     this.expand(baseShort, weaponFill, unwanted)
@@ -552,6 +567,55 @@ class Searcher {
   }
 
   /**
+   * 내성순 (§6.10): 크기별 장식주 n(여유분 포함)이 다 들어가는 옵션 조합 중 가장 높은 정렬 속성 내성 (없으면 -Infinity).
+   * countFits 와 같은 상태마다 가장 높은 내성을 남긴다. 클래스마다 가장 높은 내성의 합은 그 방어구의 슬롯이 모자라 못 이룰 때가
+   * 많아서, 이 값을 잎의 순위 상한으로 써야 펼칠 잎이 준다. α 옵션은 보지 않는다: α 조합이 들어가면 짝으로 바꾼 조합도
+   * 들어가고(짝에만 있는 슬롯에 바꿀 때 빼는 장식주가 들어간다) 내성이 같다
+   */
+  private bestFitRes(n: SizeCounts): number {
+    const { kinds, talismans } = this.p
+    const t3 = n[2]
+    const t23 = n[1] + n[2]
+    const t123 = n[0] + n[1] + n[2]
+    const s1 = t3 + 1
+    const s2 = s1 * (t23 + 1)
+    const size = s2 * (t123 + 1)
+    if (this.resBuffers[0].length < size) {
+      this.resBuffers = [new Float64Array(size).fill(-Infinity), new Float64Array(size).fill(-Infinity)]
+    }
+    let [cur, next] = this.resBuffers
+    const t = talismans[this.talismanIndex].armorSlots
+    let live = [Math.min(t[2], t3) + s1 * Math.min(t[1] + t[2], t23) + s2 * Math.min(t[0] + t[1] + t[2], t123)]
+    cur[live[0]] = 0
+    for (let d = 0; d < kinds.length; d++) {
+      const steps = this.countSteps(d, -1)
+      const nextLive: number[] = []
+      for (const at of live) {
+        const res = cur[at]
+        cur[at] = -Infinity
+        const a3 = at % s1
+        const a23 = Math.floor(at / s1) % (t23 + 1)
+        const a123 = Math.floor(at / s2)
+        for (const step of steps) {
+          const g = step.slots
+          const to =
+            Math.min(a3 + g[2], t3) + s1 * Math.min(a23 + g[1] + g[2], t23) + s2 * Math.min(a123 + g[0] + g[1] + g[2], t123)
+          if (next[to] === -Infinity) nextLive.push(to)
+          if (res + step.res > next[to]) next[to] = res + step.res
+        }
+      }
+      ;[cur, next] = [next, cur]
+      live = nextLive
+    }
+    let best = -Infinity
+    for (const at of live) {
+      if (at === size - 1) best = cur[at]
+      cur[at] = -Infinity
+    }
+    return best
+  }
+
+  /**
    * countFits 의 깊이 d 선택지: option ≥ 0 이면 그 α 옵션 하나, 아니면 α 가 아닌 옵션을 슬롯이 같은 것끼리 (내성으로 나뉜 묶음도 합친다).
    * 마지막 부위를 내성으로 거르는 잎이면 거른 묶음으로 (거르는 값마다 따로 둔다)
    */
@@ -570,9 +634,14 @@ class Searcher {
       for (const g of filtered ? this.groupsAt(d) : cls.groups) {
         if (option >= 0 ? g.swap === null || g.options[0] !== option : g.swap !== null) continue
         const slotsKey = g.slotCounts.join(',')
+        const res = this.sortResOf(g.res)
         const step = bySlots.get(slotsKey)
-        if (step) step.count += g.options.length
-        else bySlots.set(slotsKey, { slots: g.slotCounts, count: g.options.length })
+        if (step) {
+          step.count += g.options.length
+          step.res = Math.max(step.res, res)
+        } else {
+          bySlots.set(slotsKey, { slots: g.slotCounts, count: g.options.length, res })
+        }
       }
       steps = [...bySlots.values()]
       cache.set(key, steps)
@@ -609,7 +678,8 @@ class Searcher {
     }
     let groups = cache.get(this.lastKey)
     if (!groups) {
-      groups = cls.groups.filter((g) => g.res.every((value, j) => value >= this.lastNeed[j]))
+      // 묶음의 내성 뒤쪽에 붙은 내성순 정렬 속성은 거르지 않는다
+      groups = cls.groups.filter((g) => this.lastNeed.every((need, j) => g.res[j] >= need))
       cache.set(this.lastKey, groups)
     }
     return groups
@@ -648,17 +718,46 @@ class Searcher {
       // 짝(β)으로 모두 바꾼 결과와 장식주·남는 슬롯이 같으면 시리즈/그룹 발동만 결과마다 보면 된다 (§6.2.1)
       const covered = state.alphas.length > 0 && this.fillCovered(this.points, state, fill)
       if (!this.simple && !covered) this.total += state.ways
-      const tertiary = unwanted || fill.unwanted.length > 0 ? 0 : 1
+      const clean = unwanted || fill.unwanted.length > 0 ? 0 : 1
       const score = fill.score + weaponFill.score
-      if (!this.accepts(score, state.defense, tertiary)) continue
-      this.enumerate(state, { score, tertiary, armorFill: fill, weaponFill, covered })
+      if (!this.accepts(score, state.defense, state.res, clean)) continue
+      this.enumerate(state, { score, clean, armorFill: fill, weaponFill, covered })
     }
   }
 
-  private accepts(score: number, defense: number, tertiary: number): boolean {
-    return this.bySlots
-      ? this.results.accepts(score, defense, tertiary, this.seq)
-      : this.results.accepts(defense, score, tertiary, this.seq)
+  /**
+   * 이 값(상한이어도 된다)의 결과가 상위 결과에 들 수 있는지. 정렬 기준대로의 순위 키(클수록 앞, §6.5)를 probe 에 넣어 묻는다:
+   * 남는 슬롯순 = 남는 슬롯 점수 → 방어력, 방어력순 = 방어력 → 남는 슬롯 점수, 내성순 = 정렬 속성 내성 → 남는 슬롯 점수 → 방어력
+   * (§6.10). 모두 같으면 비선호 스킬이 없는 쪽(clean = 1), 먼저 찾은 쪽. 결과를 넣을 때는 probe 의 키를 그대로 쓴다
+   */
+  private accepts(score: number, defense: number, res: number, clean: number): boolean {
+    const probe = this.probe
+    switch (this.order) {
+      case 'slots':
+        probe.primary = score
+        probe.secondary = defense
+        probe.tertiary = clean
+        probe.quaternary = 0
+        break
+      case 'defense':
+        probe.primary = defense
+        probe.secondary = score
+        probe.tertiary = clean
+        probe.quaternary = 0
+        break
+      case 'resistance':
+        probe.primary = res
+        probe.secondary = score
+        probe.tertiary = defense
+        probe.quaternary = clean
+    }
+    probe.seq = this.seq
+    return this.results.accepts(probe)
+  }
+
+  /** 내성순 정렬 속성의 내성 (res 는 resElements 순서, 내성순이 아니면 0) */
+  private sortResOf(res: Int32Array): number {
+    return this.p.sortRes < 0 ? 0 : res[this.p.sortRes]
   }
 
   /** α 옵션들이 더 주는 점수 합 */
@@ -681,7 +780,19 @@ class Searcher {
       alphas: [],
       ways: talisman.options.length,
       defense: weapon.defense,
+      res: 0,
       from: [],
+    }
+    // 내성순 (§6.10): 상위 결과가 다 찼으면, 뒤 부위에 내성이 가장 높은 묶음을 껴도 마지막 결과의 내성보다 낮은 묶음은 넣지 않는다.
+    // 장식주가 하나뿐일 때만: 개수는 따로 세서(countSimple) 상태에는 순위에 들 수 있는 조합만 있으면 된다
+    const floor = this.simple && this.p.sortRes >= 0 ? (this.results.last()?.primary ?? -Infinity) : -Infinity
+    /** [d] = 깊이 d 부터 부위마다 가장 높은 묶음 내성의 합 (자를 때만) */
+    let restRes: Float64Array | null = null
+    if (floor > -Infinity) {
+      restRes = new Float64Array(kinds.length + 1)
+      for (let d = kinds.length - 1; d >= 0; d--) {
+        restRes[d] = restRes[d + 1] + Math.max(...this.groupsAt(d).map((g) => this.sortResOf(g.res)))
+      }
     }
     let layer = [start]
     for (let d = 0; d < kinds.length; d++) {
@@ -689,16 +800,18 @@ class Searcher {
       const next = new Map<string, LeafState>()
       for (const state of layer) {
         for (const group of groups) {
+          if (restRes && state.res + this.sortResOf(group.res) + restRes[d + 1] < floor) continue
           const counts = addCounts(state.counts, group.slotCounts)
           const alphas = group.swap ? [...state.alphas, { depth: d, option: group.options[0] }] : state.alphas
           const key = `${counts[0]},${counts[1]},${counts[2]}|${alphas.map((a) => `${a.depth}:${a.option}`).join(',')}`
           let target = next.get(key)
           if (!target) {
-            target = { counts, alphas, ways: 0, defense: -1, from: [] }
+            target = { counts, alphas, ways: 0, defense: -1, res: -Infinity, from: [] }
             next.set(key, target)
           }
           target.ways += state.ways * group.options.length
           target.defense = Math.max(target.defense, state.defense + group.defense)
+          target.res = Math.max(target.res, state.res + this.sortResOf(group.res))
           target.from.push({ prev: state, group })
         }
       }
@@ -746,23 +859,30 @@ class Searcher {
   private enumerate(final: LeafState, candidate: Candidate): void {
     const { kinds } = this.p
     const path: OptionGroup[] = new Array(kinds.length)
-    // 뒤 부위부터 거슬러 올라가며 묶음 조합을 고른다. suffix = 이미 고른 뒤 부위의 최고 방어력 합
-    const walk = (state: LeafState, depth: number, suffix: number) => {
+    // 뒤 부위부터 거슬러 올라가며 묶음 조합을 고른다. suffix = 이미 고른 뒤 부위의 최고 방어력 합, suffixRes = 그 정렬 속성 내성 합
+    const walk = (state: LeafState, depth: number, suffix: number, suffixRes: number) => {
       if (this.stopped) return
       if (depth < 0) {
-        this.pushOptions(path, final.alphas, candidate)
+        this.pushOptions(path, final.alphas, candidate, suffixRes)
         return
       }
       for (const { prev, group } of state.from) {
-        if (!this.accepts(candidate.score, prev.defense + group.defense + suffix, candidate.tertiary)) continue
+        const res = suffixRes + this.sortResOf(group.res)
+        if (!this.accepts(candidate.score, prev.defense + group.defense + suffix, prev.res + res, candidate.clean)) continue
         path[depth] = group
-        walk(prev, depth - 1, suffix + group.defense)
+        walk(prev, depth - 1, suffix + group.defense, res)
       }
     }
-    walk(final, kinds.length - 1, 0)
+    walk(final, kinds.length - 1, 0, 0)
   }
 
-  private pushOptions(path: readonly OptionGroup[], alphas: readonly AlphaPick[], candidate: Candidate): void {
+  /** 묶음 조합(path)의 옵션 조합을 넣는다. res = 이 조합의 정렬 속성 내성 (묶음 안 옵션은 내성이 같다) */
+  private pushOptions(
+    path: readonly OptionGroup[],
+    alphas: readonly AlphaPick[],
+    candidate: Candidate,
+    res: number,
+  ): void {
     const { kinds, classes, talismans, weapon } = this.p
     const talisman = talismans[this.talismanIndex]
     const picks = new Int32Array(kinds.length)
@@ -795,12 +915,14 @@ class Searcher {
       if (candidate.covered && !mayDiffer(d)) return
       if (d === kinds.length) {
         for (let t = 0; t < talisman.options.length; t++) {
-          if (!this.accepts(candidate.score, defense, candidate.tertiary)) return
-          const bySlots = this.bySlots
+          if (!this.accepts(candidate.score, defense, res, candidate.clean)) return
+          // accepts 가 probe 에 넣어 둔 이 결과의 순위 키
+          const { primary, secondary, tertiary, quaternary } = this.probe
           this.results.push({
-            primary: bySlots ? candidate.score : defense,
-            secondary: bySlots ? defense : candidate.score,
-            tertiary: candidate.tertiary,
+            primary,
+            secondary,
+            tertiary,
+            quaternary,
             seq: this.seq++,
             talisman: this.talismanIndex,
             talismanOption: t,
@@ -816,7 +938,7 @@ class Searcher {
       for (const index of path[d].options) {
         const next = defense + options[index].defense
         // 옵션이 방어력 높은 순이라 여기서 안 되면 뒤 옵션도 안 된다
-        if (!this.accepts(candidate.score, next + rest[d + 1], candidate.tertiary)) break
+        if (!this.accepts(candidate.score, next + rest[d + 1], res, candidate.clean)) break
         picks[d] = index
         ids.forEach((id, k) => (pieces[k] += countOf(options[index].bonusIds, id)))
         pick(d + 1, next)

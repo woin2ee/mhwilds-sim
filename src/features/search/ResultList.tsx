@@ -4,16 +4,22 @@ import { Button, EmptyState, Segmented } from '../../components/ui'
 import { hr100ArmorIds } from '../../core/hunterRank'
 import type { SearchRequest, SearchResponse, SearchResultItem, SearchSort } from '../../core/search/types'
 import { nameOf, type GameDb } from '../../data/db'
+import { ELEMENT_LABEL } from '../../data/labels'
+import { ELEMENTS } from '../../data/types'
 import { useDb } from '../../state/context'
 import { useToast } from '../../state/toast'
 import { chipLevel, formatCount, shortfallLabel } from './format'
 import { ResultCard, type CompareControl, type ExcludeControl } from './ResultCard'
 
 const PAGE_SIZE = 30
-const SORT_OPTIONS: { value: SearchSort; label: string }[] = [
+/** 정렬 버튼. 내성은 옆에서 속성을 하나 더 고른다 (요청의 정렬 값은 그 속성) */
+type SortChoice = 'slots' | 'defense' | 'resistance'
+const SORT_OPTIONS: { value: SortChoice; label: string }[] = [
   { value: 'slots', label: '남는 슬롯' },
   { value: 'defense', label: '방어력' },
+  { value: 'resistance', label: '내성' },
 ]
+const ELEMENT_OPTIONS = ELEMENTS.map((element) => ({ value: element, label: ELEMENT_LABEL[element] }))
 
 function formatElapsed(ms: number): string {
   return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}초`
@@ -194,6 +200,14 @@ export function ResultList({
   const hasWeaponSkill = request.required.some((r) => db.skills.get(r.skillId)?.kind === 'weapon')
   // 탐색 상한에 걸리면 전체 개수는 '최소' 개수다
   const atLeast = response.truncated ? ' 이상' : ''
+  // 내성순이면 그 속성
+  const sortElement = ELEMENTS.find((element) => element === request.sort)
+  const sortChoice: SortChoice = sortElement ? 'resistance' : request.sort === 'defense' ? 'defense' : 'slots'
+  const changeSort = (choice: SortChoice) => {
+    if (choice !== 'resistance') onSortChange(choice)
+    // 내성순으로 바꾸면 내성 조건을 건 첫 속성부터 (없으면 화)
+    else if (!sortElement) onSortChange(request.minResistances[0]?.element ?? 'fire')
+  }
 
   if (items.length === 0) {
     return (
@@ -226,7 +240,18 @@ export function ResultList({
             {formatElapsed(response.elapsedMs)}
           </span>
         </div>
-        <Segmented size="sm" value={request.sort} options={SORT_OPTIONS} onChange={onSortChange} />
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Segmented size="sm" ariaLabel="정렬" value={sortChoice} options={SORT_OPTIONS} onChange={changeSort} />
+          {sortElement && (
+            <Segmented
+              size="sm"
+              ariaLabel="정렬할 내성의 속성"
+              value={sortElement}
+              options={ELEMENT_OPTIONS}
+              onChange={onSortChange}
+            />
+          )}
+        </div>
       </div>
 
       {hidden.size > 0 && (

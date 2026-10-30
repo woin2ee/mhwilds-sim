@@ -716,6 +716,98 @@ describe('runSearch', () => {
     })
   })
 
+  describe('내성순 정렬', () => {
+    const hunger = req(['쇄인룡의 굶주림', 2], ['약점 특효', 5], ['도전자', 5])
+    /** 결과의 순위 키: 정렬 속성 내성(대표 조합) → 남는 슬롯 점수 → 방어력 → 비선호 스킬이 없으면 1 */
+    const rankOf = (r: SearchRequest, item: SearchResultItem) => [
+      computeBuild(db, resultToBuild(db, item, r)).resistances[r.sort as Element],
+      slotScore(item.freeSlots),
+      item.defense,
+      item.unwantedSkills.length > 0 ? 0 : 1,
+    ]
+    const byRank = (a: number[], b: number[]) => b[0] - a[0] || b[1] - a[1] || b[2] - a[2] || b[3] - a[3]
+
+    /**
+     * 결과를 모두 찾으면 순위 키 순이고 펼친 조합이 남는 슬롯순과 같은지, 상위 limit 개만 찾아도 그 앞쪽과 같은지,
+     * 대체 후보·α/β 를 골라도 정렬 속성 내성이 그대로인지. all = 모두 찾은 응답, top = 상위 20개만 찾은 응답
+     */
+    function checkSorted(r: SearchRequest): { all: SearchResponse; top: SearchResponse } {
+      const all = runSearch(db, { ...r, limit: 100_000 })
+      expect(all.truncated).toBe(false)
+      expect(all.items).toHaveLength(all.total)
+      const bySlots = runSearch(db, { ...r, sort: 'slots', limit: 100_000 })
+      expect(all.shortfall).toBe(bySlots.shortfall)
+      expect(physical(all.items).sort()).toEqual(physical(bySlots.items).sort())
+      const ranks = all.items.map((item) => rankOf(r, item))
+      expect(ranks).toEqual([...ranks].sort(byRank))
+      expect(new Set(ranks.map((rank) => rank[0])).size).toBeGreaterThan(2)
+      // 잎마다 장식주가 다 들어가는 조합의 가장 높은 내성으로 자르고 펼친 상위 결과가 모두 찾아 정렬한 앞쪽과 같다
+      const limited = { ...r, limit: 20 }
+      const top = runSearch(db, limited)
+      expect(top.items.map((item) => rankOf(r, item))).toEqual(ranks.slice(0, 20))
+      // 잎마다 센 개수에는 시리즈/그룹 발동이 달라 따로 보이는 α 결과가 빠진다 (§6.5, 남는 슬롯순도 같다)
+      expect(top.total).toBeLessThanOrEqual(all.total)
+      verify(limited, top)
+      const element = r.sort as Element
+      const resistanceOf = (item: SearchResultItem, variant: Parameters<typeof resultToBuild>[3]) =>
+        computeBuild(db, resultToBuild(db, item, r, variant)).resistances[element]
+      const changed = all.items.filter((item) => {
+        const shown = resistanceOf(item, {})
+        const variants = [
+          ...ARMOR_KINDS.flatMap((kind) => item.armor[kind].slice(1).map((id) => ({ [kind]: id }))),
+          ...item.swapSets,
+        ]
+        return variants.some((variant) => resistanceOf(item, variant) !== shown)
+      })
+      expect(changed.map((item) => item.id)).toEqual([])
+      return { all, top }
+    }
+
+    it('정렬 속성 내성 → 남는 슬롯 → 방어력 순으로 상위 limit 개를 찾는다', () => {
+      for (const sort of ['fire', 'dragon'] as const) {
+        const { all, top } = checkSorted(request({ required: hunger, sort }))
+        // 따로 보이는 α 결과가 없는 조건이라 잎마다 센 개수가 정확하다
+        expect(top.total).toBe(all.total)
+      }
+    })
+
+    it('정렬 속성 내성이 다른 방어구는 같은 옵션(대체 후보)으로 묶지 않는다', () => {
+      // 하위 랭크 가쟈우부츠·필라길그리브는 스킬·시리즈/그룹 스킬·슬롯이 같고 내성이 다르다 (수 5 / 4)
+      const ids = ['가쟈우부츠', '필라길그리브'].map((name) => armorByName(db, name).id).sort((a, b) => a - b)
+      const optionsOf = (r: SearchRequest) =>
+        prepare(db, r)!
+          .classes.flat()
+          .flatMap((cls) => cls.options)
+          .map((option) => option.members.map((m) => m.id).filter((id) => ids.includes(id)))
+          .filter((members) => members.length > 0)
+          .sort((a, b) => a[0] - b[0])
+      const r = request({ required: req(['물 내성', 1]), includeLowRank: true })
+      expect(optionsOf(r)).toEqual([ids])
+      expect(optionsOf({ ...r, sort: 'water' })).toEqual(ids.map((id) => [id]))
+      // 이렇게 나뉜 방어구가 든 결과: 장식주 없이 하위 랭크 포함
+      const required = req(['약점 특효', 5], ['도전자', 5], ['연격', 3])
+      const { all } = checkSorted(request({ required, useDecorations: false, includeLowRank: true, sort: 'ice' }))
+      expect(all.total).toBeGreaterThan(runSearch(db, request({ required, useDecorations: false, includeLowRank: true })).total)
+    })
+
+    it('비선호 스킬(표시만)도 같은 기준으로 섞고, 기준이 모두 같으면 비선호 스킬이 없는 쪽이 앞', () => {
+      const { all } = checkSorted(request({ required: hunger, excludedSkills: [sid('체술')], sort: 'water' }))
+      expect(all.items.some((item) => item.unwantedSkills.length > 0)).toBe(true)
+    })
+
+    it('내성 조건과 함께: 조건을 건 속성으로도, 다른 속성으로도 정렬한다', () => {
+      // 다른 속성으로 정렬하면 그 내성이 조건 뒤에 붙는다 (마지막 부위 옵션 묶음은 조건을 건 내성으로만 거른다)
+      for (const sort of ['fire', 'water'] as const) {
+        checkSorted(request({ required: hunger, minResistances: [{ element: 'fire', min: 8 }], sort }))
+      }
+    })
+
+    it('모자란 조합 찾기도 정렬 속성 내성 순으로', () => {
+      const required = req(['약점 특효', 5], ['도전자', 5], ['연격', 5], ['힘의 해방', 5], ['회피 성능', 5], ['회피 거리 UP', 3], ['체술', 3])
+      expect(checkSorted(request({ required, maxShortfall: 99, sort: 'thunder' })).all.shortfall).toBe(7)
+    })
+  })
+
   it('제외한 방어구와 하위 랭크 방어구는 후보에 없다', () => {
     const excludedPiece = armorByName(db, '슈바르카그리브γ')
     const r = request({ required: req(['약점 특효', 4]), excludedArmorIds: [excludedPiece.id], limit: 100 })

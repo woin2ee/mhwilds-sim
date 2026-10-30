@@ -121,6 +121,14 @@ const CASES: [string, Partial<SearchRequest>][] = [
     '내성 5속성≥0: 장식주 없이 약특5 도전5',
     { required: req(['약점 특효', 5], ['도전자', 5]), useDecorations: false, minResistances: ELEMENTS.map((element) => ({ element, min: 0 })) },
   ],
+  // 내성순 정렬 (§6.10): 정렬 속성 내성 → 남는 슬롯 → 방어력
+  ['내성순 화: 약특5 도전5 연격3', { required: req(['약점 특효', 5], ['도전자', 5], ['연격', 3]), sort: 'fire' }],
+  ['내성순 용: 약특5 도전5 연격3 (초월)', { required: req(['약점 특효', 5], ['도전자', 5], ['연격', 3]), transcend: true, sort: 'dragon' }],
+  ['내성순 용: 약특1 (하위 랭크 포함)', { required: req(['약점 특효', 1]), includeLowRank: true, sort: 'dragon' }],
+  [
+    '내성순 수 + 내성 화≥0: 약특5 도전5 연격3',
+    { required: req(['약점 특효', 5], ['도전자', 5], ['연격', 3]), minResistances: atLeast(['fire', 0]), sort: 'water' },
+  ],
   // 조건을 채우는 조합이 없어 가장 적게 모자란 조합을 찾는 경우 (결과 칸의 −N = 모자란 레벨 합)
   [
     '모자란 조합: 7스킬 최대',
@@ -157,6 +165,14 @@ const CASES: [string, Partial<SearchRequest>][] = [
       required: req(['약점 특효', 5], ['도전자', 5], ['연격', 5], ['힘의 해방', 5], ['회피 성능', 5], ['회피 거리 UP', 3], ['체술', 3]),
       spareSlots: spare(3, 3),
       maxShortfall: 99,
+    },
+  ],
+  [
+    '모자란 조합: 내성순 뇌 + 7스킬 최대',
+    {
+      required: req(['약점 특효', 5], ['도전자', 5], ['연격', 5], ['힘의 해방', 5], ['회피 성능', 5], ['회피 거리 UP', 3], ['체술', 3]),
+      maxShortfall: 99,
+      sort: 'thunder',
     },
   ],
 ]

@@ -1,14 +1,21 @@
-/** 정렬 키: primary → secondary → tertiary 가 클수록, 같으면 먼저 찾은(seq 작은) 쪽이 앞 */
+/** 정렬 키: primary → secondary → tertiary → quaternary 가 클수록, 같으면 먼저 찾은(seq 작은) 쪽이 앞 */
 export interface Ranked {
   primary: number
   secondary: number
   tertiary: number
+  quaternary: number
   seq: number
 }
 
 /** a 가 b 보다 앞이면 양수 */
 export function compareRanked(a: Ranked, b: Ranked): number {
-  return a.primary - b.primary || a.secondary - b.secondary || a.tertiary - b.tertiary || b.seq - a.seq
+  return (
+    a.primary - b.primary ||
+    a.secondary - b.secondary ||
+    a.tertiary - b.tertiary ||
+    a.quaternary - b.quaternary ||
+    b.seq - a.seq
+  )
 }
 
 /** 상위 capacity 개만 유지하는 최소 힙 (heap[0] = 현재 가장 뒤쪽 항목) */
@@ -21,10 +28,15 @@ export class TopK<T extends Ranked> {
   }
 
   /** 이 키가 들어갈 수 있는지 (항목을 만들기 전에 확인용) */
-  accepts(primary: number, secondary: number, tertiary: number, seq: number): boolean {
+  accepts(key: Ranked): boolean {
     if (this.heap.length < this.capacity) return true
     if (this.capacity === 0) return false
-    return compareRanked({ primary, secondary, tertiary, seq }, this.heap[0]) > 0
+    return compareRanked(key, this.heap[0]) > 0
+  }
+
+  /** 가득 찼으면 지금 가장 뒤쪽 항목 (이보다 앞이어야 들어간다), 아니면 null */
+  last(): T | null {
+    return this.capacity > 0 && this.heap.length >= this.capacity ? this.heap[0] : null
   }
 
   push(entry: T): void {

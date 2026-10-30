@@ -124,6 +124,16 @@ describe('검색 조건 → SearchRequest', () => {
     expect(requestKey(buildRequest(db, withResistance, []))).not.toBe(requestKey(buildRequest(db, cond({}), [])))
   })
 
+  it('정렬 저장값: 속성이면 그 내성순으로 요청에 넘기고, 모르는 값은 남는 슬롯순으로 읽는다', () => {
+    expect(normalizeConditions({ required: [], excluded: [], sort: 'dragon' }).sort).toBe('dragon')
+    const stored = { required: [], excluded: [], sort: 'light' } as unknown as Partial<SearchConditions>
+    expect(normalizeConditions(stored).sort).toBe('slots')
+    const request = buildRequest(db, cond({ sort: 'fire' }), [])
+    expect(request.sort).toBe('fire')
+    // 정렬만 바꾸면 조건이 바뀐 것으로 보지 않는다 (결과를 그 정렬로 다시 찾을 뿐)
+    expect(requestKey(request)).toBe(requestKey({ ...request, sort: 'slots' }))
+  })
+
   it('HR 100 장비 제외는 그 방어구 id 를 excludedArmorIds 로 넘기고, 바꾸면 요청 키가 달라진다', () => {
     const off = buildRequest(db, cond({}), [])
     const on = buildRequest(db, cond({ excludeHr100: true }), [])
