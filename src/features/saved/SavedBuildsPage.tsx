@@ -117,8 +117,8 @@ export function SavedBuildsPage() {
         }
       >
         <p className="text-sm leading-relaxed text-muted">
-          세팅은 이 브라우저에만 저장돼요. 브라우저 데이터를 지우거나 기기를 바꾸면 사라지니, 가끔 <BackupTabLink /> 탭에서
-          내 호석과 함께 내보내 두세요.
+          세팅은 이 브라우저에 저장돼요. 다른 기기에서도 쓰려면 <BackupTabLink /> 탭에서 Google 드라이브 동기화를 켜거나,
+          가끔 내 호석과 함께 내보내 두세요.
         </p>
         {savedBuilds.length > 0 && (
           <input
