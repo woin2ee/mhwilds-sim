@@ -33,6 +33,15 @@ export const ELEMENT_LABEL: Record<Element, string> = {
   dragon: '용',
 }
 
+/** 게임 화면의 내성 이름 (같은 이름의 내성 스킬과 같다: 불 내성 = 火耐性). 공유 이미지에서 세로로 늘어놓는다 */
+export const RESISTANCE_LABEL: Record<Element, string> = {
+  fire: '불 내성',
+  water: '물 내성',
+  thunder: '번개 내성',
+  ice: '얼음 내성',
+  dragon: '용 내성',
+}
+
 export const SPECIAL_LABEL: Record<string, string> = {
   ...ELEMENT_LABEL,
   poison: '독',

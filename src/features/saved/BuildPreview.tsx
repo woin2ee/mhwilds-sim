@@ -2,10 +2,13 @@ import { Fragment, useMemo } from 'react'
 import { SkillChip } from '../../components/SkillChip'
 import { SlotList } from '../../components/SlotBadge'
 import { computeBuild } from '../../core/calc'
+import type { ResolvedEquipment } from '../../core/equipment'
 import type { BuildState } from '../../core/types'
-import { bonusPieces, skillName } from '../../data/format'
+import type { GameDb } from '../../data/db'
+import { bonusPieces, skillName, skillPointsText } from '../../data/format'
 import { ARMOR_KIND_LABEL, WEAPON_KIND_LABEL } from '../../data/labels'
 import { ARMOR_KINDS } from '../../data/types'
+import { cx } from '../../lib/cx'
 import { useAppState } from '../../state/context'
 
 /** 세팅 요약: 장비 이름, 발동 스킬, 방어력, 남은 슬롯 */
@@ -13,8 +16,13 @@ export function BuildPreview({ build, maxSkills }: { build: BuildState; maxSkill
   const { db, customTalismans } = useAppState()
   const summary = useMemo(() => computeBuild(db, build, customTalismans), [db, build, customTalismans])
   const weapon = build.weapon?.type === 'db' ? db.weapons.get(build.weapon.id) : undefined
-  const rows: [label: string, name: string | undefined, note?: string][] = [
-    ['무기', summary.equipment.weapon && (weapon ? `${WEAPON_KIND_LABEL[weapon.kind]} · ` : '') + summary.equipment.weapon.name],
+  const equipped = summary.equipment.weapon
+  // 직접 입력 무기는 이름('설정 안 함')만 보이면 무기 스킬을 안 넣은 무기로 읽혀서, 넣은 스킬·슬롯을 대신 보인다.
+  // 아무것도 넣지 않았을 때만 흐린 '설정 안 함'
+  const custom = build.weapon?.type === 'custom' && equipped ? customWeaponText(db, equipped) : null
+  const weaponName = equipped && (weapon ? `${WEAPON_KIND_LABEL[weapon.kind]} · ${equipped.name}` : custom || equipped.name)
+  const rows: [label: string, name: string | undefined, note?: string, muted?: boolean][] = [
+    ['무기', weaponName, undefined, custom === ''],
     ...ARMOR_KINDS.map((kind): [string, string | undefined] => [ARMOR_KIND_LABEL[kind], summary.equipment[kind]?.name]),
     ['호석', summary.equipment.talisman?.name, build.talisman?.type === 'inline' ? '세팅 전용' : undefined],
   ]
@@ -25,10 +33,10 @@ export function BuildPreview({ build, maxSkills }: { build: BuildState; maxSkill
   return (
     <div className="space-y-2">
       <dl className="grid grid-cols-[2.5rem_minmax(0,1fr)] gap-x-2 gap-y-0.5 text-xs sm:grid-cols-[2.5rem_minmax(0,1fr)_2.5rem_minmax(0,1fr)]">
-        {rows.map(([label, name, note]) => (
+        {rows.map(([label, name, note, muted]) => (
           <Fragment key={label}>
             <dt className="text-muted">{label}</dt>
-            <dd className="truncate" title={name}>
+            <dd className={cx('truncate', muted && 'text-muted')} title={name}>
               {name ?? <span className="text-muted">—</span>}
               {note && <span className="text-muted"> · {note}</span>}
             </dd>
@@ -61,4 +69,15 @@ export function BuildPreview({ build, maxSkills }: { build: BuildState; maxSkill
       </p>
     </div>
   )
+}
+
+/** 직접 입력 무기에 넣은 것: 무기 스킬 · 거극 아티어 시리즈·그룹 스킬 · 슬롯. 예: "공격 2 · 쇄인룡의 굶주림 · 슬롯 3-3-3" */
+function customWeaponText(db: GameDb, weapon: ResolvedEquipment): string {
+  return [
+    skillPointsText(db, weapon.skills),
+    ...weapon.bonusSkillIds.map((id) => skillName(db, id)),
+    weapon.slots.length > 0 ? `슬롯 ${weapon.slots.map((s) => s.level).join('-')}` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ')
 }

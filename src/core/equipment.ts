@@ -37,7 +37,8 @@ export function resolveWeapon(db: GameDb, choice: WeaponChoice | null): Resolved
   if (choice.type === 'custom') {
     return {
       key: 'weapon',
-      name: '직접 입력 무기',
+      // 슬롯·스킬만 넣은 무기라 무기 자체는 정하지 않은 것으로 보인다 ('직접 입력 무기'는 받는 사람이 알아보기 어려웠다)
+      name: '설정 안 함',
       skills: choice.skills,
       slots: choice.slots.map((level) => ({ kind: 'weapon', level })),
       defense: NO_DEFENSE,

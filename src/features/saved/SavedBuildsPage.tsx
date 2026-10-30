@@ -222,7 +222,13 @@ export function SavedBuildsPage() {
       <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} />
       <EditSavedDialog target={editTarget} onClose={() => setEditTarget(null)} />
       {shareTarget && (
-        <ShareDialog open onClose={() => setShareTarget(null)} build={shareTarget.build} name={shareTarget.name} />
+        <ShareDialog
+          open
+          onClose={() => setShareTarget(null)}
+          build={shareTarget.build}
+          name={shareTarget.name}
+          weaponKind={shareTarget.weaponKind ?? null}
+        />
       )}
     </div>
   )

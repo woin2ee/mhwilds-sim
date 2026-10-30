@@ -163,6 +163,7 @@ export function ManualBuilder() {
         onClose={() => setDialog(null)}
         build={manualBuild}
         name={source?.name ?? null}
+        weaponKind={source?.weaponKind ?? null}
       />
       <Dialog open={dialog === 'overlay'} onClose={() => setDialog(null)} title="게임 위에 띄우기">
         <div className="space-y-2 text-sm">
