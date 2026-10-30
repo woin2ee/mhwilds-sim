@@ -104,6 +104,22 @@ describe('백업', () => {
     )
   })
 
+  it('저장할 때 고른 무기 종류를 담고, 모르는 종류는 미지정으로 가져온다', () => {
+    const labeled = [{ ...savedBuilds[1], weaponKind: 'long-sword' as const }, savedBuilds[2]]
+    const file = createBackup(db, labeled, talismans)
+    expect(file.builds[0].weaponKind).toBe('long-sword')
+    expect(file.builds[1]).not.toHaveProperty('weaponKind')
+    const empty = { savedBuilds: [], customTalismans: [] }
+    const result = importBackup(db, roundTripJson(file), empty, counter('id'))
+    expect(result.savedBuilds[0].weaponKind).toBe('long-sword')
+    expect(result.savedBuilds[1]).not.toHaveProperty('weaponKind')
+
+    const unknown = { ...file, builds: file.builds.map((b) => ({ ...b, weaponKind: 'chainsaw' })) }
+    const dropped = importBackup(db, JSON.parse(JSON.stringify(unknown)), empty, counter('id'))
+    expect(dropped.addedBuilds).toBe(2)
+    for (const s of dropped.savedBuilds) expect(s).not.toHaveProperty('weaponKind')
+  })
+
   it('같은 백업을 다시 가져오면 모두 건너뛴다', () => {
     const file = roundTripJson(createBackup(db, savedBuilds, talismans))
     const first = importBackup(db, file, { savedBuilds: [], customTalismans: [] }, counter('id'))

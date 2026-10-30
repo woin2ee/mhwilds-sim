@@ -1,8 +1,8 @@
 // 백업 만들기/가져오기 (DESIGN.md §8.3). 파일과 백업 코드가 같은 BackupFile 을 담는다.
 import type { GameDb } from '../../data/db'
-import type { SkillPoint, SlotLevel } from '../../data/types'
+import type { SkillPoint, SlotLevel, WeaponKind } from '../../data/types'
 import { linkTalisman, sameTalisman } from '../buildUpdates'
-import type { SavedBuild } from '../savedBuilds'
+import { isWeaponKind, weaponKindField, type SavedBuild } from '../savedBuilds'
 import type { BuildState, CustomTalisman, Slot, TalismanDraft } from '../types'
 import { decodeBuild, encodeBuild } from './codec'
 import { ShareCodeError, type BackupFile, type BackupImportResult } from './types'
@@ -31,6 +31,7 @@ export function createBackup(
     builds: savedBuilds.map((s) => ({
       name: s.name,
       memo: s.memo,
+      ...weaponKindField(s.weaponKind),
       createdAt: s.createdAt,
       updatedAt: s.updatedAt,
       code: encodeBuild(db, s.build, customTalismans, null),
@@ -89,6 +90,7 @@ export function importBackup(
       name: entry.name,
       memo: entry.memo,
       build,
+      ...weaponKindField(entry.weaponKind),
       createdAt: entry.createdAt,
       updatedAt: entry.updatedAt,
     })
@@ -116,6 +118,7 @@ interface ParsedTalisman {
 interface ParsedBuild {
   name: string
   memo: string
+  weaponKind: WeaponKind | null
   createdAt: string
   updatedAt: string
   code: string
@@ -170,6 +173,8 @@ function parseBuild(value: unknown): ParsedBuild {
   return {
     name: name || '이름 없는 세팅',
     memo: text(value.memo, ''),
+    // 모르는 무기 종류는 미지정으로 (세팅은 그대로 가져온다)
+    weaponKind: isWeaponKind(value.weaponKind) ? value.weaponKind : null,
     createdAt: text(value.createdAt, now),
     updatedAt: text(value.updatedAt, now),
     code: value.code,

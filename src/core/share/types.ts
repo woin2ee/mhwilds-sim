@@ -1,4 +1,5 @@
 // 세팅 저장·공유 계약. 형식 명세는 docs/DESIGN.md §8.
+import type { WeaponKind } from '../../data/types'
 import type { SavedBuild } from '../savedBuilds'
 import type { BuildState, CustomTalisman, TalismanDraft } from '../types'
 
@@ -38,8 +39,8 @@ export interface BackupFile {
   /** 내보낼 때의 데이터 버전 (참고용) */
   dataVersion: string
   talismans: BackupTalisman[]
-  /** code 는 이름을 뺀 공유 코드 (이름은 name 에) */
-  builds: { name: string; memo: string; createdAt: string; updatedAt: string; code: string }[]
+  /** code 는 이름을 뺀 공유 코드 (이름은 name 에). weaponKind 는 저장할 때 고른 무기 종류 (SavedBuild 와 같음, 없으면 키 없음) */
+  builds: { name: string; memo: string; weaponKind?: WeaponKind; createdAt: string; updatedAt: string; code: string }[]
 }
 
 export interface BackupImportResult {
