@@ -16,6 +16,7 @@
 ```
 scripts/build-data.mjs      MHDB → public/data/wilds.json 변환 (npm run data:update)
 public/data/wilds.json      게임 데이터 (레포에 커밋)
+public/privacy.html         개인정보 처리방침 (Google 로그인 앱 게시에 필요, 사이트 하단·동기화 패널에서 링크, §8.5)
 src/data/                   데이터 타입(types.ts), 색인(db.ts: GameDb), 한국어 라벨(labels.ts)
 src/core/                   UI와 무관한 순수 로직 (Node/Worker 에서도 동작)
   types.ts                  BuildState, Slot, CustomTalisman 등
@@ -29,6 +30,7 @@ src/core/                   UI와 무관한 순수 로직 (Node/Worker 에서도
   decorationFill.ts         수동 세팅 '최대까지 채우기': 빈 슬롯에 장식주를 넣어 스킬 하나를 최대 레벨까지 올리는 배치
   savedBuilds.ts            내 세팅(SavedBuild) 타입·기본 이름·무기 종류(weaponKindOf)
   share/                    공유 코드(gameId 기반 바이너리 → base64url)·백업 파일·글 코드(백업·검색 조건 코드 공용, textCode.ts) (§8)
+  sync/merge.ts             기기 동기화의 3-way 병합: 값 하나·id 가 있는 목록 (§8.5)
   talismanScan/             스크린샷 → 호석: 상세 창 찾기(layout)·슬롯/레어도 판독(slots)·스킬 이름 맞추기(match) (§7.3.1)
   search/types.ts           검색 요청/응답 계약 + 워커 메시지
   search/engine.ts          검색 엔진 (runSearch: DFS·결과 생성)
@@ -38,8 +40,8 @@ src/core/                   UI와 무관한 순수 로직 (Node/Worker 에서도
   search/search.worker.ts   Web Worker 진입점
   search/client.ts          메인 스레드용 워커 래퍼 (SearchClient)
   search/toBuild.ts         검색 결과 → BuildState
-src/lib/                    cx, 검색어 매칭(초성), localStorage 훅, 화면 테마
-src/state/                  전역 상태 (DB, 내 호석, 수동 세팅 빌드, 탭)
+src/lib/                    cx, 검색어 매칭(초성), localStorage 훅(동기화가 바꾼 값도 받음), 화면 테마, Google 로그인·드라이브(googleDrive.ts)
+src/state/                  전역 상태 (DB, 내 호석, 수동 세팅 빌드, 탭), 동기화하는 저장 키·형식 검사(storedValues.ts)
 src/components/             공통 UI (Button, Panel, Combobox, SkillSelect, SkillPointEditor, SlotBadge, SkillChip, controls ...)
 src/features/manual/        수동 세팅 화면
 src/features/search/        스킬 검색 화면
@@ -47,6 +49,7 @@ src/features/saved/         내 세팅 목록, 백업 탭, 저장·공유·가�
 src/features/talismans/     내 호석 관리 화면, 사진으로 추가(OCR 엔진 talismanOcr.ts)
 src/features/compare/       세팅 비교 창 (스킬 검색 결과·내 세팅 공용)
 src/features/dictionary/    사전: 스킬·방어구 함께 찾기(dictionarySearch.ts, skillLookup.ts, armorLookup.ts), 목록·상세 화면
+src/features/sync/          Google 드라이브 동기화: 병합 규칙(syncData.ts)·한 번 맞추기(engine.ts)·상태(SyncProvider)·헤더 버튼·백업 탭 패널
 ```
 
 규칙: `src/core` 는 React/DOM 을 import 하지 않는다. 화면은 계산을 직접 구현하지 않고 `computeBuild` 를 쓴다.
@@ -469,7 +472,7 @@ OCR 엔진 (`features/talismans/talismanOcr.ts`): tesseract.js 7 + `@tesseract.j
 
 ## 8. 저장·공유 (`src/core/share`, `src/core/savedBuilds.ts`, `features/saved`)
 
-로그인 없이 동작한다. 서버가 필요해지면 같은 형식을 그대로 클라우드에 올리면 된다.
+기본은 로그인 없이 브라우저(localStorage)에만 저장한다. 원하면 Google 계정을 연결해 기기끼리 맞춘다 (§8.5, 서버 없음).
 
 - **저장한 검색 조건**: `search-presets:v1` (§7.2). 백업 파일·코드에는 담지 않고, 스킬 검색에서 따로 내보내고 가져온다 (§8.4).
 - **내 세팅**: `SavedBuild[]` 를 localStorage(`saved-builds:v1`)에 저장. 첫 저장 때 `navigator.storage.persist()` 요청
@@ -573,3 +576,46 @@ u8   version = 1 | 2 (2 = 무기 tag 3·4 가 든 코드)
 - 코드: `mhwilds-search-1.` + base64url(deflate-raw(UTF-8 JSON)). 백업 코드와 같은 방식이고 앞머리가 달라 서로 섞이지 않는다.
   백업 탭·'코드로 가져오기'에 검색 조건 코드·파일을 넣거나 그 반대면 넣을 곳을 안내한다. 조건 2개 ≈ 800자.
 - 파일: `mhwilds-sim-search-<날짜>-<시각>.json`.
+
+### 8.5 Google 드라이브 동기화 (`features/sync`, `core/sync/merge.ts`, `lib/googleDrive.ts`)
+여러 기기의 데이터를 로그인 한 번으로 맞춘다. 서버 없이 브라우저가 Google 드라이브의 앱 데이터 폴더에 JSON 파일 하나
+(`mhwilds-sim-sync.json`)를 읽고 쓴다. 범위는 `drive.appdata` 하나(이 앱만 보는 숨김 폴더, 구글 분류로 '민감하지 않은 범위'라 앱 심사 없음).
+
+- **로그인**: Google Identity Services 토큰 방식(`initTokenClient`). 서버가 없어 1시간짜리 접근 토큰만 받고, 새로 받으려면 클릭 처리
+  중에 팝업을 열어야 한다(자동 갱신 불가). 그래서 토큰이 살아 있는 동안만 자동으로 맞추고, 끝나면 헤더의 구름 버튼(또는 '지금 동기화')을
+  한 번 누른다. 다시 받을 때는 `prompt: ''` + `login_hint`(계정 이메일)라 이미 허용한 계정이면 팝업이 떴다가 바로 닫힌다. 토큰은 새로
+  고쳐도 다시 누르지 않게 `sync-token:v1` 에 둔다(끝나기 1분 전부터 끝난 것으로 본다). 받으면 `about.get` 으로 계정(permissionId)을
+  다시 확인한다(팝업에서 다른 계정을 골랐을 수 있다). 팝업이 막히지 않게 로그인 스크립트는 미리 불러 두되, 연결하지 않은 사람에게는
+  백업 탭을 볼 때만 부른다.
+- **OAuth 클라이언트**: Google Cloud 프로젝트 'mhwilds-sim' 의 웹 클라이언트 ID(`GOOGLE_CLIENT_ID`, 공개 값). 승인된 자바스크립트
+  원본은 `https://woin2ee.github.io`·`http://localhost:5173`·`http://localhost` 라 다른 주소(포크 등)에서는 그 주소용 클라이언트가
+  필요하다. 앱을 '게시'하려면 브랜딩에 홈페이지·개인정보 처리방침(`public/privacy.html`) 링크와 승인된 도메인(`woin2ee.github.io`)이
+  있어야 하고, 로고를 올리면 심사를 받아야 해서 올리지 않는다. '테스트' 상태에서는 테스트 사용자만 로그인되고 7일마다 다시 동의한다.
+- **맞추는 값** (`SYNC_KEYS`, 키는 `state/storedValues.ts`): 내 호석, 내 세팅, 저장한 검색 조건, 지금 검색 조건과 사용 중인 저장한 조건,
+  수동 세팅과 불러온 내 세팅. 화면 설정(테마·탭·접은 패널·마지막으로 고른 무기 종류 등)은 기기마다 따로 둔다. 파일(`SyncFile`:
+  `app`·`kind: 'sync'`·`version: 1`·`values`·키마다 바뀐 시각 `changedAt`)에는 localStorage 저장값을 키 그대로 담는다. 이 버전이
+  모르는 키도 지우지 않고 그대로 올리고, 더 새 `version` 파일은 덮어쓰지 않고 새로 고치라고 안내한다. 깨진 파일은 없는 것으로 보고 다시 쓴다.
+- **병합** (`mergeSync`, 3-way): 마지막 동기화 때 값(base, `sync-base:v1`)과 비교해 한쪽만 바뀐 값은 그쪽을 쓴다. 목록(호석·세팅·
+  저장한 조건)은 항목 id 마다 고르므로 지운 것도 퍼진다. 한쪽이 지우고 다른 쪽이 고쳤으면 고친 것을 살리고, 둘 다 고쳤으면 내 세팅·저장한
+  조건은 고친 시각(`updatedAt`), 호석은 키의 바뀐 시각이 나중인 쪽. 순서는 드라이브 목록을 따르고 이 기기에만 있는 항목은 이 기기에서
+  바로 앞에 있던 항목 뒤에 넣는다(맨 위·맨 아래에 더하는 목록 모두 제자리). 지금 검색 조건과 사용 중인 저장한 조건, 수동 세팅과 불러온
+  내 세팅은 묶어서 통째로 고른다(둘 다 바꿨으면 나중에 바꾼 쪽). 다른 기기에서 지운 내 호석을 가리키는 세팅은 그 기기에서 지울 때처럼
+  세팅 전용 호석으로 바꾼다. 형식이 틀린 값은 없는 것으로 보고, 목록은 깨진 항목만 뺀다.
+- **이 기기에서 바꾼 값만 '바뀐 것'**: 저장 훅(`usePersistentState`)은 사용자가 바꾼 키를 알리고(마운트 직후 기본값 저장과 동기화가
+  받아서 쓴 값은 빼고) `SyncProvider` 가 `sync-changed:v1` 에 시각을 남긴다. 마지막 동기화 뒤 바꾼 기록이 없는 키는 저장값이 base 와
+  달라도(깨져서 기본값이 된 경우 등) base 로 보아, 지운 것으로 다른 기기까지 퍼지지 않고 드라이브 값으로 되살린다.
+- **처음 동기화** (base 가 없거나 계정·드라이브 파일이 바뀜): 지우지 않고 합치기만 한다. 예전에 백업 등으로 옮겨 양쪽에 id 만 다르게 있는
+  같은 항목(호석은 스킬·슬롯, 세팅은 이름·내용, 저장한 조건은 이름·조건 — 백업·조건 가져오기의 건너뛰기 기준)은 그 자리에서 드라이브 것으로
+  바꾸고 가리키던 값(세팅의 호석, 고정 호석, 사용 중인 조건, 불러온 세팅)을 옮긴다. 지금 검색 조건·수동 세팅은 이 기기에서 바꾼 기록이 더
+  나중일 때만 이 기기 것.
+- **한 번 맞추기** (`syncOnce`): 파일 찾기 → 읽기 → 합치기 → (드라이브와 다르면) 올리기 → 이 기기에 쓰기. 올리기 직전 드라이브 파일
+  `version` 이 바뀌었거나(그사이 다른 기기가 올림) 쓰기 직전 이 기기 저장값이 바뀌었으면(그사이 사용자가 고침) 처음부터 다시 한다(3번까지).
+  탭 여러 개는 Web Locks 로 하나씩. 받은 값은 `writeStored` 로 쓰고 같은 키를 쓰는 훅이 받아 화면을 바꾼다. 동기화하는 키는 다른 탭의
+  `storage` 이벤트도 받아(`shareAcrossTabs`) 한 탭이 받은 값을 다른 탭이 옛 값으로 덮지 않게 한다.
+- **언제**: 연결할 때, 사이트를 열 때, 이 화면으로 돌아올 때(마지막 동기화 15초 뒤부터), 바꾼 뒤 3초, 화면을 떠날 때 남은 변경 —
+  모두 토큰이 살아 있을 때만. 받은 것이 있으면 알림('드라이브에서 받았어요 · 내 세팅 2개 추가 · 검색 조건 바뀜'), 없으면 조용히
+  (직접 누른 동기화는 '동기화했어요').
+- **화면**: 백업 탭 맨 위 'Google 드라이브 동기화' 패널 — 연결 전에는 설명·개인정보 처리방침·연결 버튼(카카오톡 등 앱 안 브라우저는
+  구글이 로그인을 막는다는 안내), 연결 뒤에는 계정·상태·'지금 동기화'·'연결 끊기'. 헤더에는 연결했을 때만 구름 버튼(체크 = 동기화됨,
+  화살표 + 점 = 눌러서 동기화, 느낌표 = 오류). 연결 끊기는 권한을 거두고 이 기기의 동기화 기록만 지우며, '드라이브에 저장된 동기화
+  데이터도 지우기'를 고르면 파일도 지운다.

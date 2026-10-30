@@ -12,6 +12,8 @@ import { SavedBuildsPage } from './features/saved/SavedBuildsPage'
 import { SharedLinkHandler } from './features/saved/SharedLinkHandler'
 import { SearchConditionsProvider } from './features/search/SearchConditionsProvider'
 import { SearchPage } from './features/search/SearchPage'
+import { SyncButton } from './features/sync/SyncButton'
+import { SyncProvider } from './features/sync/SyncProvider'
 import { TalismanManager } from './features/talismans/TalismanManager'
 import { AppStateProvider } from './state/AppState'
 import { useAppState, type TabId } from './state/context'
@@ -30,13 +32,16 @@ export default function App() {
   if (!db) return <Centered>게임 데이터를 불러오는 중…</Centered>
   return (
     <ToastProvider>
-      <AppStateProvider db={db}>
-        {/* 스킬 검색 조건은 사전(원하는 스킬에 추가)도 함께 쓴다 */}
-        <SearchConditionsProvider>
-          <Shell />
-        </SearchConditionsProvider>
-        <SharedLinkHandler />
-      </AppStateProvider>
+      {/* Google 드라이브 동기화: 저장값(localStorage)을 직접 맞추고 바뀐 값은 각 화면의 저장 훅이 받아 그린다 */}
+      <SyncProvider>
+        <AppStateProvider db={db}>
+          {/* 스킬 검색 조건은 사전(원하는 스킬에 추가)도 함께 쓴다 */}
+          <SearchConditionsProvider>
+            <Shell />
+          </SearchConditionsProvider>
+          <SharedLinkHandler />
+        </AppStateProvider>
+      </SyncProvider>
     </ToastProvider>
   )
 }
@@ -99,7 +104,11 @@ function Shell() {
             <span className="truncate">와일즈 스킬 시뮬레이터</span> <Badge className="shrink-0">비공식</Badge>
           </h1>
           <TabNav variant="pills" className="max-md:hidden" />
-          <ThemeSelect className="ml-auto shrink-0" />
+          {/* 동기화 버튼은 드라이브에 연결했을 때만 보인다 */}
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            <SyncButton />
+            <ThemeSelect />
+          </div>
         </div>
       </header>
       <TabNav variant="bar" className="sticky top-0 z-40 border-b border-line bg-surface/95 backdrop-blur md:hidden" />
@@ -138,6 +147,15 @@ function Shell() {
           className="underline underline-offset-2 hover:text-fg"
         >
           소스 코드 (GPL-3.0)
+        </a>
+        {' · '}
+        <a
+          href={`${import.meta.env.BASE_URL}privacy.html`}
+          target="_blank"
+          rel="noreferrer"
+          className="underline underline-offset-2 hover:text-fg"
+        >
+          개인정보 처리방침
         </a>
       </footer>
     </div>

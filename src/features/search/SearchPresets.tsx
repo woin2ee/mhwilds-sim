@@ -5,6 +5,7 @@ import { NAME_MAX } from '../../core/savedBuilds'
 import { cx } from '../../lib/cx'
 import { requestPersistentStorage, usePersistentState } from '../../lib/storage'
 import { useDb } from '../../state/context'
+import { STORAGE_KEYS } from '../../state/storedValues'
 import { useToast } from '../../state/toast'
 import type { SearchConditions } from './conditions'
 import { ExportPresets, ImportPresets } from './PresetTransferDialogs'
@@ -51,9 +52,9 @@ export function SearchPresets({
 }) {
   const db = useDb()
   const toast = useToast()
-  const [stored, setStored] = usePersistentState<SearchPreset[]>('search-presets:v1', [], isArray)
+  const [stored, setStored] = usePersistentState<SearchPreset[]>(STORAGE_KEYS.searchPresets, [], isArray)
   const presets = useMemo(() => validPresets(stored), [stored])
-  const [activeId, setActiveId] = usePersistentState<string | null>('search-preset-active:v1', null, isActiveId)
+  const [activeId, setActiveId] = usePersistentState<string | null>(STORAGE_KEYS.searchPresetActive, null, isActiveId)
   const [dialog, setDialog] = useState<DialogState>(null)
   const currentKey = useMemo(() => conditionsKey(cond), [cond])
   const active = presets.find((p) => p.id === activeId) ?? null

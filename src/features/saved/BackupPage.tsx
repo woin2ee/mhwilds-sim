@@ -5,6 +5,7 @@ import { copyText } from '../../lib/clipboard'
 import { isStoragePersisted } from '../../lib/storage'
 import { useAppState } from '../../state/context'
 import { useToast } from '../../state/toast'
+import { SyncPanel } from '../sync/SyncPanel'
 import { backupFileName, downloadJson } from './backupFile'
 import { ImportForm } from './ImportDialog'
 
@@ -12,8 +13,8 @@ const FIELD =
   'w-full rounded-md border border-line bg-surface-2 px-2.5 py-2 font-mono text-xs text-fg focus:border-accent focus:outline-none'
 
 /**
- * 백업 탭: 내 세팅·내 호석 전체를 백업 코드(복사해서 옮기는 글)나 파일로 내보내고 가져온다.
- * 두 탭의 데이터를 함께 담으므로 어느 한쪽 탭이 아닌 따로 된 탭에 둔다.
+ * 백업 탭: 맨 위는 Google 드라이브 동기화, 그 아래는 내 세팅·내 호석 전체를 백업 코드(복사해서 옮기는 글)나 파일로
+ * 내보내고 가져온다. 두 탭의 데이터를 함께 담으므로 어느 한쪽 탭이 아닌 따로 된 탭에 둔다.
  */
 export function BackupPage() {
   const { tab } = useAppState()
@@ -29,10 +30,12 @@ export function BackupPage() {
   return (
     // 한글이 단어 중간에서 줄바꿈되지 않게 (break-keep)
     <div className="mx-auto max-w-5xl space-y-4 break-keep">
+      <SyncPanel active={active} />
       <Panel title="백업">
         <p className="text-sm leading-relaxed text-muted">
-          내 세팅과 내 호석은 이 브라우저에만 저장돼요. 브라우저 데이터를 지우거나 기기를 바꾸면 사라지니, 가끔 백업
-          코드나 파일로 내보내 두세요. 다른 기기로 옮길 때도 여기서 내보내고 가져와요.
+          내 세팅과 내 호석은 이 브라우저에 저장돼요. 위의 드라이브 동기화를 쓰지 않으면 브라우저 데이터를 지우거나
+          기기를 바꿀 때 사라지니, 가끔 백업 코드나 파일로 내보내 두세요. 로그인 없이 다른 기기로 옮기거나 친구에게 넘길
+          때도 여기서 내보내고 가져와요.
           {persisted === true && ' (저장소 보존 허용됨)'}
         </p>
       </Panel>
