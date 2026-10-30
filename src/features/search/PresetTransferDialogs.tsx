@@ -102,7 +102,7 @@ export function ExportPresets({ presets, cond }: { presets: readonly SearchPrese
               </Button>
             )}
           </div>
-          <ul className="max-h-56 space-y-2 overflow-y-auto">
+          <ul className="max-h-56 space-y-2 overflow-y-auto wrap-anywhere">
             {items.map((preset) => (
               <li key={preset.id}>
                 <Toggle
@@ -337,9 +337,9 @@ function ImportPreview({
               key={entry.preset.id}
               className={cx('rounded-md border border-line px-2.5 py-1.5', entry.exists && 'opacity-60')}
             >
-              <span className="flex min-w-0 items-center gap-1.5">
-                <span className="truncate font-medium">{entry.preset.name}</span>
-                {entry.exists && <Badge>이미 있음</Badge>}
+              <span className="flex items-start gap-1.5">
+                <span className="min-w-0 font-medium wrap-anywhere">{entry.preset.name}</span>
+                {entry.exists && <Badge className="shrink-0">이미 있음</Badge>}
               </span>
               <span className="block truncate text-xs text-muted">{presetSummary(db, entry.preset.conditions)}</span>
               {entry.missing.length > 0 && (

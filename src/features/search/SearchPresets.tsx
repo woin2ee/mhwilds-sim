@@ -162,8 +162,9 @@ export function SearchPresets({
                   title="눌러서 이 조건으로 바꾸기"
                   className="min-w-0 flex-1 rounded-l-md px-2.5 py-1.5 text-left hover:bg-surface-2 pointer-coarse:py-2"
                 >
-                  <span className="flex min-w-0 items-center gap-1.5">
-                    <span className="truncate text-sm font-medium">{preset.name}</span>
+                  {/* 이름은 길면 줄을 바꿔 다 보여 준다. 띄어쓰기 없이 긴 이름만 아무 데서나 끊는다 */}
+                  <span className="flex items-start gap-1.5">
+                    <span className="min-w-0 text-sm font-medium break-keep wrap-anywhere">{preset.name}</span>
                     {isActive && !modified && <StateBadge className="border-accent/50 text-accent">사용 중</StateBadge>}
                     {modified && <StateBadge className="border-warn/50 text-warn">수정됨</StateBadge>}
                   </span>
