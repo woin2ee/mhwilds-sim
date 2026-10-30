@@ -4,7 +4,7 @@ import { SkillSelect } from '../../components/SkillSelect'
 import { SlotList } from '../../components/SlotBadge'
 import { Button, LevelSelect, Segmented } from '../../components/ui'
 import { WeaponBonusSkills } from '../../components/WeaponBonusSkills'
-import { gogmaSkillsOf, isGogmaArtian } from '../../core/gogmaArtian'
+import { isGogmaArtian } from '../../core/gogmaArtian'
 import type { Slot } from '../../core/types'
 import { nameOf } from '../../data/db'
 import { skillPointsText } from '../../data/format'
@@ -12,6 +12,7 @@ import { GOGMA_ARTIAN_NAMES, SPECIAL_LABEL, WEAPON_KIND_LABEL } from '../../data
 import { WEAPON_KINDS, type SkillKind, type SlotLevel, type Weapon } from '../../data/types'
 import { useAppState } from '../../state/context'
 import type { SearchConditions, WeaponMode } from './conditions'
+import { weaponConditionOf } from './fromBuild'
 
 const MODE_OPTIONS: { value: WeaponMode; label: string }[] = [
   { value: 'none', label: '미지정' },
@@ -54,21 +55,8 @@ export function WeaponCondition({
   const skillIds = useMemo(() => cond.customWeaponSkills.map((s) => s.skillId), [cond.customWeaponSkills])
 
   const importFromManual = () => {
-    const w = manualBuild.weapon
-    if (!w) return
-    const gogma = gogmaSkillsOf(db, w)
-    const gogmaPatch = { weaponSetSkillId: gogma.setSkillId, weaponGroupSkillId: gogma.groupSkillId }
-    if (w.type === 'db') {
-      const weapon = db.weapons.get(w.id)
-      if (weapon) onChange({ weaponMode: 'db', weaponKind: weapon.kind, weaponId: weapon.id, ...gogmaPatch })
-    } else {
-      onChange({
-        weaponMode: 'custom',
-        customWeaponSlots: [0, 1, 2].map((i) => w.slots[i] ?? 0),
-        customWeaponSkills: w.skills,
-        ...gogmaPatch,
-      })
-    }
+    const change = manualBuild.weapon && weaponConditionOf(db, manualBuild.weapon)
+    if (change) onChange(change)
   }
   const gogmaSkills = (
     <WeaponBonusSkills

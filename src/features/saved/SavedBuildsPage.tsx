@@ -11,13 +11,17 @@ import { useToast } from '../../state/toast'
 import { CompareDialog } from '../compare/CompareDialog'
 import { COMPARE_MAX, type CompareItem } from '../compare/compareRows'
 import { CompareTray } from '../compare/CompareTray'
+import { useSearchPresets } from '../search/conditionsContext'
+import { buildSkills } from '../search/fromBuild'
 import { formatDateTime } from './backupFile'
 import { BackupTabLink } from './BackupPage'
 import { BuildPreview } from './BuildPreview'
 import { ImportDialog } from './ImportDialog'
 import { EditSavedDialog } from './SaveBuildDialog'
+import { SearchWithBuildDialog } from './SearchWithBuildDialog'
 import { ShareDialog } from './ShareDialog'
 import { useConfirmReplaceManual } from './useBuildActions'
+import { useSearchWithBuild } from './useSearchWithBuild'
 
 /** 세팅의 무기 종류 (none = 미지정: 직접 입력 무기·무기 없는 세팅에서 종류를 고르지 않음) */
 type KindKey = WeaponKind | 'none'
@@ -28,14 +32,18 @@ const kindLabel = (kind: KindKey) => (kind === 'none' ? '무기 미지정' : WEA
 
 /** 내 세팅: 브라우저에 저장한 세팅 목록, 공유 코드 가져오기 (백업은 백업 탭) */
 export function SavedBuildsPage() {
-  const { db, savedBuilds, setSavedBuilds, openInManual, manualSourceId } = useAppState()
+  const { db, customTalismans, savedBuilds, setSavedBuilds, openInManual, manualSourceId } = useAppState()
   const toast = useToast()
   const confirmReplace = useConfirmReplaceManual()
+  const { presets } = useSearchPresets()
+  const { startNew, addToPreset } = useSearchWithBuild()
   const [query, setQuery] = useState('')
   const [kindFilter, setKindFilter] = useState<KindFilter>('all')
   const [importOpen, setImportOpen] = useState(false)
   const [shareTarget, setShareTarget] = useState<SavedBuild | null>(null)
   const [editTarget, setEditTarget] = useState<SavedBuild | null>(null)
+  /** '검색 조건으로'에서 저장한 조건을 고르는 세팅 */
+  const [searchTarget, setSearchTarget] = useState<SavedBuild | null>(null)
   /** 비교할 세팅 id (넣은 순서). 지운 세팅은 빠진다. 브라우저에 저장하지 않는다 */
   const [compareIds, setCompareIds] = useState<string[]>([])
   const [comparing, setComparing] = useState(false)
@@ -94,6 +102,12 @@ export function SavedBuildsPage() {
     openInManual(saved.build, saved.id)
     toast(`수동 세팅에서 열었어요 · ${saved.name}`)
     return true
+  }
+  /** 저장한 검색 조건이 있으면 더할 조건을 고르는 창을 열고, 없으면 바로 새 조건으로 */
+  const searchWith = (saved: SavedBuild) => {
+    if (buildSkills(db, saved.build, customTalismans).length === 0) toast('이 세팅에는 발동 스킬이 없어요')
+    else if (presets.length > 0) setSearchTarget(saved)
+    else startNew(saved)
   }
   const duplicate = (saved: SavedBuild) => {
     const name = `${saved.name} (복사)`.slice(0, NAME_MAX)
@@ -171,6 +185,7 @@ export function SavedBuildsPage() {
               compared={compareIds.includes(saved.id)}
               onToggleCompare={() => toggleCompare(saved)}
               onLoad={() => load(saved)}
+              onSearch={() => searchWith(saved)}
               onShare={() => setShareTarget(saved)}
               onEdit={() => setEditTarget(saved)}
               onDuplicate={() => duplicate(saved)}
@@ -221,6 +236,19 @@ export function SavedBuildsPage() {
 
       <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} />
       <EditSavedDialog target={editTarget} onClose={() => setEditTarget(null)} />
+      {/* 알림이 창에 가리지 않게 창을 먼저 닫는다 */}
+      <SearchWithBuildDialog
+        target={searchTarget}
+        onClose={() => setSearchTarget(null)}
+        onStartNew={(saved) => {
+          setSearchTarget(null)
+          startNew(saved)
+        }}
+        onAddToPreset={(saved, preset) => {
+          setSearchTarget(null)
+          addToPreset(saved, preset)
+        }}
+      />
       {shareTarget && (
         <ShareDialog
           open
@@ -241,6 +269,7 @@ function SavedBuildCard({
   compared,
   onToggleCompare,
   onLoad,
+  onSearch,
   onShare,
   onEdit,
   onDuplicate,
@@ -253,6 +282,8 @@ function SavedBuildCard({
   compared: boolean
   onToggleCompare: () => void
   onLoad: () => void
+  /** 이 세팅의 스킬로 세팅 검색 (저장한 조건에 더하기 / 새 조건) */
+  onSearch: () => void
   onShare: () => void
   onEdit: () => void
   onDuplicate: () => void
@@ -294,6 +325,13 @@ function SavedBuildCard({
       <div className="flex flex-wrap gap-1.5">
         <Button size="sm" variant="primary" onClick={onLoad}>
           불러오기
+        </Button>
+        <Button
+          size="sm"
+          title="이 세팅의 발동 스킬로 세팅 검색을 해요. 저장한 조건에 없는 스킬만 더하거나, 새 조건으로 원하는 스킬·무기를 이 세팅대로 바꿔요."
+          onClick={onSearch}
+        >
+          검색 조건으로
         </Button>
         <Button size="sm" onClick={onShare}>
           공유

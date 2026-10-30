@@ -1,4 +1,4 @@
-import { createContext, useContext } from 'react'
+import { createContext, useContext, type Dispatch, type SetStateAction } from 'react'
 import type { SearchConditions } from './conditions'
 import type { SearchPreset } from './presets'
 
@@ -29,7 +29,8 @@ export function useSearchConditions(): SearchConditionsValue {
 export interface SearchPresetsValue {
   /** 형식이 맞는 것만 */
   presets: SearchPreset[]
-  setPresets: (presets: SearchPreset[]) => void
+  /** 함수를 넘기면 바로 전 저장값(형식이 깨진 항목 포함)으로 계산한다 (알림의 되돌리기처럼 화면이 그린 목록이 낡았을 때) */
+  setPresets: Dispatch<SetStateAction<SearchPreset[]>>
   /** 사용 중인 저장한 조건 (없으면 null) */
   active: SearchPreset | null
   setActiveId: (id: string | null) => void
