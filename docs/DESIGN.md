@@ -266,6 +266,8 @@ src/features/sync/          Google 드라이브 동기화: 병합 규칙(syncDat
 - 대화상자: 휴대폰에서는 화면 아래에 붙는 시트. 안에 다른 `<dialog>`(터치 기기의 선택 시트)가 있어도 자기 close 이벤트만 받는다
   (React 가 close 를 컴포넌트 트리로 올려 보내 바깥 대화상자까지 닫혔다). 시트·대화상자는 키보드를 피하도록 보이는 영역(visual viewport)에
   맞춘다 (`src/lib/viewport.ts`). 열릴 때 포커스는 `data-autofocus` (터치 기기에서는 키보드가 가리지 않게 생략).
+  배경을 눌러 닫는 것은 배경에서 누르고 뗐을 때만이다 (`src/lib/backdrop.ts`, 선택 시트도 같음. click 은 누른 곳과 뗀 곳의 공통 조상에서
+  일어나서, 입력 칸의 글자를 끌어 고르다 창 밖에서 떼면 배경을 누른 것처럼 닫혔다).
 - 터치 기기에서 입력 요소는 16px (iOS 사파리 확대 방지, `index.css`), 버튼·선택 상자는 36~40px 로 커진다.
 - `viewport-fit=cover`: 노치·홈 표시줄 영역은 `env(safe-area-inset-*)` 여백으로 피한다.
 

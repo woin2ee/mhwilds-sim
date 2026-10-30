@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type Ref } from 'react'
 import { flushSync } from 'react-dom'
+import { useBackdropClose } from '../lib/backdrop'
 import { cx } from '../lib/cx'
 import { useCoarsePointer } from '../lib/media'
 import { matchScore } from '../lib/text'
@@ -59,6 +60,7 @@ export function Combobox<T>({
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLUListElement>(null)
   const dialogRef = useRef<HTMLDialogElement>(null)
+  const backdropClose = useBackdropClose(() => dialogRef.current?.close())
   useVisualViewportVars(dialogRef, sheet && open)
 
   const filtered = useMemo(() => {
@@ -141,9 +143,7 @@ export function Combobox<T>({
           aria-label={ariaLabel ?? placeholder}
           onClose={close}
           // 태블릿에서 창 바깥(배경)을 누르면 닫기
-          onClick={(e) => {
-            if (e.target === dialogRef.current) dialogRef.current.close()
-          }}
+          {...backdropClose}
           className={cx(
             'inset-x-0 m-0 max-h-none w-full max-w-none overflow-hidden bg-surface p-0 text-fg backdrop:bg-black/60',
             'vv-fill sm:mx-auto sm:mt-8 sm:h-[min(40rem,calc(var(--vv-height,100dvh)-4rem))] sm:w-[min(32rem,calc(100vw-2rem))]',

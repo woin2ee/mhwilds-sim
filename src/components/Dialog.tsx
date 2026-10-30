@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactNode } from 'react'
+import { useBackdropClose } from '../lib/backdrop'
 import { cx } from '../lib/cx'
 import { useCoarsePointer } from '../lib/media'
 import { useVisualViewportVars } from '../lib/viewport'
@@ -26,6 +27,7 @@ export function Dialog({
 }) {
   const ref = useRef<HTMLDialogElement>(null)
   const coarse = useCoarsePointer()
+  const backdropClose = useBackdropClose(onClose)
   useVisualViewportVars(ref, open)
 
   useEffect(() => {
@@ -46,10 +48,8 @@ export function Dialog({
       onClose={(e) => {
         if (e.target === ref.current) onClose()
       }}
-      // 바깥(배경) 클릭으로 닫기
-      onClick={(e) => {
-        if (e.target === ref.current) onClose()
-      }}
+      // 바깥(배경) 클릭으로 닫기 (창 안에서 누른 채 끌어 배경에서 뗀 것은 빼고)
+      {...backdropClose}
       className={cx(
         'm-auto w-[min(34rem,calc(100vw-2rem))] rounded-lg border border-line bg-surface p-0 text-fg shadow-xl',
         'backdrop:bg-black/60',
