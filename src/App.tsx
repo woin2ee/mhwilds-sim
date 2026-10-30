@@ -53,9 +53,9 @@ function Centered({ children }: { children: ReactNode }) {
 const TABS: { id: TabId; label: string }[] = [
   { id: 'manual', label: '수동 세팅' },
   { id: 'search', label: '스킬 검색' },
-  { id: 'dictionary', label: '사전' },
   { id: 'saved', label: '내 세팅' },
   { id: 'talismans', label: '내 호석' },
+  { id: 'dictionary', label: '사전' },
   { id: 'backup', label: '백업' },
 ]
 
@@ -121,14 +121,14 @@ function Shell() {
         <div hidden={tab !== 'search'}>
           <SearchPage />
         </div>
-        <div hidden={tab !== 'dictionary'}>
-          <DictionaryPage />
-        </div>
         <div hidden={tab !== 'saved'}>
           <SavedBuildsPage />
         </div>
         <div hidden={tab !== 'talismans'}>
           <TalismanManager />
+        </div>
+        <div hidden={tab !== 'dictionary'}>
+          <DictionaryPage />
         </div>
         <div hidden={tab !== 'backup'}>
           <BackupPage />
