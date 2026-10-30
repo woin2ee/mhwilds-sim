@@ -27,9 +27,9 @@ export function ImportDialog({ open, onClose }: { open: boolean; onClose: () => 
 
 type BackupInput = { backup: unknown } | { error: string }
 
-// 검색 조건 코드·파일은 스킬 검색에서 가져온다 (DESIGN.md §8.4)
-const PRESETS_CODE = '검색 조건 코드예요. ‘스킬 검색 → 저장한 조건 → 가져오기’에 붙여 넣어 주세요.'
-const PRESETS_FILE = '검색 조건 파일이에요. ‘스킬 검색 → 저장한 조건 → 가져오기’에서 골라 주세요.'
+// 검색 조건 코드·파일은 세팅 검색에서 가져온다 (DESIGN.md §8.4)
+const PRESETS_CODE = '검색 조건 코드예요. ‘세팅 검색 → 저장한 조건 → 가져오기’에 붙여 넣어 주세요.'
+const PRESETS_FILE = '검색 조건 파일이에요. ‘세팅 검색 → 저장한 조건 → 가져오기’에서 골라 주세요.'
 
 /**
  * 붙여 넣은 글을 알아서 해석한다: 백업 코드면 백업 미리보기, 공유 링크·코드면 세팅 미리보기, 검색 조건 코드면 넣을 곳 안내.

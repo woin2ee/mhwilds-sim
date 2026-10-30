@@ -64,6 +64,7 @@ const everything = cond({
   transcend: true,
   useDecorations: false,
   spareSlots: { armor: [1, 0, 2], weapon: [0, 1, 0] },
+  minResistances: { fire: 0, dragon: 5 },
   sort: 'defense',
   excludedArmor: [{ type: 'piece', id: db.data.armor[0].id }],
 })
@@ -227,11 +228,13 @@ describe('검색 조건 내보내기·가져오기', () => {
     delete conditions.requiredDividers
     delete conditions.excludeHr100
     delete conditions.spareSlots
+    delete conditions.minResistances
     const file = createPresetsFile(db, [{ ...old, conditions: conditions as SearchPreset['conditions'] }], [])
     expect(file.presets[0].conditions).toMatchObject({
       requiredDividers: [],
       excludeHr100: false,
       spareSlots: { armor: [0, 0, 0], weapon: [0, 0, 0] },
+      minResistances: {},
     })
   })
 
@@ -250,6 +253,7 @@ describe('검색 조건 내보내기·가져오기', () => {
       fixedTalisman: { type: 'unknown' },
       transcend: 'yes',
       spareSlots: { armor: [9, 'x', 1.5], weapon: null },
+      minResistances: { fire: 'x', water: 2, sun: 1, ice: 0.5 },
       futureField: true,
     })
     const result = importPresets(db, broken, empty, counter('id'))
@@ -261,6 +265,7 @@ describe('검색 조건 내보내기·가져오기', () => {
           requiredDividers: [{ id: 'ok', kind: 'armor', index: 0 }],
           customWeaponSlots: [3, 0, 0],
           spareSlots: { armor: [5, 0, 0], weapon: [0, 0, 0] },
+          minResistances: { water: 2 },
         }),
       ),
     )

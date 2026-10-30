@@ -21,6 +21,7 @@ import {
   excludedSummary,
   optionsSummary,
   requiredSummary,
+  resistanceSummary,
   talismanSummary,
   weaponSummary,
 } from './conditionSummary'
@@ -31,6 +32,7 @@ import { formatCount } from './format'
 import { ExcludedSkills, RequiredSkills } from './RequiredSkills'
 import type { CompareControl } from './ResultCard'
 import { ResultCompareActions } from './ResultCompareActions'
+import { ResistanceCondition } from './ResistanceCondition'
 import { ResultList } from './ResultList'
 import { SearchPresets } from './SearchPresets'
 import { SpareSlotsCondition } from './SpareSlotsCondition'
@@ -51,7 +53,16 @@ const EXCLUDE_MODE_HELP: Record<ExcludeMode, string> = {
 }
 
 /** 접을 수 있는 조건 패널 (접은 패널은 localStorage search-collapsed:v1 에 기억한다) */
-type Section = 'presets' | 'required' | 'excluded' | 'spare' | 'weapon' | 'talisman' | 'excludedArmor' | 'options'
+type Section =
+  | 'presets'
+  | 'required'
+  | 'excluded'
+  | 'spare'
+  | 'resistance'
+  | 'weapon'
+  | 'talisman'
+  | 'excludedArmor'
+  | 'options'
 
 const isSectionList = (value: unknown): value is Section[] =>
   Array.isArray(value) && value.every((v) => typeof v === 'string')
@@ -265,6 +276,20 @@ export function SearchPage() {
           <SpareSlotsCondition value={cond.spareSlots} onChange={(spareSlots) => patch({ spareSlots })} />
         </Panel>
 
+        <Panel
+          title="내성"
+          collapse={collapse('resistance', resistanceSummary(cond))}
+          actions={
+            request.minResistances.length > 0 && (
+              <Button size="sm" variant="ghost" onClick={() => patch({ minResistances: {} })}>
+                비우기
+              </Button>
+            )
+          }
+        >
+          <ResistanceCondition value={cond.minResistances} onChange={(minResistances) => patch({ minResistances })} />
+        </Panel>
+
         <Panel title="무기" collapse={collapse('weapon', weaponSummary(db, cond))}>
           <WeaponCondition cond={cond} onChange={patch} />
         </Panel>
@@ -345,6 +370,7 @@ export function SearchPage() {
               {excludedArmorCount > 0 && ` · 방어구 ${formatCount(excludedArmorCount)}개 제외`}
               {!request.useDecorations && ' · 장식주 없이'}
               {request.spareSlots.length > 0 && ` · 장식주 여유분 ${request.spareSlots.length}개`}
+              {request.minResistances.length > 0 && ` · 내성 조건 ${request.minResistances.length}개`}
             </p>
           </div>
           {running && (

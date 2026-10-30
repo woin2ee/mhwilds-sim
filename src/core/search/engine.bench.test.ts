@@ -1,13 +1,16 @@
 // 검색 성능 측정 (기본 테스트에서는 건너뜀). 실행: BENCH=1 npx vitest run src/core/search/engine.bench.test.ts --silent=false
 import { describe, expect, it } from 'vitest'
+import { ELEMENTS, type Element } from '../../data/types'
 import { loadTestDb, skillIdByName } from '../../test/testDb'
 import { resolveWeapon } from '../equipment'
 import type { Slot, WeaponChoice } from '../types'
 import { runSearch } from './engine'
-import type { SearchRequest, SearchTalisman } from './types'
+import type { ResistanceMin, SearchRequest, SearchTalisman } from './types'
 
 const db = loadTestDb()
 const req = (...pairs: [string, number][]) => pairs.map(([name, level]) => ({ skillId: skillIdByName(db, name), level }))
+/** 내성 조건 */
+const atLeast = (...pairs: [Element, number][]): ResistanceMin[] => pairs.map(([element, min]) => ({ element, min }))
 /** 방어구 장식주 여유분 */
 const spare = (...levels: Slot['level'][]): Slot[] => levels.map((level) => ({ kind: 'armor', level }))
 
@@ -50,6 +53,7 @@ const base: SearchRequest = {
   maxShortfall: 0,
   lockedSkills: [],
   spareSlots: [],
+  minResistances: [],
 }
 
 const CASES: [string, Partial<SearchRequest>][] = [
@@ -97,6 +101,26 @@ const CASES: [string, Partial<SearchRequest>][] = [
   ['여유분 ③③: 약특5 도전5 연격3', { required: req(['약점 특효', 5], ['도전자', 5], ['연격', 3]), spareSlots: spare(3, 3) }],
   ['여유분 ③③③: 약특1', { required: req(['약점 특효', 1]), spareSlots: spare(3, 3, 3) }],
   ['여유분 ③②: 장식주 없이 약특5 도전5', { required: req(['약점 특효', 5], ['도전자', 5]), useDecorations: false, spareSlots: spare(3, 2) }],
+  // 내성 조건 (§6.9): 방어구 내성 합이 속성마다 이 값 이상
+  ['내성 화≥0: 약특5 도전5 연격3', { required: req(['약점 특효', 5], ['도전자', 5], ['연격', 3]), minResistances: atLeast(['fire', 0]) }],
+  ['내성 용≥5: 약특5 도전5 연격3', { required: req(['약점 특효', 5], ['도전자', 5], ['연격', 3]), minResistances: atLeast(['dragon', 5]) }],
+  [
+    '내성 5속성≥0: 약특5 도전5 연격3',
+    { required: req(['약점 특효', 5], ['도전자', 5], ['연격', 3]), minResistances: ELEMENTS.map((element) => ({ element, min: 0 })) },
+  ],
+  [
+    '내성 화·수≥0: 무기 스킬 (아티아 ③③③) 공격5 간파5 + 약특5 도전3',
+    {
+      required: req(['공격', 5], ['간파', 5], ['약점 특효', 5], ['도전자', 3]),
+      weapon: weaponOf({ type: 'db', id: 71 }),
+      minResistances: atLeast(['fire', 0], ['water', 0]),
+    },
+  ],
+  ['내성 화≥0: 약특1 (상한 도달 예상)', { required: req(['약점 특효', 1]), minResistances: atLeast(['fire', 0]) }],
+  [
+    '내성 5속성≥0: 장식주 없이 약특5 도전5',
+    { required: req(['약점 특효', 5], ['도전자', 5]), useDecorations: false, minResistances: ELEMENTS.map((element) => ({ element, min: 0 })) },
+  ],
   // 조건을 채우는 조합이 없어 가장 적게 모자란 조합을 찾는 경우 (결과 칸의 −N = 모자란 레벨 합)
   [
     '모자란 조합: 7스킬 최대',

@@ -78,6 +78,8 @@ function emptyHints(db: GameDb, request: SearchRequest, hasWeaponSkill: boolean,
   if (!request.useDecorations) hints.unshift('‘장식주 없이 찾기’를 끄면 모자란 스킬을 장식주로 채워요.')
   // 여유분은 원하는 스킬을 낮춰도 그대로 남기므로, 가까운 조합을 보여 줄 때도 넣는다
   if (request.spareSlots.length > 0) hints.push('장식주 여유분을 줄여 보세요.')
+  // 내성 조건도 원하는 스킬을 낮출 때 그대로 둔다
+  if (request.minResistances.length > 0) hints.push('내성 조건을 낮추거나 빼 보세요.')
   if (request.excludedSkills.length > 0 && request.excludeMode === 'exclude') {
     hints.push('비선호 스킬을 ‘표시만’으로 바꾸거나 줄여 보세요.')
   }

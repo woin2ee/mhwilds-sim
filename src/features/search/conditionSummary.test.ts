@@ -8,6 +8,7 @@ import {
   excludedSummary,
   optionsSummary,
   requiredSummary,
+  resistanceSummary,
   talismanSummary,
   weaponSummary,
 } from './conditionSummary'
@@ -37,7 +38,7 @@ describe('접은 조건 패널 요약', () => {
     expect(weaponSummary(db, cond({}))).toBe('미지정')
   })
 
-  it('호석·제외할 방어구·옵션', () => {
+  it('호석·제외할 방어구·옵션·내성', () => {
     const fixed = db.data.talismans.find((t) => t.isMaxRank)!
     expect(talismanSummary(db, cond({}), [])).toBe('자동')
     expect(talismanSummary(db, cond({ talismanMode: 'fixed', fixedTalisman: { type: 'fixed', id: fixed.id } }), [])).toBe(
@@ -48,6 +49,10 @@ describe('접은 조건 패널 요약', () => {
       `${nameOf(a.name)} 외 1개`,
     )
     expect(optionsSummary(cond({}))).toBe('기본')
+    expect(resistanceSummary(cond({}))).toBe('없음')
+    expect(resistanceSummary(cond({ minResistances: { dragon: 5, fire: 0, water: -3 } }))).toBe(
+      '화 0 이상 · 수 -3 이상 · 용 +5 이상',
+    )
     expect(optionsSummary(cond({ transcend: true, useDecorations: false }))).toBe('초월 · 장식주 없이')
   })
 })

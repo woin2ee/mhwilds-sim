@@ -161,7 +161,7 @@ export function TalismanRow({ usages, fill }: { usages: readonly SlotUsage[]; fi
           <Button
             size="sm"
             variant="ghost"
-            title="가지고 있는 호석이면 내 호석에 넣어 스킬 검색에도 써요"
+            title="가지고 있는 호석이면 내 호석에 넣어 세팅 검색에도 써요"
             onClick={addToMine}
           >
             내 호석에 추가

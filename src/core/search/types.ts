@@ -1,5 +1,5 @@
-// 스킬 검색 엔진 ↔ UI 사이의 계약. 엔진(engine.ts)과 화면(features/search)이 이 타입만 공유한다.
-import type { ArmorKind, GameData, SkillPoint, SlotLevel } from '../../data/types'
+// 세팅 검색 엔진 ↔ UI 사이의 계약. 엔진(engine.ts)과 화면(features/search)이 이 타입만 공유한다.
+import type { ArmorKind, Element, GameData, SkillPoint, SlotLevel } from '../../data/types'
 import type { EquipKey, Slot, TalismanRef, WeaponChoice } from '../types'
 
 /**
@@ -17,6 +17,12 @@ export interface SearchWeapon {
   choice: WeaponChoice | null
   skills: SkillPoint[]
   slots: SlotLevel[]
+}
+
+/** 내성 조건 하나: 방어구 5부위의 그 속성 내성 합이 min 이상 (DESIGN.md §6.9) */
+export interface ResistanceMin {
+  element: Element
+  min: number
 }
 
 /** 검색 후보 호석. UI가 resolveTalisman 으로 풀어서 넘긴다. */
@@ -48,6 +54,11 @@ export interface SearchRequest {
    * 빈 배열 = 조건 없음
    */
   spareSlots: Slot[]
+  /**
+   * 내성 조건 (DESIGN.md §6.9): 방어구 내성 합(스킬 효과는 빼고, 화면의 내성과 같은 값)이 속성마다 min 이상인 조합만 찾는다.
+   * 빈 배열 = 조건 없음. 조건을 건 속성의 내성이 다른 방어구는 같은 결과로 묶지 않는다
+   */
+  minResistances: ResistanceMin[]
   /** 후보에서 뺄 방어구 id */
   excludedArmorIds: number[]
   sort: SearchSort

@@ -1,12 +1,14 @@
-// 스킬 검색 조건 (localStorage 저장 형식)과 SearchRequest 변환
+// 세팅 검색 조건 (localStorage 저장 형식)과 SearchRequest 변환
 import { resolveTalisman, resolveWeapon } from '../../core/equipment'
 import { customWeaponChoice, dbWeaponChoice, gogmaSkillsOf } from '../../core/gogmaArtian'
 import { hr100ArmorIds, isHr100Talisman } from '../../core/hunterRank'
-import type { ExcludeMode, SearchRequest, SearchSort, SearchTalisman } from '../../core/search/types'
+import type { ExcludeMode, ResistanceMin, SearchRequest, SearchSort, SearchTalisman } from '../../core/search/types'
 import type { CustomTalisman, Slot, SlotKind, TalismanRef, WeaponChoice } from '../../core/types'
 import type { GameDb } from '../../data/db'
 import {
+  ELEMENTS,
   WEAPON_KINDS,
+  type Element,
   type FixedTalisman,
   type Skill,
   type SkillKind,
@@ -46,6 +48,12 @@ export type SpareSlots = Record<SlotKind, [number, number, number]>
 /** 장식주 여유분 한 칸(종류·크기)에 고를 수 있는 최대 개수 */
 export const SPARE_MAX = 5
 
+/**
+ * 내성 조건: 조건을 건 속성마다 방어구 5부위 내성 합의 최솟값 (DESIGN.md §6.9). 예) { fire: 0, dragon: 5 }.
+ * 스킬 효과는 더하지 않는다 (수동 세팅의 내성과 같은 값)
+ */
+export type MinResistances = Partial<Record<Element, number>>
+
 export interface SearchConditions {
   required: RequiredSkill[]
   /** 원하는 스킬 목록의 구분선 (예전 저장값엔 없음 = 없음) */
@@ -75,6 +83,8 @@ export interface SearchConditions {
   useDecorations: boolean
   /** 장식주 여유분 (예전 저장값엔 없음 = 없음) */
   spareSlots: SpareSlots
+  /** 내성 조건 (예전 저장값엔 없음 = 없음) */
+  minResistances: MinResistances
   sort: SearchSort
 }
 
@@ -98,6 +108,7 @@ export const DEFAULT_CONDITIONS: SearchConditions = {
   transcend: false,
   useDecorations: true,
   spareSlots: { armor: [0, 0, 0], weapon: [0, 0, 0] },
+  minResistances: {},
   sort: 'slots',
 }
 
@@ -127,7 +138,30 @@ export function normalizeConditions(stored: Partial<SearchConditions>): SearchCo
   cond.requiredDividers = Array.isArray(cond.requiredDividers) ? cond.requiredDividers.filter(isRequiredDivider) : []
   cond.excludedArmor = Array.isArray(cond.excludedArmor) ? cond.excludedArmor.filter(isExcludedArmor) : []
   cond.spareSlots = normalizeSpareSlots(cond.spareSlots)
+  cond.minResistances = normalizeMinResistances(cond.minResistances)
   return cond
+}
+
+/**
+ * 내성 조건 저장값: 속성 순서로 다시 만든다 (같은 조건이면 저장한 조건 비교 키가 같게). 정수가 아닌 값·모르는 속성은 버리고
+ * 너무 크거나 작은 값은 자른다
+ */
+export function normalizeMinResistances(value: unknown): MinResistances {
+  const v = typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {}
+  const out: MinResistances = {}
+  for (const element of ELEMENTS) {
+    const min = v[element]
+    if (typeof min === 'number' && Number.isInteger(min)) out[element] = Math.max(-99, Math.min(99, min))
+  }
+  return out
+}
+
+/** 내성 조건 → 요청 (속성 순서) */
+export function resistanceList(value: MinResistances): ResistanceMin[] {
+  return ELEMENTS.flatMap((element) => {
+    const min = value[element]
+    return min === undefined ? [] : [{ element, min }]
+  })
 }
 
 /** 장식주 여유분 저장값: 종류마다 크기 3칸을 0~SPARE_MAX 정수로 (모양이 틀린 칸은 0) */
@@ -234,7 +268,7 @@ export function applyRequiredLayout(
 
 type RequiredList = Pick<SearchConditions, 'required' | 'requiredDividers'>
 
-/** 원하는 스킬을 최대 레벨로 그 묶음의 끝(맨 아래 구분선보다 아래)에 넣는다 (스킬 검색·사전 공용). 이미 있으면 그대로 */
+/** 원하는 스킬을 최대 레벨로 그 묶음의 끝(맨 아래 구분선보다 아래)에 넣는다 (세팅 검색·사전 공용). 이미 있으면 그대로 */
 export function addRequiredSkill(db: GameDb, list: RequiredList, skill: Skill): RequiredList {
   if (list.required.some((r) => r.skillId === skill.id)) return list
   return applyRequiredLayout(db, list.required, list.requiredDividers, skill.kind, [
@@ -355,6 +389,7 @@ export function buildRequest(
     transcend: cond.transcend,
     useDecorations: cond.useDecorations,
     spareSlots: spareSlotList(cond.spareSlots),
+    minResistances: resistanceList(cond.minResistances),
     excludedArmorIds: excludedArmorIdsOf(db, cond),
     sort: cond.sort,
     limit: RESULT_LIMIT,

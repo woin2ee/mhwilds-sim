@@ -2,8 +2,9 @@
 import { isGogmaArtian } from '../../core/gogmaArtian'
 import type { CustomTalisman } from '../../core/types'
 import type { GameDb } from '../../data/db'
-import { skillName, talismanName } from '../../data/format'
-import type { SearchConditions } from './conditions'
+import { signed, skillName, talismanName } from '../../data/format'
+import { ELEMENT_LABEL } from '../../data/labels'
+import { resistanceList, type SearchConditions } from './conditions'
 import { excludedArmorLabel } from './excludedArmor'
 import { skillsText, weaponText } from './presets'
 
@@ -22,6 +23,12 @@ export function excludedSummary(db: GameDb, cond: SearchConditions): string {
   if (names.length === 0) return NONE
   const shown = names.length > 3 ? [...names.slice(0, 3), `외 ${names.length - 3}개`] : names
   return [...shown, cond.excludeMode === 'exclude' ? '아예 제외' : '표시만'].join(' · ')
+}
+
+/** 조건을 건 내성: "화 0 이상 · 용 +5 이상" */
+export function resistanceSummary(cond: SearchConditions): string {
+  const parts = resistanceList(cond.minResistances).map(({ element, min }) => `${ELEMENT_LABEL[element]} ${signed(min)} 이상`)
+  return parts.length > 0 ? parts.join(' · ') : NONE
 }
 
 /** 무기 이름 (거극 아티어 무기·슬롯 직접 지정이면 고른 시리즈·그룹 스킬도), 슬롯 직접 지정은 "슬롯 직접 지정 3-3-1" */

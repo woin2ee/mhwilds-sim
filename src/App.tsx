@@ -35,7 +35,7 @@ export default function App() {
       {/* Google 드라이브 동기화: 저장값(localStorage)을 직접 맞추고 바뀐 값은 각 화면의 저장 훅이 받아 그린다 */}
       <SyncProvider>
         <AppStateProvider db={db}>
-          {/* 스킬 검색 조건은 사전(원하는 스킬에 추가)도 함께 쓴다 */}
+          {/* 세팅 검색 조건은 사전(원하는 스킬에 추가)도 함께 쓴다 */}
           <SearchConditionsProvider>
             <Shell />
           </SearchConditionsProvider>
@@ -52,7 +52,7 @@ function Centered({ children }: { children: ReactNode }) {
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'manual', label: '수동 세팅' },
-  { id: 'search', label: '스킬 검색' },
+  { id: 'search', label: '세팅 검색' },
   { id: 'saved', label: '내 세팅' },
   { id: 'talismans', label: '내 호석' },
   { id: 'dictionary', label: '사전' },

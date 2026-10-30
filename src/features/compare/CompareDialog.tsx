@@ -61,7 +61,7 @@ const isBoolean = (v: unknown): v is boolean => typeof v === 'boolean'
 
 /**
  * 세팅 비교: 고른 세팅을 칸으로 나란히 놓고 요약·부위별 장비·장식주·스킬·내성을 행으로 맞춰 보여 준다.
- * 스킬 검색 결과와 내 세팅이 함께 쓴다. renderActions 는 칸 맨 아래 버튼 (수동 세팅에서 열기 등).
+ * 세팅 검색 결과와 내 세팅이 함께 쓴다. renderActions 는 칸 맨 아래 버튼 (수동 세팅에서 열기 등).
  */
 export function CompareDialog({
   open,

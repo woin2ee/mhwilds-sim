@@ -1,4 +1,4 @@
-// 세팅 비교 창의 행 계산 (React 없이 실제 데이터로 테스트한다). 스킬 검색 결과·내 세팅 비교가 함께 쓴다
+// 세팅 비교 창의 행 계산 (React 없이 실제 데이터로 테스트한다). 세팅 검색 결과·내 세팅 비교가 함께 쓴다
 import { unwantedSkillsOf, type BuildSummary } from '../../core/calc'
 import type { BuildState, EquipKey } from '../../core/types'
 import { nameOf, type GameDb } from '../../data/db'

@@ -71,7 +71,7 @@ export function TalismanManager() {
       >
         <p className="mb-4 text-sm leading-relaxed text-muted">
           감정 호석처럼 직접 얻은 호석을 등록하면 <span className="text-fg">수동 세팅</span>과{' '}
-          <span className="text-fg">스킬 검색</span>에서 사용할 수 있어요. 게임 스크린샷이 있으면{' '}
+          <span className="text-fg">세팅 검색</span>에서 사용할 수 있어요. 게임 스크린샷이 있으면{' '}
           <span className="text-fg">사진으로 추가</span>로 스킬·슬롯을 읽어 한 번에 넣을 수 있어요. 공유받은 세팅의
           호석은 여기에 넣지 않고 그 세팅에만 담아요. 등록한 호석은 이 브라우저에 저장되니, 다른 기기에서도 쓰려면{' '}
           <BackupTabLink /> 탭에서 Google 드라이브 동기화를 켜거나 가끔 내 세팅과 함께 내보내 두세요.

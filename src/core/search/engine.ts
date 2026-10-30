@@ -1,4 +1,4 @@
-// 스킬 검색 엔진 (DESIGN.md §6). 순수 동기 함수 — Web Worker(search.worker.ts)와 테스트에서 그대로 실행한다.
+// 세팅 검색 엔진 (DESIGN.md §6). 순수 동기 함수 — Web Worker(search.worker.ts)와 테스트에서 그대로 실행한다.
 import type { GameDb } from '../../data/db'
 import { ARMOR_KINDS, type ArmorKind, type Decoration, type SlotLevel } from '../../data/types'
 import { activeSkillLevels, bonusLevel, computeBuild, unwantedSkillsOf } from '../calc'
@@ -98,6 +98,12 @@ interface LeafState {
   from: { prev: LeafState; group: OptionGroup }[]
 }
 
+/** countFits 의 한 부위 선택지: 슬롯이 같은 옵션 수 */
+interface CountStep {
+  slots: SlotCounts
+  count: number
+}
+
 /** 상위 결과 후보로 펼칠 때 같이 넘기는 값 */
 interface Candidate {
   score: number
@@ -157,6 +163,18 @@ class Searcher {
   // 탐색 상태 (되돌리기 방식으로 재사용)
   private readonly points: Int32Array
   private readonly bonusPieces: Int32Array
+  /**
+   * 고른 클래스마다 조건을 건 내성이 가장 높은 옵션의 값을 더한 것 (§6.9).
+   * 내성으로 나누지 않은 마지막 부위 말고는 클래스의 내성이 하나라, 잎에서 그 부위 값을 빼면 앞 부위의 정확한 합이다
+   */
+  private readonly resSum: Int32Array
+  /** 이 잎에서 마지막 부위 옵션 묶음이 넘어야 하는 내성 (filterLast 일 때만 쓴다) */
+  private readonly lastNeed: Int32Array
+  /** 이 잎의 마지막 부위에 내성 조건을 못 채우는 옵션이 있어 옵션 묶음을 거르는지 */
+  private filterLast = false
+  /** lastNeed 를 글로: 거른 묶음·선택지를 클래스마다 이 값으로 다시 쓴다 */
+  private lastKey = ''
+  private readonly lastGroupCache = new WeakMap<ArmorClass, Map<string, OptionGroup[]>>()
   private readonly armorSlots: SlotCounts = [0, 0, 0]
   private readonly weaponSlots: SlotCounts = [0, 0, 0]
   private readonly chosen: Int32Array
@@ -165,7 +183,7 @@ class Searcher {
   private weaponResult: FillResult | null = null
   /** countFits 상태 배열 (다시 쓴다, 쓴 칸은 비워 둔다) */
   private countBuffers: [Float64Array, Float64Array] = [new Float64Array(0), new Float64Array(0)]
-  private readonly stepCache = new WeakMap<ArmorClass, Map<number, { slots: SlotCounts; count: number }[]>>()
+  private readonly stepCache = new WeakMap<ArmorClass, Map<number | string, CountStep[]>>()
 
   /** 모자란 조합 찾기인지 (bound 의 처음 값이 0 보다 큼) */
   private readonly relaxed: boolean
@@ -203,6 +221,8 @@ class Searcher {
     this.spareAtLeast = s1 + s2 + s3 > 0 ? [s1 + s2 + s3, s2 + s3, s3] : null
     this.points = new Int32Array(prepared.required.length)
     this.bonusPieces = new Int32Array(prepared.bonuses.length)
+    this.resSum = new Int32Array(prepared.resistances.length)
+    this.lastNeed = new Int32Array(prepared.resistances.length)
     this.chosen = new Int32Array(prepared.kinds.length)
     this.results = this.newResults()
   }
@@ -220,6 +240,7 @@ class Searcher {
       this.points.set(weapon.pts)
       for (let i = 0; i < this.points.length; i++) this.points[i] += talisman.pts[i]
       this.bonusPieces.fill(0)
+      this.resSum.fill(0)
       for (let level = 0; level < 3; level++) {
         this.armorSlots[level] = talisman.armorSlots[level]
         this.weaponSlots[level] = weapon.slotCounts[level] + talisman.weaponSlots[level]
@@ -261,19 +282,21 @@ class Searcher {
     const kindClasses = classes[depth]
     for (let ci = 0; ci < kindClasses.length && !this.stopped; ci++) {
       const cls = kindClasses[ci]
-      this.apply(cls.pts, cls.bonus, cls.slotCounts, 1)
+      this.apply(cls, 1)
       this.chosen[depth] = ci
       if (this.feasible(depth + 1)) this.dfs(depth + 1)
-      this.apply(cls.pts, cls.bonus, cls.slotCounts, -1)
+      this.apply(cls, -1)
       if ((++this.nodes & 1023) === 0) this.checkLimits()
       if (depth === 0) this.progress(ci + 1, kindClasses.length, false)
     }
   }
 
-  private apply(pts: Int32Array, bonus: Uint8Array, slots: Readonly<SlotCounts>, sign: 1 | -1): void {
+  private apply(cls: ArmorClass, sign: 1 | -1): void {
+    const { pts, bonus, resMax, slotCounts } = cls
     for (let i = 0; i < pts.length; i++) this.points[i] += sign * pts[i]
     for (let j = 0; j < bonus.length; j++) this.bonusPieces[j] += sign * bonus[j]
-    for (let level = 0; level < 3; level++) this.armorSlots[level] += sign * slots[level]
+    for (let j = 0; j < resMax.length; j++) this.resSum[j] += sign * resMax[j]
+    for (let level = 0; level < 3; level++) this.armorSlots[level] += sign * slotCounts[level]
   }
 
   /**
@@ -281,7 +304,10 @@ class Searcher {
    * 엄격 검색(bound 0)은 한 스킬이라도 모자라면 컷
    */
   private feasible(depth: number): boolean {
-    const { required, bonuses, bounds } = this.p
+    const { required, bonuses, bounds, resistances } = this.p
+    // 내성 조건: 남은 부위에 그 내성이 가장 높은 방어구를 껴도 모자라면 장식주와 상관없이 안 된다 (§6.9)
+    const restRes = bounds.remainingRes[depth]
+    for (let j = 0; j < resistances.length; j++) if (this.resSum[j] + restRes[j] < resistances[j].min) return false
     // 방어구 장식주 여유분: 레벨 k 이상 슬롯이 남은 부위를 다 더해도 모자라면 장식주와 상관없이 안 된다 (§6.8)
     if (this.spareAtLeast) {
       const [n1, n2, n3] = this.spareAtLeast
@@ -411,6 +437,7 @@ class Searcher {
     // 클래스마다 슬롯이 가장 많은 대표 옵션으로 안 되면 이 잎의 어떤 옵션 조합도 안 된다 (α 옵션은 짝 + 장식주와 같다)
     const owner = this.armorFillAt(this.points, this.armorSlots, null, this.weaponSlots, this.bound - baseShort - weaponFill.short)
     if (!owner) return
+    this.filterLast = this.prepareLastFilter()
 
     const talisman = talismans[this.talismanIndex]
     let unwanted = talisman.unwanted.length > 0 || weaponFill.unwanted.length > 0
@@ -440,13 +467,15 @@ class Searcher {
    * 장식주 여유분은 넣을 장식주에 더해 함께 센다 (SimpleFill.withSpare)
    */
   private countSimple(deficits: readonly number[]): number {
-    const { kinds, classes } = this.p
+    const { kinds } = this.p
     const simple = this.simple!
     const indices = this.armorFillers.indices
     let total = this.countFits(simple.withSpare(simple.sizes(deficits)), null)
     // α 옵션 조합: 깊이마다 α 하나 또는 안 고름
     const alphaChoices = kinds.map((_, d) =>
-      classes[d][this.chosen[d]].groups.filter((g) => g.swap !== null).map((g) => ({ depth: d, option: g.options[0] })),
+      this.groupsAt(d)
+        .filter((g) => g.swap !== null)
+        .map((g) => ({ depth: d, option: g.options[0] })),
     )
     if (alphaChoices.every((list) => list.length === 0)) return total
     const visit = (d: number, picks: AlphaPick[]) => {
@@ -471,14 +500,14 @@ class Searcher {
    * 상태 = (레벨 3 슬롯 수, 레벨 2 이상, 전체) 를 각각 n 의 크기 3, 2 이상, 전체 개수에서 자른 것
    */
   private countFits(n: SizeCounts, picks: readonly AlphaPick[] | null): number {
-    const { kinds, classes, talismans } = this.p
+    const { kinds, talismans } = this.p
     const t3 = n[2]
     const t23 = n[1] + n[2]
     const t123 = n[0] + n[1] + n[2]
     const talisman = talismans[this.talismanIndex]
     const stepsAt = (d: number) => {
       const pick = picks?.find((p) => p.depth === d)
-      return this.countSteps(classes[d][this.chosen[d]], pick ? pick.option : -1)
+      return this.countSteps(d, pick ? pick.option : -1)
     }
     if (t123 === 0) {
       // 넣을 장식주가 없으면 모든 조합
@@ -522,21 +551,68 @@ class Searcher {
     return total
   }
 
-  /** countFits 의 한 부위 선택지: option ≥ 0 이면 그 α 옵션 하나, 아니면 α 가 아닌 옵션을 슬롯이 같은 것끼리 */
-  private countSteps(cls: ArmorClass, option: number): { slots: SlotCounts; count: number }[] {
+  /**
+   * countFits 의 깊이 d 선택지: option ≥ 0 이면 그 α 옵션 하나, 아니면 α 가 아닌 옵션을 슬롯이 같은 것끼리 (내성으로 나뉜 묶음도 합친다).
+   * 마지막 부위를 내성으로 거르는 잎이면 거른 묶음으로 (거르는 값마다 따로 둔다)
+   */
+  private countSteps(d: number, option: number): CountStep[] {
+    const cls = this.p.classes[d][this.chosen[d]]
+    const filtered = this.filterLast && d === this.p.kinds.length - 1
     let cache = this.stepCache.get(cls)
     if (!cache) {
       cache = new Map()
       this.stepCache.set(cls, cache)
     }
-    let steps = cache.get(option)
+    const key = filtered ? `${option}|${this.lastKey}` : option
+    let steps = cache.get(key)
     if (!steps) {
-      steps = cls.groups
-        .filter((g) => (option >= 0 ? g.swap !== null && g.options[0] === option : g.swap === null))
-        .map((g) => ({ slots: g.slotCounts, count: g.options.length }))
-      cache.set(option, steps)
+      const bySlots = new Map<string, CountStep>()
+      for (const g of filtered ? this.groupsAt(d) : cls.groups) {
+        if (option >= 0 ? g.swap === null || g.options[0] !== option : g.swap !== null) continue
+        const slotsKey = g.slotCounts.join(',')
+        const step = bySlots.get(slotsKey)
+        if (step) step.count += g.options.length
+        else bySlots.set(slotsKey, { slots: g.slotCounts, count: g.options.length })
+      }
+      steps = [...bySlots.values()]
+      cache.set(key, steps)
     }
     return steps
+  }
+
+  /**
+   * 내성 조건 (§6.9): 마지막 부위 클래스는 내성으로 나누지 않아서, 앞 부위 합으로 모자라는 만큼(lastNeed)을 넘는 옵션 묶음만 쓴다.
+   * 그 클래스의 모든 옵션이 넘으면 false (거를 필요가 없다)
+   */
+  private prepareLastFilter(): boolean {
+    const { resistances, classes, kinds } = this.p
+    const d = kinds.length - 1
+    const last = classes[d][this.chosen[d]]
+    let filter = false
+    for (let j = 0; j < resistances.length; j++) {
+      // 클래스의 가장 낮은 값보다 낮으면 모두 넘으므로 그 값으로 (같은 거른 묶음을 다시 쓰게)
+      this.lastNeed[j] = Math.max(resistances[j].min - (this.resSum[j] - last.resMax[j]), last.resMin[j])
+      if (this.lastNeed[j] > last.resMin[j]) filter = true
+    }
+    if (filter) this.lastKey = this.lastNeed.join(',')
+    return filter
+  }
+
+  /** 잎 DP 가 깊이 d 에서 쓰는 옵션 묶음: 마지막 부위는 내성 조건을 채우는 묶음만 */
+  private groupsAt(d: number): readonly OptionGroup[] {
+    const cls = this.p.classes[d][this.chosen[d]]
+    if (!this.filterLast || d !== this.p.kinds.length - 1) return cls.groups
+    let cache = this.lastGroupCache.get(cls)
+    if (!cache) {
+      cache = new Map()
+      this.lastGroupCache.set(cls, cache)
+    }
+    let groups = cache.get(this.lastKey)
+    if (!groups) {
+      groups = cls.groups.filter((g) => g.res.every((value, j) => value >= this.lastNeed[j]))
+      cache.set(this.lastKey, groups)
+    }
+    return groups
   }
 
   /**
@@ -598,7 +674,7 @@ class Searcher {
 
   /** 잎의 옵션 묶음 조합을 방어구 슬롯 개수·α 옵션별로 합친다 */
   private leafStates(): LeafState[] {
-    const { classes, kinds, talismans, weapon } = this.p
+    const { kinds, talismans, weapon } = this.p
     const talisman = talismans[this.talismanIndex]
     const start: LeafState = {
       counts: [talisman.armorSlots[0], talisman.armorSlots[1], talisman.armorSlots[2]],
@@ -609,7 +685,7 @@ class Searcher {
     }
     let layer = [start]
     for (let d = 0; d < kinds.length; d++) {
-      const groups = classes[d][this.chosen[d]].groups
+      const groups = this.groupsAt(d)
       const next = new Map<string, LeafState>()
       for (const state of layer) {
         for (const group of groups) {

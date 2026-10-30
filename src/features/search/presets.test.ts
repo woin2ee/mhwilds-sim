@@ -60,6 +60,14 @@ describe('검색 조건 저장', () => {
     expect(conditionsKey(spare)).not.toBe(conditionsKey(cond({})))
   })
 
+  it('내성 조건은 저장한 조건에 담고, 속성을 넣은 순서와 상관없이 같은 조건이다', () => {
+    const a = cond({ minResistances: { dragon: 5, fire: 0 } })
+    const b = cond({ minResistances: { fire: 0, dragon: 5 } })
+    expect(newPreset('내성', a).conditions.minResistances).toEqual({ fire: 0, dragon: 5 })
+    expect(conditionsKey({ ...a, minResistances: { dragon: 5, fire: 0 } })).toBe(conditionsKey(b))
+    expect(conditionsKey(cond({ minResistances: { fire: 1, dragon: 5 } }))).not.toBe(conditionsKey(b))
+  })
+
   it('같은 조건 키: 정렬·꺼 둔 표시가 없는 것과 false·필드 순서는 무시하고, 레벨이 다르면 다르다', () => {
     const crit = sid('약점 특효')
     const base = cond({ required: [{ skillId: crit, level: 5 }] })

@@ -4,7 +4,7 @@ import { STORAGE_KEYS } from '../../state/storedValues'
 import { DEFAULT_CONDITIONS, isStoredConditions, normalizeConditions, type SearchConditions } from './conditions'
 import { SearchConditionsContext, type SearchConditionsValue } from './conditionsContext'
 
-/** 스킬 검색 조건을 들고 있다. 스킬 검색 화면과 사전(원하는 스킬에 추가)이 함께 쓴다 */
+/** 세팅 검색 조건을 들고 있다. 세팅 검색 화면과 사전(원하는 스킬에 추가)이 함께 쓴다 */
 export function SearchConditionsProvider({ children }: { children: ReactNode }) {
   const [stored, setStored] = usePersistentState<Partial<SearchConditions>>(
     STORAGE_KEYS.searchConditions,

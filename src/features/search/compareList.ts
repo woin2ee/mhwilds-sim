@@ -1,4 +1,4 @@
-// 스킬 검색 결과 비교 목록: 넣은 결과를 세팅 단위로 가리고, 다시 검색하면 새 결과 번호로 옮긴다
+// 세팅 검색 결과 비교 목록: 넣은 결과를 세팅 단위로 가리고, 다시 검색하면 새 결과 번호로 옮긴다
 import { resultToBuild } from '../../core/search/toBuild'
 import type { SearchRequest, SearchResponse, SearchResultItem } from '../../core/search/types'
 import { EQUIP_KEYS, type BuildState } from '../../core/types'

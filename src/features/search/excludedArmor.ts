@@ -1,4 +1,4 @@
-// 스킬 검색에서 뺄 방어구: 방어구 하나, 세트 하나(예: 슈바르카γ), 계열(같은 몬스터의 세트 모두) (DESIGN.md §7.2)
+// 세팅 검색에서 뺄 방어구: 방어구 하나, 세트 하나(예: 슈바르카γ), 계열(같은 몬스터의 세트 모두) (DESIGN.md §7.2)
 import { nameOf, type GameDb } from '../../data/db'
 import { LOCALES, type ArmorPiece, type ArmorSet, type Names } from '../../data/types'
 

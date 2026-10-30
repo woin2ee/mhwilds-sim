@@ -1,14 +1,22 @@
 import { describe, expect, it } from 'vitest'
 import { GameDb } from '../../data/db'
-import { ARMOR_KINDS, type ArmorKind, type GameData, type Skill, type SkillPoint } from '../../data/types'
+import { ARMOR_KINDS, ELEMENTS, type ArmorKind, type Element, type GameData, type Skill, type SkillPoint } from '../../data/types'
 import { armorByName, decorationIdByName, loadTestDb, skillIdByName } from '../../test/testDb'
 import { activeSkillLevels, computeBuild, missingRequirements, unwantedSkillsOf } from '../calc'
 import { resolveWeapon } from '../equipment'
 import { customWeaponChoice, dbWeaponChoice, type GogmaSkills } from '../gogmaArtian'
 import type { CustomTalisman, Slot, WeaponChoice } from '../types'
 import { runSearch } from './engine'
+import { prepare } from './prepare'
 import { resultToBuild } from './toBuild'
-import type { SearchProgress, SearchRequest, SearchResponse, SearchResultItem, SearchTalisman } from './types'
+import type {
+  ResistanceMin,
+  SearchProgress,
+  SearchRequest,
+  SearchResponse,
+  SearchResultItem,
+  SearchTalisman,
+} from './types'
 
 const db = loadTestDb()
 const sid = (name: string) => skillIdByName(db, name)
@@ -47,6 +55,7 @@ function request(overrides: Partial<SearchRequest>): SearchRequest {
     maxShortfall: 0,
     lockedSkills: [],
     spareSlots: [],
+    minResistances: [],
     ...overrides,
   }
 }
@@ -72,6 +81,7 @@ function verifyItem(
   expect(summary.slots.every((s) => s.valid)).toBe(true)
   expect(unwantedSkillsOf(summary, r.excludedSkills).sort()).toEqual([...item.unwantedSkills].sort())
   expect(fitsSpare(summary.freeSlots, r.spareSlots)).toBe(true)
+  for (const { element, min } of r.minResistances) expect(summary.resistances[element]).toBeGreaterThanOrEqual(min)
   return summary
 }
 
@@ -612,6 +622,100 @@ describe('runSearch', () => {
     })
   })
 
+  describe('내성 조건', () => {
+    /** 실제 조합 키(physical)의 방어구 내성 합 */
+    const resistanceOfKey = (key: string, element: Element) =>
+      key
+        .split(',')
+        .slice(0, ARMOR_KINDS.length)
+        .reduce((sum, id) => sum + (db.armor.get(Number(id))?.resistances[element] ?? 0), 0)
+
+    it('내성 조건 없이 찾은 조합 중 방어구 내성 합이 조건을 채우는 조합을 빠짐없이 찾는다', () => {
+      const required = req(['쇄인룡의 굶주림', 2], ['약점 특효', 5], ['도전자', 5])
+      const plain = runSearch(db, request({ required, limit: 100_000 }))
+      expect(plain.truncated).toBe(false)
+      expect(plain.items).toHaveLength(plain.total)
+      const all = physical(plain.items)
+      // 이 조합들의 내성 합은 화 3~13, 수 −4~5, 뇌 −8~0, 빙 −4~4, 용 −17~−7
+      const lows: Record<Element, number> = { fire: 5, water: -2, thunder: -7, ice: -3, dragon: -16 }
+      const cases: ResistanceMin[][] = [
+        [{ element: 'fire', min: 8 }],
+        [
+          { element: 'water', min: 0 },
+          { element: 'thunder', min: -4 },
+        ],
+        ELEMENTS.map((element) => ({ element, min: lows[element] })),
+      ]
+      for (const minResistances of cases) {
+        const r = request({ required, minResistances, limit: 100_000 })
+        const res = runSearch(db, r)
+        expect(res.truncated).toBe(false)
+        const expected = all.filter((key) => minResistances.every(({ element, min }) => resistanceOfKey(key, element) >= min))
+        expect(expected.length).toBeGreaterThan(50)
+        expect(expected.length).toBeLessThan(all.length)
+        expect(physical(res.items).sort()).toEqual(expected.sort())
+        // 잎마다 센 개수도 펼친 결과 수와 같다 (마지막 부위는 클래스를 나누지 않고 옵션 묶음을 거른다)
+        expect(runSearch(db, { ...r, limit: 20 }).total).toBe(res.items.length)
+        verify(r, { ...res, items: res.items.slice(0, 30) })
+        // 대체 후보를 골라도 조건을 건 내성은 그대로다
+        const resistancesOf = (item: SearchResultItem, variant: Parameters<typeof resultToBuild>[3]) => {
+          const summary = computeBuild(db, resultToBuild(db, item, r, variant))
+          return minResistances.map(({ element }) => summary.resistances[element])
+        }
+        for (const item of res.items.slice(0, 30)) {
+          const shown = resistancesOf(item, {})
+          for (const kind of ARMOR_KINDS) {
+            for (const id of item.armor[kind].slice(1)) expect(resistancesOf(item, { [kind]: id })).toEqual(shown)
+          }
+          for (const set of item.swapSets) expect(resistancesOf(item, set)).toEqual(shown)
+        }
+      }
+    })
+
+    it('조건을 건 내성이 다른 방어구는 같은 옵션(대체 후보)으로 묶지 않는다', () => {
+      // 하위 랭크 가쟈우부츠·필라길그리브는 스킬·시리즈/그룹 스킬·슬롯이 같고 내성만 다르다 (화 0 / −3)
+      const ids = ['가쟈우부츠', '필라길그리브'].map((name) => armorByName(db, name).id).sort((a, b) => a - b)
+      const optionsOf = (r: SearchRequest) =>
+        prepare(db, r)!
+          .classes.flat()
+          .flatMap((cls) => cls.options)
+          .map((option) => option.members.map((m) => m.id).filter((id) => ids.includes(id)))
+          .filter((members) => members.length > 0)
+          .sort((a, b) => a[0] - b[0])
+      const r = request({ required: req(['물 내성', 1]), includeLowRank: true })
+      expect(optionsOf(r)).toEqual([ids])
+      expect(optionsOf({ ...r, minResistances: [{ element: 'fire', min: 0 }] })).toEqual(ids.map((id) => [id]))
+    })
+
+    it('후보로 늘 채워지는 조건은 없는 것과 같고, 채울 수 없는 조건은 바로 빈 결과', () => {
+      const r = request({ required: req(['약점 특효', 5], ['도전자', 5], ['연격', 3]), limit: 50 })
+      const plain = runSearch(db, r)
+      const loose = runSearch(db, { ...r, minResistances: [{ element: 'fire', min: -30 }] })
+      expect(loose.items).toEqual(plain.items)
+      expect(loose.total).toBe(plain.total)
+      const impossible = runSearch(db, { ...r, minResistances: [{ element: 'fire', min: 30 }], maxShortfall: 99 })
+      expect(impossible).toMatchObject({ items: [], total: 0, truncated: false, shortfall: 0 })
+    })
+
+    it('장식주 없이 + 내성 조건 + 정렬', () => {
+      const r = request({
+        required: req(['약점 특효', 5], ['도전자', 5]),
+        useDecorations: false,
+        minResistances: [
+          { element: 'ice', min: 0 },
+          { element: 'dragon', min: 0 },
+        ],
+        sort: 'defense',
+        limit: 50,
+      })
+      const res = runSearch(db, r)
+      expect(res.items).toHaveLength(50)
+      verify(r, res)
+      const defenses = res.items.map((i) => i.defense)
+      expect(defenses).toEqual([...defenses].sort((a, b) => b - a))
+    })
+  })
+
   it('제외한 방어구와 하위 랭크 방어구는 후보에 없다', () => {
     const excludedPiece = armorByName(db, '슈바르카그리브γ')
     const r = request({ required: req(['약점 특효', 4]), excludedArmorIds: [excludedPiece.id], limit: 100 })
@@ -692,6 +796,12 @@ describe('runSearch', () => {
         // 여유분은 낮추지 않는다: Lv3 슬롯 3개를 비워 두려면 원하는 스킬을 낮춰야 한다
         '장식주 여유분 (방어구 ③×3)',
         { required: req(['약점 특효', 5], ['도전자', 5], ['연격', 5]), spareSlots: [3, 3, 3].map(() => armorSlot(3)) },
+        1,
+      ],
+      [
+        // 내성 조건도 낮추지 않는다: 용 내성 8 이상이면 원하는 스킬을 1레벨 낮춰야 한다
+        '내성 조건 (용 ≥ 8)',
+        { required: req(['약점 특효', 5], ['도전자', 5], ['연격', 5]), minResistances: [{ element: 'dragon', min: 8 }] },
         1,
       ],
     ])('%s: 레벨을 그만큼 낮춘 검색들에서 나오는 조합을 빠짐없이 찾는다', (_, overrides, expected) => {
@@ -861,6 +971,7 @@ describe('일반화된 경로 (합성 데이터)', () => {
       maxShortfall: 0,
       lockedSkills: [],
       spareSlots: [],
+      minResistances: [],
     }
     const res = runSearch(synthetic, r)
     expect(res.items.length).toBeGreaterThan(0)
@@ -911,6 +1022,7 @@ describe('일반화된 경로 (합성 데이터)', () => {
       maxShortfall: 99,
       lockedSkills: [],
       spareSlots: [],
+      minResistances: [],
     }
     expect(runSearch(smallDb, { ...r, maxShortfall: 0 }).total).toBe(0)
     const marked = runSearch(smallDb, r)
@@ -968,6 +1080,7 @@ describe('일반화된 경로 (합성 데이터)', () => {
       maxShortfall: 0,
       lockedSkills: [],
       spareSlots: [],
+      minResistances: [],
     }
     const freeOf = (spareSlots: Slot[]) => {
       const res = runSearch(compositeDb, { ...r, spareSlots })

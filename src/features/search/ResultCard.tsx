@@ -10,8 +10,8 @@ import type { SearchRequest, SearchResultItem } from '../../core/search/types'
 import { armorDefense, armorSlots, canTranscend } from '../../core/transcend'
 import type { EquipKey } from '../../core/types'
 import { nameOf, type GameDb } from '../../data/db'
-import { skillName, skillPointsText, talismanName } from '../../data/format'
-import { ARMOR_KIND_LABEL } from '../../data/labels'
+import { signed, skillName, skillPointsText, talismanName } from '../../data/format'
+import { ARMOR_KIND_LABEL, ELEMENT_LABEL } from '../../data/labels'
 import { ARMOR_KINDS, type ArmorKind, type Skill, type SkillPoint } from '../../data/types'
 import { cx } from '../../lib/cx'
 import { useAppState } from '../../state/context'
@@ -449,6 +449,19 @@ export function ResultCard({
         <span className="text-sm">
           방어력 <span className="font-semibold tabular-nums">{summary.defense.max}</span>
         </span>
+        {/* 내성 조건을 건 속성의 내성 합 (대체 방어구를 골라도 그대로다) */}
+        {request.minResistances.length > 0 && (
+          <span className="text-xs text-muted">
+            내성{' '}
+            {request.minResistances.map(({ element }, i) => (
+              <span key={element}>
+                {i > 0 && ' · '}
+                {ELEMENT_LABEL[element]}{' '}
+                <span className="font-semibold text-fg tabular-nums">{signed(summary.resistances[element])}</span>
+              </span>
+            ))}
+          </span>
+        )}
         <span className="inline-flex items-center gap-1 text-xs text-muted">
           남는 슬롯 <SlotList slots={summary.freeSlots} size="sm" empty="없음" sorted />
         </span>

@@ -105,6 +105,25 @@ describe('검색 조건 → SearchRequest', () => {
     expect(requestKey(buildRequest(db, spare, []))).not.toBe(requestKey(buildRequest(db, cond({}), [])))
   })
 
+  it('내성 조건은 속성마다 정수로 저장하고(속성 순서로 다시 만든다), 요청에는 속성 순서 목록으로 넘긴다', () => {
+    expect(normalizeConditions({ required: [], excluded: [] }).minResistances).toEqual({})
+    const stored = {
+      required: [],
+      excluded: [],
+      minResistances: { dragon: 5, fire: 0, ice: 1.5, water: '3', light: 2, thunder: -200 },
+    } as unknown
+    const normalized = normalizeConditions(stored as Partial<SearchConditions>).minResistances
+    expect(normalized).toEqual({ fire: 0, thunder: -99, dragon: 5 })
+    expect(Object.keys(normalized)).toEqual(['fire', 'thunder', 'dragon'])
+    const withResistance = cond({ minResistances: { dragon: 5, fire: 0 } })
+    expect(buildRequest(db, withResistance, []).minResistances).toEqual([
+      { element: 'fire', min: 0 },
+      { element: 'dragon', min: 5 },
+    ])
+    expect(buildRequest(db, cond({}), []).minResistances).toEqual([])
+    expect(requestKey(buildRequest(db, withResistance, []))).not.toBe(requestKey(buildRequest(db, cond({}), [])))
+  })
+
   it('HR 100 장비 제외는 그 방어구 id 를 excludedArmorIds 로 넘기고, 바꾸면 요청 키가 달라진다', () => {
     const off = buildRequest(db, cond({}), [])
     const on = buildRequest(db, cond({ excludeHr100: true }), [])

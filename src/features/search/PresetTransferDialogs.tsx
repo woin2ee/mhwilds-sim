@@ -136,7 +136,7 @@ export function ExportPresets({ presets, cond }: { presets: readonly SearchPrese
       )}
       <section className="space-y-1.5 border-t border-line pt-4">
         <p className="text-xs leading-relaxed text-muted">
-          코드 — 메신저나 메모 앱으로 보내서 ‘스킬 검색 → 저장한 조건 → 가져오기’에 붙여 넣어요
+          코드 — 메신저나 메모 앱으로 보내서 ‘세팅 검색 → 저장한 조건 → 가져오기’에 붙여 넣어요
         </p>
         <textarea
           readOnly

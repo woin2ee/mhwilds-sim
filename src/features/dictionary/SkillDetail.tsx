@@ -135,7 +135,7 @@ function SkillOverview({ skill }: { skill: Skill }) {
   )
 }
 
-/** 스킬 검색의 원하는 스킬에 넣기. 이미 원하는 스킬이나 비선호 스킬이면 그렇다고 보여 주고 스킬 검색으로 잇는다 */
+/** 세팅 검색의 원하는 스킬에 넣기. 이미 원하는 스킬이나 비선호 스킬이면 그렇다고 보여 주고 세팅 검색으로 잇는다 */
 function RequiredAction({ skill }: { skill: Skill }) {
   const { db, setTab } = useAppState()
   const { cond, update } = useSearchConditions()
@@ -152,7 +152,7 @@ function RequiredAction({ skill }: { skill: Skill }) {
             : '비선호 스킬에 있어요'}
         </span>
         <Button size="sm" variant="ghost" onClick={() => setTab('search')}>
-          스킬 검색 보기
+          세팅 검색 보기
         </Button>
       </div>
     )
@@ -165,7 +165,7 @@ function RequiredAction({ skill }: { skill: Skill }) {
     })
   }
   return (
-    <Button size="sm" onClick={add} title="스킬 검색의 원하는 스킬에 최대 레벨로 넣어요. 레벨은 스킬 검색에서 바꿔요.">
+    <Button size="sm" onClick={add} title="세팅 검색의 원하는 스킬에 최대 레벨로 넣어요. 레벨은 세팅 검색에서 바꿔요.">
       + 원하는 스킬에 추가
     </Button>
   )
