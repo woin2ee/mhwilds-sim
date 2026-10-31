@@ -43,6 +43,25 @@ export function newSavedBuild(build: BuildState, name: string, memo = '', weapon
   }
 }
 
+/** 내 세팅에 덮어쓰기: id·만든 날은 그대로 두고 세팅·이름·메모·무기 종류를 바꾼다. 이름을 비우면 원래 이름 */
+export function overwriteSavedBuild(
+  target: SavedBuild,
+  build: BuildState,
+  name: string,
+  memo = '',
+  weaponKind?: WeaponKind | null,
+): SavedBuild {
+  return {
+    id: target.id,
+    name: name.trim() || target.name,
+    memo: memo.trim(),
+    build,
+    ...weaponKindField(weaponKind),
+    createdAt: target.createdAt,
+    updatedAt: new Date().toISOString(),
+  }
+}
+
 /** 세팅에 든 DB 무기의 종류. 직접 입력 무기·무기 없음·데이터에 없는 무기는 null */
 export function buildWeaponKind(db: GameDb, build: BuildState): WeaponKind | null {
   const weapon = build.weapon?.type === 'db' ? db.weapons.get(build.weapon.id) : undefined

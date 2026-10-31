@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { loadTestDb } from '../test/testDb'
 import { customWeaponChoice, dbWeaponChoice } from './gogmaArtian'
-import { buildWeaponKind, newSavedBuild, weaponKindOf } from './savedBuilds'
+import { buildWeaponKind, newSavedBuild, overwriteSavedBuild, weaponKindOf } from './savedBuilds'
 import { emptyBuild, type WeaponChoice } from './types'
 
 const db = loadTestDb()
@@ -33,5 +33,30 @@ describe('내 세팅 무기 종류', () => {
     expect(newSavedBuild(emptyBuild(), '활 세팅', '', 'bow').weaponKind).toBe('bow')
     expect(newSavedBuild(emptyBuild(), '세팅')).not.toHaveProperty('weaponKind')
     expect(newSavedBuild(emptyBuild(), '세팅', '', null)).not.toHaveProperty('weaponKind')
+  })
+})
+
+describe('내 세팅 덮어쓰기', () => {
+  const target = { ...newSavedBuild(emptyBuild(), '옛 세팅', '옛 메모', 'bow'), createdAt: '2026-01-01T00:00:00.000Z' }
+  const build = withWeapon(dbWeaponChoice(greatSword.id))
+
+  it('id·만든 날은 그대로, 세팅·이름·메모·무기 종류는 새것으로', () => {
+    const saved = overwriteSavedBuild(target, build, ' 새 이름 ', ' 새 메모 ', 'great-sword')
+    expect(saved).toMatchObject({
+      id: target.id,
+      createdAt: target.createdAt,
+      name: '새 이름',
+      memo: '새 메모',
+      build,
+      weaponKind: 'great-sword',
+    })
+    expect(saved.updatedAt >= target.updatedAt).toBe(true)
+  })
+
+  it('이름을 비우면 원래 이름, 종류를 고르지 않으면 원래 종류도 지운다', () => {
+    const saved = overwriteSavedBuild(target, build, '  ', '', null)
+    expect(saved.name).toBe('옛 세팅')
+    expect(saved.memo).toBe('')
+    expect(saved).not.toHaveProperty('weaponKind')
   })
 })

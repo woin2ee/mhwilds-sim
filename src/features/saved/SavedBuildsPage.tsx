@@ -1,9 +1,8 @@
 import { useMemo, useState } from 'react'
-import { EquipIcon } from '../../components/EquipIcon'
 import { Badge, Button, EmptyState, Panel } from '../../components/ui'
 import { NAME_MAX, newSavedBuild, weaponKindOf, type SavedBuild } from '../../core/savedBuilds'
 import { WEAPON_KIND_LABEL } from '../../data/labels'
-import { WEAPON_KINDS, type WeaponKind } from '../../data/types'
+import { WEAPON_KINDS } from '../../data/types'
 import { cx } from '../../lib/cx'
 import { matchesQuery } from '../../lib/text'
 import { useAppState } from '../../state/context'
@@ -22,9 +21,8 @@ import { SearchWithBuildDialog } from './SearchWithBuildDialog'
 import { ShareDialog } from './ShareDialog'
 import { useConfirmReplaceManual } from './useBuildActions'
 import { useSearchWithBuild } from './useSearchWithBuild'
+import { WeaponKindBadge, type KindKey } from './WeaponKindBadge'
 
-/** 세팅의 무기 종류 (none = 미지정: 직접 입력 무기·무기 없는 세팅에서 종류를 고르지 않음) */
-type KindKey = WeaponKind | 'none'
 /** 무기 종류 거르기 (all = 전체) */
 type KindFilter = KindKey | 'all'
 
@@ -347,21 +345,6 @@ function SavedBuildCard({
         </Button>
       </div>
     </article>
-  )
-}
-
-/** 카드 제목 앞의 무기 종류 (스킬 칩과 헷갈리지 않게 무기 아이콘을 붙인다). 미지정이면 점선 테두리로 흐리게 */
-function WeaponKindBadge({ kind }: { kind: KindKey }) {
-  return (
-    <span
-      className={cx(
-        'inline-flex shrink-0 items-center gap-1 rounded border py-px pr-1.5 pl-1 text-xs',
-        kind === 'none' ? 'border-dashed border-line font-normal text-muted' : 'border-line bg-surface-2 font-semibold text-fg',
-      )}
-    >
-      <EquipIcon equip="weapon" className="size-3.5" />
-      {kindLabel(kind)}
-    </span>
   )
 }
 
