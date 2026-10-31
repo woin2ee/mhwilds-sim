@@ -6,9 +6,9 @@ import { Badge, Button } from '../../components/ui'
 import type { BuildSummary, SlotUsage } from '../../core/calc'
 import type { BuildState, EquipKey } from '../../core/types'
 import { nameOf } from '../../data/db'
-import { skillName } from '../../data/format'
+import { skillName, skillPointsText } from '../../data/format'
 import { WEAPON_KIND_LABEL } from '../../data/labels'
-import { ARMOR_KINDS } from '../../data/types'
+import { ARMOR_KINDS, type SkillPoint } from '../../data/types'
 import { cx } from '../../lib/cx'
 import { usePersistentState } from '../../lib/storage'
 import { useDb } from '../../state/context'
@@ -83,6 +83,8 @@ export function GameOverlay({
                 key={key}
                 equip={key}
                 name={equipName(key)}
+                // 내 호석 이름('호석 3')은 게임에 없어서 게임에서 고를 수 있게 호석은 스킬도 보여 준다
+                skills={key === 'talisman' ? summary.equipment.talisman?.skills : undefined}
                 usages={summary.slots.filter((s) => s.key === key)}
               />
             ))}
@@ -117,8 +119,18 @@ export function GameOverlay({
   )
 }
 
-/** 장비 한 줄 + 그 장비의 슬롯별 장식주 (빈 슬롯도 보여 준다) */
-function EquipLine({ equip, name, usages }: { equip: EquipKey; name: string | undefined; usages: readonly SlotUsage[] }) {
+/** 장비 한 줄 + 장비 자체 스킬(skills 를 줄 때만) + 그 장비의 슬롯별 장식주 (빈 슬롯도 보여 준다) */
+function EquipLine({
+  equip,
+  name,
+  skills,
+  usages,
+}: {
+  equip: EquipKey
+  name: string | undefined
+  skills?: readonly SkillPoint[]
+  usages: readonly SlotUsage[]
+}) {
   const db = useDb()
   return (
     <li className="px-2.5 py-1.5">
@@ -129,6 +141,7 @@ function EquipLine({ equip, name, usages }: { equip: EquipKey; name: string | un
           {name ?? '—'}
         </span>
       </div>
+      {skills && skills.length > 0 && <p className="mt-0.5 pl-14 text-xs text-muted">{skillPointsText(db, skills)}</p>}
       {usages.length > 0 && (
         <ul className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 pl-14 text-xs">
           {usages.map((usage) => {
