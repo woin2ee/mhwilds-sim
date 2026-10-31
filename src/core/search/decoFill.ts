@@ -37,6 +37,10 @@ export interface FillDeco {
   size: SlotLevel
   /** 채우기 대상 스킬(로컬 인덱스)별 점수 */
   pts: number[]
+  /** 이 장식주가 주는 스킬 레벨 합 (채우기 대상이 아닌 스킬, pts 에서 잘린 레벨 포함) */
+  levels: number
+  /** 스킬이 둘 이상인 복합 장식주 */
+  combo: boolean
   /** 이 장식주가 가진 비선호 스킬 id (정렬) */
   unwanted: number[]
 }
@@ -49,6 +53,10 @@ export interface FillResult {
   unwanted: number[]
   /** 채우지 못하고 남긴 부족분 합 (fill 의 tolerance 이하, 부족분을 다 채우면 0) */
   short: number
+  /** 넘치는 레벨: 장식주가 주는 스킬 레벨 중 부족분을 채우지 않는 것 (요구를 넘는 레벨, 채우기 대상이 아닌 스킬) */
+  waste: number
+  /** 사용한 복합 장식주 수 */
+  combos: number
 }
 
 export function slotScore(counts: Readonly<SlotCounts>): number {
@@ -71,18 +79,24 @@ export function mergeSorted(a: readonly number[], b: readonly number[]): number[
 const isSubset = (a: readonly number[], b: readonly number[]) => a.every((x) => b.includes(x))
 
 /**
- * 같은 종류에서 크기가 작거나 같고, 모든 요구 스킬 점수가 크거나 같고, 비선호 스킬이 부분집합인
- * 장식주가 있으면 그 장식주로 바꿔도 손해가 없으므로 후보에서 뺀다.
+ * 같은 종류에서 크기가 작거나 같고, 모든 요구 스킬 점수가 크거나 같고, 스킬 레벨 합이 작거나 같고, 비선호 스킬이 부분집합이고,
+ * 복합 장식주가 아니거나 둘 다 복합 장식주인 장식주가 있으면 그 장식주로 바꿔도 손해가 없으므로 후보에서 뺀다.
+ * 레벨 합·복합 여부도 보는 건 넘치는 레벨·복합 장식주(FillResult.waste·combos)가 늘지 않게: 집중-파룡주(집중3·용속성1)는 용속성을
+ * 원해도 집중주Ⅲ 을 빼지 않고, 원하는 스킬이 아닌 탄도 강화가 붙은 뇌광-사법주는 같은 점수의 뇌광주Ⅲ 이 뺀다
  */
 export function removeDominated(decos: readonly FillDeco[]): FillDeco[] {
   const kept: FillDeco[] = []
   decos.forEach((d, i) => {
     const dominated = decos.some((o, j) => {
-      if (i === j || o.kind !== d.kind || o.size > d.size) return false
+      if (i === j || o.kind !== d.kind || o.size > d.size || o.levels > d.levels || (o.combo && !d.combo)) return false
       if (!o.pts.every((p, k) => p >= d.pts[k])) return false
       if (!isSubset(o.unwanted, d.unwanted)) return false
       const identical =
-        o.size === d.size && o.unwanted.length === d.unwanted.length && o.pts.every((p, k) => p === d.pts[k])
+        o.size === d.size &&
+        o.levels === d.levels &&
+        o.combo === d.combo &&
+        o.unwanted.length === d.unwanted.length &&
+        o.pts.every((p, k) => p === d.pts[k])
       // 완전히 같으면 앞쪽 하나만 남긴다
       return !identical || j < i
     })
@@ -195,7 +209,7 @@ export class DecoFiller {
     }
     if (first < 0) {
       if (this.hasSpare && !(fitsSizes(a, this.spare.armor) && fitsSizes(w, this.spare.weapon))) return null
-      return { score: slotScore(a) + slotScore(w), decos: [], unwanted: [], short: 0 }
+      return { score: slotScore(a) + slotScore(w), decos: [], unwanted: [], short: 0, waste: 0, combos: 0 }
     }
 
     const pa = this.potential.armor
@@ -211,14 +225,21 @@ export class DecoFiller {
       while (level < 3 && slots[level] === 0) level++
       if (level >= 3) continue
       const next = d.slice()
-      for (let i = 0; i < next.length; i++) if (deco.pts[i] > 0) next[i] = Math.max(0, next[i] - deco.pts[i])
+      let waste = deco.levels
+      for (let i = 0; i < next.length; i++) {
+        if (deco.pts[i] === 0) continue
+        next[i] = Math.max(0, next[i] - deco.pts[i])
+        waste -= d[i] - next[i]
+      }
       slots[level]--
       const sub = this.solve(next, a, w, tolerance)
       slots[level]++
       if (!sub) continue
       const unwanted = mergeSorted(deco.unwanted, sub.unwanted)
-      if (isBetter(sub.short, unwanted, sub.score, best)) {
-        best = { score: sub.score, decos: [deco, ...sub.decos], unwanted, short: sub.short }
+      waste += sub.waste
+      const combos = sub.combos + (deco.combo ? 1 : 0)
+      if (isBetter(sub.short, unwanted, sub.score, waste, combos, best)) {
+        best = { score: sub.score, decos: [deco, ...sub.decos], unwanted, short: sub.short, waste, combos }
       }
     }
     // 이 스킬을 1레벨 모자란 채로 둔다 (고정한 스킬은 빼고)
@@ -226,7 +247,9 @@ export class DecoFiller {
       const next = d.slice()
       next[first]--
       const sub = this.solve(next, a, w, tolerance - 1)
-      if (sub && isBetter(sub.short + 1, sub.unwanted, sub.score, best)) best = { ...sub, short: sub.short + 1 }
+      if (sub && isBetter(sub.short + 1, sub.unwanted, sub.score, sub.waste, sub.combos, best)) {
+        best = { ...sub, short: sub.short + 1 }
+      }
     }
     return best
   }
@@ -283,17 +306,36 @@ export class SimpleFill {
     const n = this.sizes(deficits)
     if (!fitsSizes(a, this.withSpare(n))) return null
     const decos: FillDeco[] = []
-    for (let i = 0; i < deficits.length; i++) for (let k = 0; k < deficits[i]; k++) decos.push(this.decos[i])
-    return { score: slotScore(SimpleFill.free(a, n)), decos, unwanted: [], short: 0 }
+    let waste = 0
+    let combos = 0
+    for (let i = 0; i < deficits.length; i++) {
+      for (let k = 0; k < deficits[i]; k++) decos.push(this.decos[i])
+      waste += deficits[i] * (this.decos[i].levels - 1)
+      if (this.decos[i].combo) combos += deficits[i]
+    }
+    return { score: slotScore(SimpleFill.free(a, n)), decos, unwanted: [], short: 0, waste, combos }
   }
 }
 
-/** 덜 모자란 배치 → 비선호 스킬이 적은 배치 → 남는 슬롯 점수가 큰 배치 순 (비선호 기준은 근사) */
-function isBetter(short: number, unwanted: readonly number[], score: number, best: FillResult | null): boolean {
+/**
+ * 덜 모자란 배치 → 비선호 스킬이 적은 배치 → 남는 슬롯 점수가 큰 배치 → 넘치는 레벨이 적은 배치 → 복합 장식주가 적은 배치 순
+ * (비선호 기준은 근사). 남는 슬롯이 같으면 원하는 스킬을 넘치게 하거나 다른 스킬이 붙는 복합 장식주보다 딱 맞는 장식주,
+ * 그것도 같으면 단일 스킬 장식주 (집중3·고속 변형3·용속성3 은 파룡-집중주 + 집중주Ⅱ 대신 집중주Ⅲ + 파룡주Ⅲ)
+ */
+function isBetter(
+  short: number,
+  unwanted: readonly number[],
+  score: number,
+  waste: number,
+  combos: number,
+  best: FillResult | null,
+): boolean {
   if (!best) return true
   if (short !== best.short) return short < best.short
   if (unwanted.length !== best.unwanted.length) return unwanted.length < best.unwanted.length
-  return score > best.score
+  if (score !== best.score) return score > best.score
+  if (waste !== best.waste) return waste < best.waste
+  return combos < best.combos
 }
 
 /** 실제 장비 슬롯 하나 */

@@ -479,7 +479,9 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
       if (unwanted.length > 0 && !allowUnwanted) continue
       const pts = indices.map((i) => Math.min(required[i].need, pointsOf(decoration.skills, required[i].skillId)))
       if (pts.every((p) => p === 0)) continue
-      decos.push({ decoration, kind: decoration.kind, size: decoration.size, pts, unwanted })
+      const levels = decoration.skills.reduce((sum, s) => sum + s.level, 0)
+      const combo = decoration.skills.length > 1
+      decos.push({ decoration, kind: decoration.kind, size: decoration.size, pts, levels, combo, unwanted })
     }
     return new DecoFiller(
       decos,

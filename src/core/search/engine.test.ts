@@ -366,6 +366,38 @@ describe('runSearch', () => {
       }
       expect(runSearch(db, { ...r, talismans: fixedTalismans }).total).toBe(0)
     })
+
+    it('남는 슬롯이 같으면 원하는 스킬을 넘치게 하거나 다른 스킬이 붙는 복합 장식주를 끼지 않는다', () => {
+      const weapon = weaponOf({ type: 'db', id: 71 }) // 앙길바인 [3,3,3], 무기 스킬 없음
+      /** 결과의 무기 슬롯 장식주가 주는 스킬 레벨 */
+      const jewelLevels = (item: SearchResultItem) => {
+        const levels: Record<number, number> = {}
+        for (const id of item.decorations.weapon) {
+          for (const s of id === null ? [] : db.decorations.get(id)!.skills) levels[s.skillId] = (levels[s.skillId] ?? 0) + s.level
+        }
+        return levels
+      }
+      const combosOf = (item: SearchResultItem) =>
+        item.decorations.weapon.filter((id) => id !== null && db.decorations.get(id)!.skills.length > 1).length
+      // 집중-파룡주·속변-파룡주를 함께 끼면 용속성이 넘치고(복합 장식주는 Lv3 하나를 남기는 하나만), 용속성3 은 파룡-집중주 +
+      // 집중주Ⅱ 대신 단일 장식주, 뇌광-사법주(번개3·탄도 강화1)는 id 가 뇌광주Ⅲ 보다 앞이라 원하지 않은 탄도 강화가 붙었다
+      const cases: [SkillPoint[], number][] = [
+        [req(['집중', 3], ['고속 변형', 3], ['용속성 공격 강화', 1]), 1],
+        [req(['집중', 3], ['고속 변형', 3], ['용속성 공격 강화', 3]), 0],
+        [req(['번개속성 공격 강화', 3]), 0],
+      ]
+      for (const [weaponSkills, combos] of cases) {
+        const r = request({ required: [...weaponSkills, ...req(['약점 특효', 3])], weapon })
+        const res = runSearch(db, r)
+        expect(res.items.length).toBeGreaterThan(0)
+        verify(r, res)
+        const expected = Object.fromEntries(weaponSkills.map((s) => [s.skillId, s.level]))
+        for (const item of res.items) {
+          expect(jewelLevels(item)).toEqual(expected)
+          expect(combosOf(item)).toBe(combos)
+        }
+      }
+    })
   })
 
   describe('거극 아티어 무기', () => {

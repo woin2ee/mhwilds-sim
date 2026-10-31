@@ -120,7 +120,7 @@ interface Candidate {
 }
 
 const NO_SLOTS: Readonly<SlotCounts> = [0, 0, 0]
-const EMPTY_FILL: FillResult = { score: 0, decos: [], unwanted: [], short: 0 }
+const EMPTY_FILL: FillResult = { score: 0, decos: [], unwanted: [], short: 0, waste: 0, combos: 0 }
 
 const countOf = (ids: readonly number[], id: number) => {
   let n = 0

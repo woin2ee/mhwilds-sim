@@ -16,7 +16,18 @@ import {
 } from './decoFill'
 
 let nextId = 1
-function deco(kind: SlotKind, size: SlotLevel, pts: number[], unwanted: number[] = []): FillDeco {
+/**
+ * levels = 장식주의 스킬 레벨 합 (기본은 점수 합: 채우기 대상이 아닌 스킬이 없다),
+ * combo = 복합 장식주 (기본은 점수가 있는 스킬 + 채우기 대상이 아닌 스킬이 둘 이상)
+ */
+function deco(
+  kind: SlotKind,
+  size: SlotLevel,
+  pts: number[],
+  unwanted: number[] = [],
+  levels = pts.reduce((s, p) => s + p, 0),
+  combo = pts.filter((p) => p > 0).length + (levels > pts.reduce((s, p) => s + p, 0) ? 1 : 0) > 1,
+): FillDeco {
   const decoration: Decoration = {
     id: nextId,
     gameId: nextId++,
@@ -26,7 +37,7 @@ function deco(kind: SlotKind, size: SlotLevel, pts: number[], unwanted: number[]
     rarity: 1,
     skills: [],
   }
-  return { decoration, kind, size, pts, unwanted }
+  return { decoration, kind, size, pts, levels, combo, unwanted }
 }
 
 describe('DecoFiller', () => {
@@ -87,7 +98,7 @@ describe('DecoFiller', () => {
     expect(filler.fill([2, 0], [0, 1, 0], [0, 0, 0], 5)).toBeNull()
   })
 
-  it('허용치가 있을 때 모든 배치를 넣어 본 결과와 같다 (무작위, 고정한 스킬·장식주 여유분 포함)', () => {
+  it('허용치가 있을 때 모든 배치를 넣어 본 결과와 같다 (무작위, 고정한 스킬·장식주 여유분·넘치는 레벨·복합 장식주 포함)', () => {
     // mulberry32: 실패하면 같은 사례로 다시 볼 수 있게 고정 시드
     let seed = 20261024
     const random = () => {
@@ -102,7 +113,9 @@ describe('DecoFiller', () => {
       const decos = Array.from({ length: 1 + int(4) }, () => {
         const pts = Array.from({ length: skills }, () => int(2))
         if (!pts.some((p) => p > 0)) pts[int(skills - 1)] = 1
-        return deco(random() < 0.7 ? 'armor' : 'weapon', (1 + int(2)) as SlotLevel, pts)
+        // 채우기 대상이 아닌 스킬 레벨 (복합 장식주의 다른 스킬)
+        const levels = pts.reduce((s, p) => s + p, 0) + int(1)
+        return deco(random() < 0.7 ? 'armor' : 'weapon', (1 + int(2)) as SlotLevel, pts, [], levels)
       })
       const armor: [number, number, number] = [int(2), int(1), int(1)]
       const weapon: [number, number, number] = [int(1), 0, int(1)]
@@ -116,32 +129,47 @@ describe('DecoFiller', () => {
       const slots = (['armor', 'weapon'] as const).flatMap((kind) =>
         (kind === 'armor' ? armor : weapon).flatMap((n, i) => Array.from({ length: n }, () => ({ kind, level: i + 1 }))),
       )
-      let best: { short: number; score: number } | null = null
+      type Outcome = { short: number; score: number; waste: number; combos: number }
+      /** 덜 모자란 → 남는 슬롯 점수가 큰 → 넘치는 레벨이 적은 → 복합 장식주가 적은 순 (비선호 장식주는 없다) */
+      const better = (x: Outcome, y: Outcome) =>
+        x.short !== y.short
+          ? x.short < y.short
+          : x.score !== y.score
+            ? x.score > y.score
+            : x.waste !== y.waste
+              ? x.waste < y.waste
+              : x.combos < y.combos
+      let best: Outcome | null = null
       /** 비워 둔 슬롯의 종류별 레벨별 개수 */
       const free: Record<SlotKind, SlotCounts> = { armor: [0, 0, 0], weapon: [0, 0, 0] }
-      const visit = (i: number, covered: number[], score: number) => {
+      const visit = (i: number, covered: number[], score: number, levels: number, combos: number) => {
         if (i === slots.length) {
           if (deficits.some((d, k) => locked[k] && covered[k] < d)) return
           if (!fitsSizes(free.armor, spare.armor) || !fitsSizes(free.weapon, spare.weapon)) return
           const short = deficits.reduce((s, d, k) => s + Math.max(0, d - covered[k]), 0)
-          if (!best || short < best.short || (short === best.short && score > best.score)) best = { short, score }
+          // 넘치는 레벨 = 넣은 장식주의 레벨 합 − 부족분을 채운 레벨
+          const waste = levels - deficits.reduce((s, d, k) => s + Math.min(d, covered[k]), 0)
+          const outcome = { short, score, waste, combos }
+          if (!best || better(outcome, best)) best = outcome
           return
         }
         const slot = slots[i]
         free[slot.kind][slot.level - 1]++
-        visit(i + 1, covered, score + slot.level * slot.level)
+        visit(i + 1, covered, score + slot.level * slot.level, levels, combos)
         free[slot.kind][slot.level - 1]--
         for (const d of decos) {
-          if (d.kind === slot.kind && d.size <= slot.level) visit(i + 1, covered.map((c, k) => c + d.pts[k]), score)
+          if (d.kind === slot.kind && d.size <= slot.level) {
+            visit(i + 1, covered.map((c, k) => c + d.pts[k]), score, levels + d.levels, combos + (d.combo ? 1 : 0))
+          }
         }
       }
-      visit(0, deficits.map(() => 0), 0)
-      const expected = best as { short: number; score: number } | null
+      visit(0, deficits.map(() => 0), 0, 0, 0)
+      const expected = best as Outcome | null
 
       const result = new DecoFiller(decos, skills, locked, spare).fill(deficits, armor, weapon, tolerance)
       const label = JSON.stringify({
         round,
-        decos: decos.map((d) => [d.kind, d.size, d.pts]),
+        decos: decos.map((d) => [d.kind, d.size, d.pts, d.levels]),
         armor,
         weapon,
         deficits,
@@ -153,11 +181,15 @@ describe('DecoFiller', () => {
         expect(result, label).toBeNull()
         continue
       }
-      expect(result && { short: result.short, score: result.score }, label).toEqual(expected)
-      // 고른 장식주로 실제로 그만큼만 모자란지
+      const outcome = result && { short: result.short, score: result.score, waste: result.waste, combos: result.combos }
+      expect(outcome, label).toEqual(expected)
+      // 고른 장식주로 실제로 그만큼만 모자라고 그만큼만 넘치는지
       const covered = deficits.map((_, k) => result!.decos.reduce((s, d) => s + d.pts[k], 0))
       expect(deficits.reduce((s, d, k) => s + Math.max(0, d - covered[k]), 0), label).toBe(result!.short)
       expect(deficits.every((d, k) => !locked[k] || covered[k] >= d), label).toBe(true)
+      const levels = result!.decos.reduce((s, d) => s + d.levels, 0)
+      expect(levels - deficits.reduce((s, d, k) => s + Math.min(d, covered[k]), 0), label).toBe(result!.waste)
+      expect(result!.decos.filter((d) => d.combo).length, label).toBe(result!.combos)
     }
   })
 
@@ -173,6 +205,39 @@ describe('DecoFiller', () => {
     expect(new DecoFiller([], 0, [], { armor: [0, 0, 1], weapon: [0, 0, 0] }).fill([], [3, 3, 0], [0, 0, 0])).toBeNull()
     // 크기 1 여유분은 더 큰 슬롯에 남아도 된다
     expect(new DecoFiller([], 0, [], { armor: [2, 0, 0], weapon: [0, 0, 0] }).fill([], [0, 1, 1], [0, 0, 0])?.score).toBe(13)
+  })
+
+  it('남는 슬롯 점수가 같으면 넘치는 레벨이 적은 배치를 고른다', () => {
+    // 무기 [3,3,3] 에 집중3·고속 변형3·용속성1: 집중-파룡주와 속변-파룡주를 함께 끼면 용속성이 1 넘친다
+    const focusDragon = deco('weapon', 3, [3, 0, 1])
+    const quickDragon = deco('weapon', 3, [0, 3, 1])
+    const focus = deco('weapon', 3, [3, 0, 0])
+    const quick = deco('weapon', 3, [0, 3, 0])
+    const dragon = deco('weapon', 1, [0, 0, 1])
+    const filler = new DecoFiller([focusDragon, quickDragon, focus, quick, dragon], 3)
+    const result = filler.fill([3, 3, 1], [0, 0, 0], [0, 0, 3])
+    expect(result).toMatchObject({ score: 9, waste: 0 })
+    expect(result!.decos.filter((d) => d === focusDragon || d === quickDragon)).toHaveLength(1)
+    // 용속성을 이미 채웠으면 복합 장식주를 쓰지 않는다
+    expect(filler.fill([3, 3, 0], [0, 0, 0], [0, 0, 3])).toMatchObject({ score: 9, waste: 0, decos: [focus, quick] })
+    // 슬롯이 더 남으면 넘쳐도 복합 장식주 (남는 슬롯이 먼저)
+    expect(filler.fill([1, 0, 1], [0, 0, 0], [0, 0, 2])).toMatchObject({ score: 9, waste: 2, decos: [focusDragon] })
+  })
+
+  it('넘치는 레벨도 같으면 복합 장식주가 적은 배치를 고른다', () => {
+    // 무기 [3,3,3] 에 집중3·고속 변형3·용속성3: 파룡-집중주(용속성3·집중1) + 집중주Ⅱ 대신 집중주Ⅲ + 파룡주Ⅲ
+    const focus2 = deco('weapon', 2, [2, 0, 0])
+    const focus3 = deco('weapon', 3, [3, 0, 0])
+    const dragonFocus = deco('weapon', 3, [1, 0, 3])
+    const quick3 = deco('weapon', 3, [0, 3, 0])
+    const dragon3 = deco('weapon', 3, [0, 0, 3])
+    const filler = new DecoFiller([focus2, dragonFocus, focus3, quick3, dragon3], 3)
+    expect(filler.fill([3, 3, 3], [0, 0, 0], [0, 0, 3])).toMatchObject({
+      score: 0,
+      waste: 0,
+      combos: 0,
+      decos: [focus3, quick3, dragon3],
+    })
   })
 
   it('비선호 장식주는 다른 방법이 없을 때만 쓴다', () => {
@@ -222,6 +287,7 @@ describe('SimpleFill', () => {
       }
       const ids = (r: typeof result) => r!.decos.map((d) => d.decoration.id).sort((a, b) => a - b)
       expect(result?.score, label).toBe(expected.score)
+      expect(result?.waste, label).toBe(expected.waste)
       expect(ids(result), label).toEqual(ids(expected))
     }
   })
@@ -240,6 +306,27 @@ describe('removeDominated', () => {
     const dirty = deco('armor', 1, [2], [5])
     const clean = deco('armor', 2, [1])
     expect(removeDominated([dirty, clean])).toEqual([dirty, clean])
+  })
+
+  it('스킬 레벨 합이 큰 장식주는 지배하지 못한다', () => {
+    // 뇌광-사법주(번개3·탄도 강화1)가 뇌광주Ⅲ 보다 앞에 있어도 번개만 원하면 점수가 같고 레벨 합이 커서 빠진다
+    const boltPrecise = deco('weapon', 3, [3], [], 4)
+    const bolt = deco('weapon', 3, [3])
+    expect(removeDominated([boltPrecise, bolt])).toEqual([bolt])
+    // 집중-파룡주(집중3·용속성1)는 용속성도 원하면 점수가 크지만 레벨 합도 커서 집중주Ⅲ 을 빼지 않는다
+    const focusDragon = deco('weapon', 3, [3, 1])
+    const focus = deco('weapon', 3, [3, 0])
+    expect(removeDominated([focusDragon, focus])).toEqual([focusDragon, focus])
+    // 집중1 만 원하면 집중주Ⅲ(점수는 요구 레벨 1로 잘림)은 지금처럼 집중주【1】 이 뺀다
+    const small = deco('weapon', 1, [1])
+    expect(removeDominated([deco('weapon', 3, [1], [], 3, false), small])).toEqual([small])
+  })
+
+  it('복합 장식주는 단일 스킬 장식주를 지배하지 못한다', () => {
+    // 레벨 합·점수가 같아도 복합 장식주(2·1)로는 단일 장식주(3)를 빼지 않고, 반대로는 뺀다
+    const combo = deco('weapon', 3, [2, 1])
+    const single = deco('weapon', 3, [2, 1], [], 3, false)
+    expect(removeDominated([combo, single])).toEqual([single])
   })
 })
 
