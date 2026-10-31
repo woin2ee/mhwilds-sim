@@ -4,7 +4,7 @@ import { Dialog } from '../../components/Dialog'
 import { SlotBadge } from '../../components/SlotBadge'
 import { Button } from '../../components/ui'
 import { computeBuild, unwantedSkillsOf, type BuildSummary } from '../../core/calc'
-import { suggestName } from '../../core/savedBuilds'
+import { suggestName, type SavedBuild } from '../../core/savedBuilds'
 import { resultToBuild } from '../../core/search/toBuild'
 import type { SearchRequest, SearchResultItem } from '../../core/search/types'
 import { canTranscend } from '../../core/transcend'
@@ -18,6 +18,7 @@ import { COMPARE_MAX } from '../compare/compareRows'
 import { EQUIP_LABEL } from '../manual/labels'
 import { DefenseSection, ResistanceSection, SkillSections } from '../manual/SummaryPanel'
 import { SaveBuildDialog } from '../saved/SaveBuildDialog'
+import { ShareDialog } from '../saved/ShareDialog'
 import { buildKey, isAlternative, NO_VARIANT, type ResultVariant } from './compareList'
 import type { CompareControl } from './ResultCard'
 
@@ -64,7 +65,8 @@ export function ResultDetailDialog({
     bodyRef.current?.parentElement?.scrollTo({ top: 0 })
   }, [openId])
 
-  // ← → 키로 이전·다음. 입력 칸이나 이 창 위에 연 저장 창에서는 넘기지 않는다
+  // ← → 키로 이전·다음. 입력 칸이나 이 창 위에 연 저장·공유 창에서는 넘기지 않는다 (넘기면 그 창이 닫힌다.
+  // 위 창을 누른 뒤 포커스가 어디에 있든 막도록 이 창 안에 열린 창이 있는지도 본다)
   useEffect(() => {
     if (!entry) return
     const onKeyDown = (event: KeyboardEvent) => {
@@ -73,6 +75,7 @@ export function ResultDetailDialog({
       const from = event.target instanceof Element ? event.target : null
       const own = bodyRef.current?.closest('dialog')
       if (!target || from?.closest('input, textarea, select') || (from?.closest('dialog') ?? own) !== own) return
+      if (own?.querySelector('dialog[open]')) return
       event.preventDefault()
       onOpen(target.item.id)
     }
@@ -90,12 +93,27 @@ export function ResultDetailDialog({
         entry &&
         build && (
           <>
+            {/* 휴대폰 폭에는 버튼이 한 줄에 다 안 들어가서 화살표만 (버튼 안 gap 때문에 글자를 둘로 나누지 않는다) */}
             <div className="mr-auto flex gap-1.5">
-              <Button size="sm" disabled={!prev} title="이전 결과 (←)" onClick={() => prev && onOpen(prev.item.id)}>
-                ‹ 이전
+              <Button
+                size="sm"
+                disabled={!prev}
+                title="이전 결과 (←)"
+                aria-label="이전 결과"
+                onClick={() => prev && onOpen(prev.item.id)}
+              >
+                <span className="sm:hidden">‹</span>
+                <span className="max-sm:hidden">‹ 이전</span>
               </Button>
-              <Button size="sm" disabled={!next} title="다음 결과 (→)" onClick={() => next && onOpen(next.item.id)}>
-                다음 ›
+              <Button
+                size="sm"
+                disabled={!next}
+                title="다음 결과 (→)"
+                aria-label="다음 결과"
+                onClick={() => next && onOpen(next.item.id)}
+              >
+                <span className="sm:hidden">›</span>
+                <span className="max-sm:hidden">다음 ›</span>
               </Button>
             </div>
             {/* 저장했는지 같은 버튼 상태는 결과마다 따로 */}
@@ -121,7 +139,10 @@ export function ResultDetailDialog({
   )
 }
 
-/** 상세 창 아래 버튼: 카드와 같은 비교·저장·수동 세팅에서 열기 (알림은 창에 가려지므로 버튼 글자로 알린다) */
+/**
+ * 상세 창 아래 버튼: 카드와 같은 비교·저장·수동 세팅에서 열기와 공유 (알림은 창에 가려지므로 버튼 글자로 알린다).
+ * 공유는 수동 세팅에서 열거나 저장하지 않고 바로 이미지·링크로 보낸다
+ */
 function DetailActions({
   entry,
   build,
@@ -139,8 +160,10 @@ function DetailActions({
   onClose: () => void
 }) {
   const { db, openInManual } = useAppState()
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
+  const [dialog, setDialog] = useState<'save' | 'share' | null>(null)
+  // 이 창에서 저장한 세팅. 공유할 때 그 이름(이미지 제목·링크의 세팅 이름)과 고른 무기 종류를 쓴다
+  const [saved, setSaved] = useState<SavedBuild | null>(null)
+  const defaultName = suggestName(db, request.required)
   const key = useMemo(() => buildKey(build), [build])
   const compared = compare.has(key)
   const toggleCompare = () => {
@@ -165,8 +188,11 @@ function DetailActions({
       >
         {compared ? '✓ 비교' : '비교'}
       </Button>
-      <Button size="sm" variant="ghost" onClick={() => setSaving(true)}>
+      <Button size="sm" variant="ghost" onClick={() => setDialog('save')}>
         {saved ? '✓ 저장함' : '저장'}
+      </Button>
+      <Button size="sm" variant="ghost" onClick={() => setDialog('share')}>
+        공유
       </Button>
       <Button
         size="sm"
@@ -180,13 +206,22 @@ function DetailActions({
         <span className="sm:hidden">수동 세팅</span>
         <span className="max-sm:hidden">수동 세팅에서 열기</span>
       </Button>
-      {saving && (
+      {dialog === 'save' && (
         <SaveBuildDialog
           open
-          onClose={() => setSaving(false)}
+          onClose={() => setDialog(null)}
           build={build}
-          defaultName={suggestName(db, request.required)}
-          onSaved={() => setSaved(true)}
+          defaultName={defaultName}
+          onSaved={setSaved}
+        />
+      )}
+      {dialog === 'share' && (
+        <ShareDialog
+          open
+          onClose={() => setDialog(null)}
+          build={build}
+          name={saved?.name ?? defaultName}
+          weaponKind={saved?.weaponKind ?? null}
         />
       )}
     </div>
