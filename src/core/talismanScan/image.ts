@@ -91,11 +91,15 @@ export function resizeGray(img: GrayImage, width: number, height: number): GrayI
   return { width, height, data: out }
 }
 
-/** 오츠 이진화 문턱값 (두 무리의 분산이 가장 잘 갈리는 값) */
-export function otsuThreshold(img: GrayImage): number {
+/** 오츠 이진화 문턱값 (두 무리의 분산이 가장 잘 갈리는 값). above 를 주면 그보다 밝은 픽셀만 나눈다 */
+export function otsuThreshold(img: GrayImage, above = -1): number {
   const hist = new Array<number>(256).fill(0)
-  for (const v of img.data) hist[v]++
-  const total = img.data.length
+  let total = 0
+  for (const v of img.data) {
+    if (v <= above) continue
+    hist[v]++
+    total++
+  }
   let sumAll = 0
   for (let t = 0; t < 256; t++) sumAll += t * hist[t]
   let countBelow = 0
@@ -115,6 +119,24 @@ export function otsuThreshold(img: GrayImage): number {
       best = between
       threshold = t
     }
+  }
+  return threshold
+}
+
+/**
+ * 밝은 글자의 문턱값. 오츠 값보다 밝은 쪽이 너무 넓으면 배경까지 글자로 본 것이라 밝은 쪽만 다시 나눈다
+ * (한국어판 '희귀도 5' 처럼 어두운 테두리를 두른 글자가 밝은 배경 위에 있으면 오츠는 테두리와 배경을 가른다)
+ */
+export function brightTextThreshold(img: GrayImage): number {
+  let threshold = otsuThreshold(img)
+  for (let pass = 0; pass < 2; pass++) {
+    let ink = 0
+    for (const v of img.data) if (v > threshold) ink++
+    if (ink <= img.data.length * 0.4) break
+    // 밝은 쪽이 한 가지 값뿐이면 더 나눌 수 없다 (기본값 128 이 돌아온다)
+    const next = otsuThreshold(img, threshold)
+    if (next <= threshold) break
+    threshold = next
   }
   return threshold
 }

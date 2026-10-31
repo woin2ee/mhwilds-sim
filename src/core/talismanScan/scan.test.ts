@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { loadTestDb, skillIdByName } from '../../test/testDb'
 import type { Slot } from '../types'
-import type { RgbaImage } from './image'
+import { brightTextThreshold, otsuThreshold, type RgbaImage } from './image'
 import { findPanels } from './layout'
 import { decideRarity, parseRarity, TalismanScanner } from './scan'
 import { readSlot, resolveSlots, type SlotReading } from './slots'
@@ -14,6 +14,7 @@ const WHITE: Rgb = [240, 238, 232]
 const PIP: Rgb = [225, 150, 60]
 const EMPTY_PIP: Rgb = [20, 18, 12]
 const SOCKET: Rgb = [105, 100, 92]
+const OUTLINE: Rgb = [150, 146, 136]
 const HOLE: Rgb = [30, 26, 20]
 const WEAPON_MARK: Rgb = [235, 205, 215]
 const ARMOR_MARK: Rgb = [190, 205, 228]
@@ -23,9 +24,11 @@ const RARE_6: Rgb = [80, 95, 225]
 interface PanelSpec {
   /** 스킬 줄: 레벨(채운 칸)·최대 레벨(전체 칸) */
   rows: { level: number; maxLevel: number }[]
-  /** 슬롯 세 칸 (null = '—') */
-  slots: ({ level: 1 | 2 | 3; weapon: boolean } | null)[]
+  /** 슬롯 세 칸 (null = '—'). outline: 몸통 없이 테두리만 있는 소켓 (한국어판 Lv3) */
+  slots: ({ level: 1 | 2 | 3; weapon: boolean; outline?: boolean } | null)[]
   rarityColor: Rgb
+  /** 레벨 칸 크기 (기준 6.5. 실제 스크린샷은 JPEG 번짐으로 주황 부분이 조금 작게 잡힌다) */
+  pipSize?: number
 }
 
 class Canvas implements RgbaImage {
@@ -51,10 +54,14 @@ class Canvas implements RgbaImage {
   /** 기준점 (ox, oy), 배율 u 로 호석 상세 창 하나를 그린다 */
   panel(ox: number, oy: number, u: number, spec: PanelSpec) {
     spec.rows.forEach(({ level, maxLevel }, i) => {
-      const y = oy + 39.5 * u * i
+      const y = oy + 40 * u * i
       this.fill(ox - 40 * u, y - 28 * u, 222 * u, 40 * u, BAND)
       for (let k = 0; k < 5; k++) this.fill(ox + k * 7 * u, y - 20 * u, 2.5 * u, 10 * u, WHITE)
-      for (let k = 0; k < maxLevel; k++) this.fill(ox + k * 12.2 * u, y, 6.5 * u, 6.5 * u, k < level ? PIP : EMPTY_PIP)
+      const size = spec.pipSize ?? 6.5
+      const inset = (6.5 - size) / 2
+      for (let k = 0; k < maxLevel; k++) {
+        this.fill(ox + (k * 12 + inset) * u, y + inset * u, size * u, size * u, k < level ? PIP : EMPTY_PIP)
+      }
       for (let k = 0; k < 3; k++) this.fill(ox + (155 + k * 7) * u, y - u, 2 * u, 9 * u, WHITE)
     })
     for (let k = 0; k < 6; k++) this.fill(ox + (124 + k * 8) * u, oy - 103 * u, 3 * u, 9 * u, spec.rarityColor)
@@ -65,9 +72,19 @@ class Canvas implements RgbaImage {
         this.fill(x + 6 * u, y + 10 * u, 14 * u, 3 * u, [120, 118, 110])
         return
       }
-      this.fill(x + 2 * u, y + 3 * u, 17 * u, 18 * u, SOCKET)
-      const holes = { 1: [0.5], 2: [0.25, 0.75], 3: [0.2, 0.5, 0.8] }[slot.level]
-      for (const at of holes) this.fill(x + 2 * u + at * 17 * u - 1.5 * u, y + 17 * u, 3 * u, 3 * u, HOLE)
+      if (slot.outline) {
+        // 위 가로선·왼쪽 테두리, 아래 삼각형 줄(위아래 선 사이를 세로선으로 나눈 칸 = 구멍)만 있고 속은 어둡다
+        this.fill(x + 4 * u, y + 7 * u, 12 * u, 1.5 * u, OUTLINE)
+        this.fill(x + u, y + 8 * u, 1.5 * u, 11 * u, OUTLINE)
+        this.fill(x + u, y + 18.5 * u, 19.5 * u, 1.5 * u, OUTLINE)
+        const teeth = { 1: [0, 18], 2: [0, 9, 18], 3: [0, 6, 12, 18] }[slot.level]
+        for (const at of teeth) this.fill(x + (1 + at) * u, y + 19 * u, 1.5 * u, 4 * u, OUTLINE)
+        this.fill(x + u, y + 23 * u, 19.5 * u, 1.5 * u, OUTLINE)
+      } else {
+        this.fill(x + 2 * u, y + 3 * u, 17 * u, 18 * u, SOCKET)
+        const holes = { 1: [0.5], 2: [0.25, 0.75], 3: [0.2, 0.5, 0.8] }[slot.level]
+        for (const at of holes) this.fill(x + 2 * u + at * 17 * u - 1.5 * u, y + 17 * u, 3 * u, 3 * u, HOLE)
+      }
       this.fill(x + 18 * u, y + u, 6 * u, 8 * u, slot.weapon ? WEAPON_MARK : ARMOR_MARK)
     })
   }
@@ -129,10 +146,56 @@ describe('호석 상세 창 찾기', () => {
     expect(panel.slots.map((s) => label(readSlot(canvas, s)))).toEqual(['A3', '-', '-'])
   })
 
+  for (const u of [1.5, 2, 3]) {
+    it(`배율 ${u}: 몸통 없이 테두리만 있는 소켓도 읽는다 (한국어판 Lv3)`, () => {
+      const canvas = new Canvas(Math.round(1280 * u), Math.round(720 * u))
+      canvas.panel(300 * u, 265 * u, u, {
+        ...RARE6_SPEC,
+        slots: [{ level: 3, weapon: false, outline: true }, { level: 1, weapon: false, outline: true }, null],
+      })
+      const [panel] = findPanels(canvas)
+      expect(panel.slots.map((s) => label(readSlot(canvas, s)))).toEqual(['A3', 'A1', '-'])
+    })
+  }
+
+  it('스킬 줄이 하나면 레벨 칸 간격(칸이 하나면 바로 뒤 빈 칸까지)으로 배율을 잰다', () => {
+    for (const row of [
+      { level: 3, maxLevel: 5 },
+      { level: 1, maxLevel: 3 },
+    ]) {
+      const canvas = new Canvas(2560, 1440)
+      // 칸을 작게 그려 칸 크기로 짐작하면 배율이 틀리게 한다
+      canvas.panel(1000, 600, 2, { ...RARE8_SPEC, rows: [row], pipSize: 6 })
+      const [panel] = findPanels(canvas)
+      expect(panel.unit).toBeCloseTo(2, 2)
+      expect(panel.rows.map((r) => [r.level, r.maxLevel])).toEqual([[row.level, row.maxLevel]])
+      expect(panel.slots.map((s) => label(readSlot(canvas, s)))).toEqual(['W1', 'A1', 'A1'])
+    }
+  })
+
   it('레벨 칸이 없으면 창을 찾지 않는다', () => {
     const canvas = new Canvas(640, 360)
     canvas.fill(100, 100, 7, 7, PIP)
     expect(findPanels(canvas)).toEqual([])
+  })
+})
+
+describe('OCR 입력 이진화', () => {
+  it('밝은 배경 위에 어두운 테두리를 두른 밝은 글자는 글자만 잉크로 본다 (한국어판 희귀도 숫자)', () => {
+    const width = 40
+    const height = 36
+    const data = new Uint8Array(width * height).fill(120)
+    const square = (x0: number, y0: number, size: number, value: number) => {
+      for (let y = y0; y < y0 + size; y++) for (let x = x0; x < x0 + size; x++) data[y * width + x] = value
+    }
+    square(6, 9, 18, 25) // 테두리
+    square(10, 13, 10, 215) // 글자
+    const img = { width, height, data }
+    // 오츠 값은 테두리와 배경을 가른다 (배경까지 글자가 된다)
+    expect(otsuThreshold(img)).toBeLessThan(120)
+    const threshold = brightTextThreshold(img)
+    expect(threshold).toBeGreaterThanOrEqual(120)
+    expect(threshold).toBeLessThan(215)
   })
 })
 

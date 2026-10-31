@@ -20,12 +20,13 @@ export const APPRAISED_SLOT_PATTERNS: Readonly<Record<number, readonly (readonly
 export const WEAPON_SLOT_RARITY = 8
 
 /**
- * 상세 창 'RARE N' 글자 색의 색상(hue, 도) 범위. 8(주황)·6(파랑)은 스크린샷으로 확인했고,
- * 5(청록)·7(보라)은 감정 BOX 아이콘 색으로 짐작한 값이라 숫자 OCR 과 맞을 때만 믿는다 (verified: false).
+ * 상세 창 'RARE N'(한국어판 '희귀도 N') 글자 색의 색상(hue, 도) 범위. 스크린샷으로 잰 값: 8 주황 16°(일본어판),
+ * 6 파랑 243°(일본어판), 5 청록 180~189°(한국어판 1440p·줄인 1080p·720p). 5·6 경계는 둘의 가운데.
+ * 7(보라)은 감정 BOX 아이콘 색으로 짐작한 값이라 숫자 OCR 과 맞을 때만 믿는다 (verified: false).
  */
 export const RARITY_TEXT_HUES: readonly { rarity: number; from: number; to: number; verified: boolean }[] = [
   { rarity: 8, from: -30, to: 45, verified: true },
-  { rarity: 5, from: 140, to: 200, verified: false },
-  { rarity: 6, from: 200, to: 255, verified: true },
+  { rarity: 5, from: 140, to: 215, verified: true },
+  { rarity: 6, from: 215, to: 255, verified: true },
   { rarity: 7, from: 255, to: 320, verified: false },
 ]

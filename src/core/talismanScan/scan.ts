@@ -3,9 +3,9 @@ import { WEAPON_SLOT_RARITY } from '../appraisedTalisman'
 import type { Slot } from '../types'
 import {
   brightness,
+  brightTextThreshold,
   encodePgm,
   inkOnPaper,
-  otsuThreshold,
   resizeGray,
   whiteness,
   type GrayImage,
@@ -52,7 +52,7 @@ const DIGITS = '0123456789'
 export function prepareLine(gray: GrayImage): Uint8Array {
   const scale = Math.min(6, Math.max(1, OCR_LINE_HEIGHT / Math.max(1, gray.height)))
   const big = scale > 1 ? resizeGray(gray, gray.width * scale, gray.height * scale) : gray
-  return encodePgm(inkOnPaper(big, otsuThreshold(big), 16))
+  return encodePgm(inkOnPaper(big, brightTextThreshold(big), 16))
 }
 
 /** 숫자 칸 OCR 결과의 마지막 숫자 (감정 호석은 레어도 5~8) */
@@ -115,8 +115,11 @@ export class TalismanScanner {
         readings.some((r) => r.kind === 'socket' && r.weapon === true),
       )
       const resolved = resolveSlots(readings, rarity.value)
-      // 스킬·슬롯·레어도 중 확실한 것이 하나도 없으면 레벨 칸을 닮은 다른 것을 잡은 것이다 (장비 상자 아이콘, 화면 아래 버튼 등)
-      if (!skills.some((s) => s.skillId !== null && !s.unsure) && !resolved.sure && !rarity.sure) continue
+      // 스킬·슬롯·레어도 중 확실한 것이 하나도 없으면 레벨 칸을 닮은 다른 것을 잡은 것이다 (장비 상자 아이콘, 화면 아래 버튼 등).
+      // 레어도는 글자 색만으로도 확실해지는데 장비 BOX 아이콘도 레어도 색이라, 소켓이 하나도 없으면 레어도만으로는 남기지 않는다
+      // (감정 호석은 레어도마다 슬롯이 하나 이상 있다)
+      const hasSocket = readings.some((r) => r.kind === 'socket')
+      if (!skills.some((s) => s.skillId !== null && !s.unsure) && !resolved.sure && !(rarity.sure && hasSocket)) continue
       out.push({
         bounds: panel.bounds,
         rarity: rarity.value ?? resolved.rarity,

@@ -14,14 +14,22 @@ import { useCoarsePointer } from '../../lib/media'
 import { useAppState, useDb } from '../../state/context'
 import { useToast } from '../../state/toast'
 import { cropPreview, imageFiles, loadScreenshot } from './screenshot'
-import { createOcrEngine, type OcrEngine } from './talismanOcr'
+import { createOcrEngine, OcrLoadError, preloadOcrLibrary, type OcrEngine } from './talismanOcr'
 import { TalismanForm } from './TalismanForm'
+
+/** 페이지를 연 뒤 글자 인식 라이브러리 JS 를 미리 받기까지 기다리는 시간 (첫 화면을 그리는 데 방해되지 않게) */
+const PRELOAD_DELAY_MS = 5000
 
 /**
  * 사진(스크린샷)으로 내 호석 추가: 사진 고르기·붙여 넣기·끌어다 놓기 → 호석 상세 창 읽기 → 확인·수정 → 추가.
  * 열 때마다 새로 마운트해 지난번에 읽은 사진·OCR 워커가 남지 않게 한다 ('추가' 버튼은 대화상자 아래에 고정)
  */
 export function PhotoImportDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  // 라이브러리 JS 는 이름이 배포마다 바뀌어 새로 배포한 뒤에도 열어 둔 탭은 받지 못한다. 미리 받아 두면 그 탭에서도 쓸 수 있다
+  useEffect(() => {
+    const timer = window.setTimeout(preloadOcrLibrary, PRELOAD_DELAY_MS)
+    return () => window.clearTimeout(timer)
+  }, [])
   return open ? <PhotoImport onClose={onClose} /> : null
 }
 
@@ -32,6 +40,9 @@ interface Photo {
   found: number
   error?: string
 }
+
+/** 글자 인식 준비 상태. failed-library: 라이브러리 파일을 못 받음(새로고침), failed-data: 워커·데이터를 못 받음(다시 시도) */
+type EngineState = 'idle' | 'loading' | 'ready' | 'failed-library' | 'failed-data'
 
 /** 미리보기 가로 크기 (CSS px). 잘라 둘 때는 고해상도 화면을 생각해 두 배로 */
 const PREVIEW_WIDTH = 220
@@ -88,7 +99,8 @@ function PhotoImport({ onClose }: { onClose: () => void }) {
   const [photos, setPhotos] = useState<Photo[]>([])
   const [found, setFound] = useState<Found[]>([])
   const [editing, setEditing] = useState<string | null>(null)
-  const [engineState, setEngineState] = useState<'idle' | 'loading' | 'ready' | 'failed'>('idle')
+  const [engineState, setEngineState] = useState<EngineState>('idle')
+  const engineFailed = engineState === 'failed-library' || engineState === 'failed-data'
   const [dragging, setDragging] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const engineRef = useRef<Promise<OcrEngine> | null>(null)
@@ -125,9 +137,9 @@ function PhotoImport({ onClose }: { onClose: () => void }) {
     [],
   )
 
-  // 한 장씩 차례로 읽는다 (OCR 워커는 하나)
+  // 한 장씩 차례로 읽는다 (OCR 워커는 하나). 글자 인식을 준비하지 못하면 사진은 기다리게 두고 안내(새로고침·다시 시도)를 띄운다
   useEffect(() => {
-    if (busyRef.current) return
+    if (busyRef.current || engineFailed) return
     const next = photos.find((p) => p.status === 'waiting')
     if (!next) return
     busyRef.current = true
@@ -140,11 +152,16 @@ function PhotoImport({ onClose }: { onClose: () => void }) {
           setEngineState('loading')
           engineRef.current = createOcrEngine()
         }
-        const engine = await engineRef.current.catch((error: unknown) => {
+        let engine: OcrEngine
+        try {
+          engine = await engineRef.current
+        } catch (error) {
+          console.error(error)
           engineRef.current = null
-          setEngineState('failed')
-          throw error
-        })
+          update({ status: 'waiting' })
+          setEngineState(error instanceof OcrLoadError && error.stage === 'library' ? 'failed-library' : 'failed-data')
+          return
+        }
         setEngineState('ready')
         const shot = await loadScreenshot(next.file)
         const results = await scanner.scan(shot.image, engine.readLine)
@@ -166,17 +183,14 @@ function PhotoImport({ onClose }: { onClose: () => void }) {
         })
       } catch (error) {
         console.error(error)
-        update({
-          status: 'failed',
-          error: engineRef.current ? '사진을 읽지 못했어요.' : '글자 인식 데이터를 받지 못했어요.',
-        })
+        update({ status: 'failed', error: '사진을 읽지 못했어요.' })
       } finally {
         busyRef.current = false
         // 다음 사진으로: 목록을 새 배열로 바꿔 이 effect 를 다시 돌린다
         setPhotos((list) => [...list])
       }
     })()
-  }, [photos, scanner, existing])
+  }, [photos, scanner, existing, engineFailed])
 
   const updateFound = (id: string, patch: Partial<Found>) =>
     setFound((list) => list.map((f) => (f.id === id ? { ...f, ...patch } : f)))
@@ -209,7 +223,7 @@ function PhotoImport({ onClose }: { onClose: () => void }) {
       className="sm:w-[min(46rem,calc(100vw-2rem))]"
       footer={
         <>
-          {reading && <span className="mr-auto self-center text-xs text-muted">읽는 중…</span>}
+          {reading && !engineFailed && <span className="mr-auto self-center text-xs text-muted">읽는 중…</span>}
           <Button variant="ghost" onClick={onClose}>
             취소
           </Button>
@@ -270,6 +284,25 @@ function PhotoImport({ onClose }: { onClose: () => void }) {
 
         {engineState === 'loading' && (
           <p className="text-sm text-muted">글자 인식을 준비하는 중… 처음 한 번은 데이터(약 5MB)를 받아요.</p>
+        )}
+
+        {engineFailed && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-bad/40 bg-bad/10 px-3 py-2 text-sm text-bad">
+            <p className="min-w-0 flex-1 leading-relaxed break-keep">
+              {engineState === 'failed-library'
+                ? '글자 인식 기능을 불러오지 못했어요. 이 탭을 연 뒤에 사이트가 업데이트됐을 수 있어요. 새로고침한 뒤 다시 올려 주세요 (저장한 호석과 세팅은 그대로예요).'
+                : '글자 인식 데이터를 받지 못했어요. 인터넷 연결을 확인하고 다시 시도해 주세요. 계속 안 되면 새로고침해 보세요.'}
+            </p>
+            {engineState === 'failed-library' ? (
+              <Button size="sm" onClick={() => window.location.reload()}>
+                새로고침
+              </Button>
+            ) : (
+              <Button size="sm" onClick={() => setEngineState('idle')}>
+                다시 시도
+              </Button>
+            )}
+          </div>
         )}
 
         {photos.length > 0 && (

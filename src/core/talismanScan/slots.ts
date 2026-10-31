@@ -31,24 +31,31 @@ function pixelsOf(img: RgbaImage, area: Rect): { w: number; h: number; at: Pixel
   }
 }
 
-/** 슬롯 칸 하나 (기준 26×23: 왼쪽 0.8 이 소켓, 오른쪽 위가 무기/방어구 표시) */
+/** 슬롯 칸 하나 (기준 26×26: 왼쪽 0.8 이 소켓, 오른쪽 위가 무기/방어구 표시) */
 export function readSlot(img: RgbaImage, area: Rect): SlotReading {
   const { w, h, at } = pixelsOf(img, area)
   if (w < 8 || h < 8) return { kind: 'none' }
-  // 소켓 몸통(회색) 줄. 오른쪽 위 표시와 겹치지 않게 왼쪽 절반만 본다
-  const x0 = Math.floor(w * 0.08)
-  const x1 = Math.ceil(w * 0.5)
-  const isBody: boolean[] = []
+  // 소켓 줄: 회색 몸통(Lv1·2)이나 밝은 테두리가 보이는 줄. Lv3 소켓은 테두리만 있고 속이 어두워서
+  // 줄마다 테두리 몇 픽셀만 보인다 (한국어판 스크린샷). 오른쪽 위 표시와 겹치지 않게 왼쪽 0.6 만 본다.
+  // 배율이 1~2% 만 틀려도 칸이 몇 픽셀 밀려 왼쪽 끝에 앞 칸의 표시(밝은 그림)가 걸치므로 그 열은 뺀다 (소켓 테두리는 그만큼 밝지 않다)
+  let x0 = 0
+  while (x0 < w * 0.2 && columnHasBright(x0, h, at)) x0++
+  if (x0 > 0) x0++
+  const x1 = Math.ceil(w * 0.6)
+  const minCount = Math.max(2, (x1 - x0) * 0.06)
+  const counts: number[] = []
   for (let y = 0; y < h; y++) {
     let n = 0
     for (let x = x0; x < x1; x++) {
       const p = at(x, y)
       if (p.lum >= 55 && p.lum <= 200 && p.sat < 0.35) n++
     }
-    isBody.push(n >= (x1 - x0) * 0.25)
+    counts.push(n)
   }
+  const isBody = counts.map((n) => n >= minCount)
   // 가운데에서 가장 가까운 몸통 줄부터 위아래로 넓힌다 (Lv2·3 소켓은 가운데가 넓게 비어 가운데 줄이 몸통이 아닐 수 있다).
-  // 위쪽은 한 줄 끊김을 넘어가고, 아래쪽 끝 다음은 어두운 배경이라 넘지 않는다 (넘으면 아래 테두리까지 잡힌다)
+  // 위쪽은 테두리가 한 픽셀만 남은 줄(작은 화면의 Lv3)도 잇고, 한 줄 끊김은 그 위가 몸통일 때만 넘어간다.
+  // 아래쪽 끝 다음은 어두운 배경이라 넘지 않는다 (넘으면 아래 테두리까지 잡힌다)
   const mid = Math.floor(h / 2)
   let start = -1
   for (let d = 0; d <= h * 0.2 && start < 0; d++) {
@@ -57,12 +64,22 @@ export function readSlot(img: RgbaImage, area: Rect): SlotReading {
   }
   if (start < 0) return { kind: 'none' }
   let top = start
-  while (top - 1 >= 0 && (isBody[top - 1] || (top - 2 >= 0 && isBody[top - 2]))) top -= isBody[top - 1] ? 1 : 2
+  for (;;) {
+    if (top - 1 >= 0 && counts[top - 1] > 0) top -= 1
+    else if (top - 2 >= 0 && isBody[top - 2]) top -= 2
+    else break
+  }
   let bottom = start
   while (bottom + 1 < h && isBody[bottom + 1]) bottom++
-  // 소켓은 칸 높이의 대부분을 차지하고, 빈 칸('—')은 가운데 가는 막대뿐이다
-  if (bottom - top + 1 < h * 0.55) return { kind: 'none' }
+  // 소켓은 칸 높이의 2/3 쯤(기준 16)을 차지하고, 빈 칸('—')은 가운데 가는 막대(기준 3)뿐이다
+  if (bottom - top + 1 < h * 0.45) return { kind: 'none' }
   return { kind: 'socket', level: readLevel(w, top, bottom, at), weapon: readWeapon(w, h, at) }
+}
+
+/** 칸 위쪽 2/3 에 무기/방어구 표시처럼 밝은 픽셀이 있는 열 */
+function columnHasBright(x: number, h: number, at: PixelAt): boolean {
+  for (let y = 0; y < h * 0.66; y++) if (at(x, y).lum >= 160) return true
+  return false
 }
 
 /** 소켓 아래쪽 삼각형 줄의 구멍(빈 슬롯은 어둡고, 장식주가 들면 그 색) 개수 = 슬롯 레벨 */
@@ -185,7 +202,10 @@ export function resolveSlots(readings: readonly SlotReading[], rarity: number | 
   return { slots: best.map((s) => ({ ...s })), sure: bestCost === 0 && ties === 0, rarity: guessedRarity }
 }
 
-/** 'RARE N' 글자 색(배경 = 중앙값 색에서 많이 먼 픽셀들의 평균 색상)으로 짐작한 레어도 */
+/**
+ * 'RARE N'·'희귀도 N' 글자 색(배경 = 중앙값 색에서 많이 먼 픽셀 중 밝고 색이 있는 것들의 평균 색상)으로 짐작한 레어도.
+ * 한국어판 글자는 어두운 테두리를 둘러서, 테두리 둘레의 어둡고 붉은 픽셀까지 세면 색이 흐려진다
+ */
 export function rarityFromTextColor(img: RgbaImage, area: Rect): { rarity: number; verified: boolean } | null {
   const rect = clampRect(area, img.width, img.height)
   if (rect.width < 4 || rect.height < 4) return null
@@ -206,7 +226,7 @@ export function rarityFromTextColor(img: RgbaImage, area: Rect): { rarity: numbe
   let n = 0
   px.forEach((p, i) => {
     const max = Math.max(...p)
-    if (dist[i] < cut || max - Math.min(...p) < max * 0.25) return
+    if (dist[i] < cut || max < 120 || max - Math.min(...p) < max * 0.35) return
     const hue = (rgbHue(p[0], p[1], p[2]) * Math.PI) / 180
     sx += Math.cos(hue)
     sy += Math.sin(hue)

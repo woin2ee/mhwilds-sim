@@ -3,22 +3,25 @@ import type { Rect, RgbaImage } from './image'
 
 /**
  * 기준 해상도(1280×720)에서 잰 창 안 위치. 기준점은 첫 스킬 줄 첫 레벨 칸의 왼쪽 위.
- * 다른 해상도는 레벨 칸 간격으로 구한 배율(unit)을 곱한다. 장비 변경·감정 결과·마카 연금 화면에서 같다.
+ * 다른 해상도는 줄 간격(줄이 하나면 레벨 칸 간격)으로 구한 배율(unit)을 곱한다. 장비 변경·감정 결과·마카 연금·
+ * 장비 확인/매각 화면에서 같다. 칸 간격 : 줄 간격 = 0.300 (일본어판 720p, 한국어판 1440p·1080p 무게중심으로 잼)
  */
 const REF = {
-  pipPitch: 12.2,
+  pipPitch: 12,
   pipSize: 6.5,
-  rowPitch: 39.5,
+  rowPitch: 40,
   skillName: { x: -6, y: -25, width: 160, height: 21 },
+  /** 스킬 줄인지 볼 때 흰 글자를 세는 이름 앞부분 (두 글자 이름도 이름 칸 전체로 재면 글자 비율이 너무 작다) */
+  skillNameStart: { x: -6, y: -25, width: 64, height: 21 },
   /** 줄 오른쪽 끝 'Lv3' (최대 레벨이면 금색) */
   levelText: { x: 148, y: -3, width: 30, height: 13 },
   /** 'RARE 8' 의 숫자 칸 (오른쪽 정렬). 한국어 OCR 모델은 'RARE' 를 잘 못 읽어서 숫자만 읽는다 */
   rarityDigit: { x: 162, y: -107, width: 20, height: 18 },
   /** 'RARE 8' 글자 전체 (글자 색 = 레어도 색) */
   rarityText: { x: 118, y: -105, width: 60, height: 14 },
-  /** 슬롯 세 칸의 가운데 x. 빈 칸은 '—' */
+  /** 슬롯 세 칸의 가운데 x. 빈 칸은 '—'. 소켓은 기준 -83~-66 (한국어판 1440p 는 -81~-65 라 아래로 여유를 둔다) */
   slotCenters: [111, 137, 163],
-  slot: { width: 26, y: -89, height: 23 },
+  slot: { width: 26, y: -89, height: 26 },
   /** 미리보기로 보여 줄 창 영역 (아래쪽은 마지막 스킬 줄에서 extraBottom 만큼) */
   bounds: { x: -48, y: -140, width: 232, extraBottom: 14 },
 } as const
@@ -46,6 +49,9 @@ interface Blob {
   y: number
   w: number
   h: number
+  /** 무게중심. 칸 간격·줄 간격·기준점은 이것으로 잰다 (경계는 JPEG 번짐으로 칸마다 1px 씩 달라 720p 에서 배율이 2~3% 틀린다) */
+  cx: number
+  cy: number
 }
 
 interface FoundRow {
@@ -84,11 +90,15 @@ function findPipBlobs(img: RgbaImage): Blob[] {
     let minY = height
     let maxY = 0
     let n = 0
+    let sumX = 0
+    let sumY = 0
     while (stack.length > 0) {
       const i = stack.pop()!
       const x = i % width
       const y = (i - x) / width
       n++
+      sumX += x
+      sumY += y
       if (x < minX) minX = x
       if (x > maxX) maxX = x
       if (y < minY) minY = y
@@ -102,7 +112,7 @@ function findPipBlobs(img: RgbaImage): Blob[] {
     const h = maxY - minY + 1
     if (w < 4 || h < 4 || w > 64 || h > 64) continue
     if (w / h < 0.7 || w / h > 1.45 || n / (w * h) < 0.6) continue
-    out.push({ x: minX, y: minY, w, h })
+    out.push({ x: minX, y: minY, w, h, cx: sumX / n + 0.5, cy: sumY / n + 0.5 })
   }
   return out
 }
@@ -198,6 +208,41 @@ function measureMaxLevel(img: RgbaImage, run: readonly Blob[], pitch: number): n
   return run.length + Math.round((end - start) / pitch)
 }
 
+/**
+ * 칸이 하나뿐인 줄의 칸 간격 = 채운 칸 무게중심에서 바로 뒤 빈 칸(가장 어두운 네모) 가운데까지.
+ * 칸 크기로 짐작하면 JPEG 번짐 때문에 3~8% 틀려 슬롯 칸이 어긋난다. 빈 칸이 없으면(최대 레벨) null
+ */
+function pitchToEmptyPip(img: RgbaImage, pip: Blob): number | null {
+  const size = (pip.w + pip.h) / 2
+  const band = { y: pip.y + pip.h * 0.2, height: Math.max(1, pip.h * 0.6) }
+  const x0 = pip.x + pip.w
+  const x1 = Math.min(img.width, Math.floor(pip.cx + size * 3.2))
+  const lums: number[] = []
+  for (let x = x0; x < x1; x++) lums.push(meanLuminance(img, { x, ...band, width: 1 }))
+  if (lums.length === 0) return null
+  const around =
+    (meanLuminance(img, { x: x0, y: pip.y - size * 0.6, width: x1 - x0, height: size * 0.3 }) +
+      meanLuminance(img, { x: x0, y: pip.y + pip.h + size * 0.3, width: x1 - x0, height: size * 0.3 })) /
+    2
+  const darkest = Math.min(...lums)
+  if (around - darkest < 8) return null
+  // 빈 칸 사이 틈도 어둡지만 빈 칸 속만큼은 아니다 (1440p: 칸 14, 틈 17~24, 띠 26~35)
+  const cut = darkest + (around - darkest) * 0.35
+  let best: [number, number] | null = null
+  let start = -1
+  for (let i = 0; i <= lums.length; i++) {
+    const dark = i < lums.length && lums[i] <= cut
+    if (dark && start < 0) start = i
+    if (!dark && start >= 0) {
+      if (!best || i - start > best[1] - best[0]) best = [start, i]
+      start = -1
+    }
+  }
+  if (!best || best[1] - best[0] < size * 0.5) return null
+  const pitch = x0 + (best[0] + best[1]) / 2 - pip.cx
+  return pitch >= size * 1.4 && pitch <= size * 2.4 ? pitch : null
+}
+
 function place(r: { x: number; y: number; width: number; height: number }, ox: number, oy: number, unit: number): Rect {
   return { x: ox + r.x * unit, y: oy + r.y * unit, width: r.width * unit, height: r.height * unit }
 }
@@ -207,13 +252,16 @@ function toRow(img: RgbaImage, run: readonly Blob[]): FoundRow | null {
   const first = run[0]
   const last = run[run.length - 1]
   const size = run.reduce((s, b) => s + (b.w + b.h) / 2, 0) / run.length
-  const pitch = run.length > 1 ? (last.x - first.x) / (run.length - 1) : (size * REF.pipPitch) / REF.pipSize
+  const pitch =
+    run.length > 1
+      ? (last.cx - first.cx) / (run.length - 1)
+      : (pitchToEmptyPip(img, first) ?? (size * REF.pipPitch) / REF.pipSize)
   const unit = pitch / REF.pipPitch
-  // 칸 위쪽 끝은 칸 가운데 높이의 평균에서 구한다 (JPEG 번짐으로 칸마다 1px 씩 다른 위쪽 끝보다 안정적)
-  const x = first.x
-  const y = run.reduce((s, b) => s + b.y + b.h / 2, 0) / run.length - (REF.pipSize / 2) * unit
+  // 기준점(첫 칸 왼쪽 위)은 칸 무게중심에서 구한다 (JPEG 번짐으로 칸마다 1px 씩 다른 경계보다 안정적)
+  const x = first.cx - (REF.pipSize / 2) * unit
+  const y = run.reduce((s, b) => s + b.cy, 0) / run.length - (REF.pipSize / 2) * unit
   const levelText = textRatio(img, place(REF.levelText, x, y, unit), false)
-  const nameText = textRatio(img, place(REF.skillName, x, y, unit), true)
+  const nameText = textRatio(img, place(REF.skillNameStart, x, y, unit), true)
   if (levelText < 0.04 || nameText < 0.02 || nameText > 0.6) return null
   return { x, y, unit, level: run.length, maxLevel: measureMaxLevel(img, run, pitch) }
 }
