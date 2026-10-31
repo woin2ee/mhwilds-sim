@@ -11,7 +11,17 @@ import {
   normalizeConditions,
   type SearchConditions,
 } from './conditions'
-import { addBuildSkills, buildSkills, conditionsFromBuild, searchesWithWeapon, weaponConditionOf } from './fromBuild'
+import {
+  addBuildSkills,
+  buildForPreset,
+  buildSkills,
+  checkBuildSkills,
+  conditionsFromBuild,
+  presetFromBuild,
+  searchesWithWeapon,
+  weaponConditionOf,
+  type PresetMode,
+} from './fromBuild'
 
 const db = loadTestDb()
 const sid = (name: string) => skillIdByName(db, name)
@@ -164,7 +174,7 @@ describe('세팅 → 검색 조건 (내 세팅의 검색 조건으로)', () => {
   })
 })
 
-describe('저장한 조건에 세팅의 스킬 더하기', () => {
+describe('저장한 조건에 세팅의 스킬 넣기 (없는 스킬 더하기 · 있는 스킬만 체크)', () => {
   const preset = cond({
     required: [
       { skillId: sid('약점 특효'), level: 3 },
@@ -206,6 +216,50 @@ describe('저장한 조건에 세팅의 스킬 더하기', () => {
     expect(again.cond).toEqual(full)
   })
 
+  it('있는 스킬만 체크: 세팅에 있는 스킬은 켜고 없는 스킬은 끄며, 새 스킬은 더하지 않는다', () => {
+    const skills = buildSkills(db, sampleBuild(), [talisman])
+    const result = checkBuildSkills(db, skills, preset)
+    const [weakness, evade, constitution] = result.cond.required
+
+    // 세팅에 있는 스킬은 켜되 세팅보다 높은 레벨은 세팅 레벨로 낮추고(회피 성능 5 → 세팅 2), 낮은 레벨은 그대로 두며
+    // (약점 특효 3 < 세팅 5), 없는 스킬은 고정이어도 끈다
+    expect(result.cond.required).toHaveLength(3)
+    expect(weakness).toBe(preset.required[0])
+    expect(evade).toEqual({ skillId: sid('회피 성능'), level: 2, off: false })
+    expect(constitution).toEqual({ skillId: sid('체술'), level: 3, locked: true, off: true })
+    expect(result.checked).toEqual([weakness, evade])
+    expect(result.lowered).toBe(1)
+    expect(result.changed).toBe(true)
+    expect(buildRequest(db, result.cond, [talisman]).required).toEqual([
+      { skillId: sid('약점 특효'), level: 3 },
+      { skillId: sid('회피 성능'), level: 2 },
+    ])
+
+    const rest = (c: SearchConditions) => ({ ...c, required: undefined })
+    expect(rest(result.cond)).toEqual(rest(preset))
+
+    // 이미 그렇게 체크돼 있으면 조건을 바꾸지 않는다
+    const again = checkBuildSkills(db, skills, result.cond)
+    expect(again.changed).toBe(false)
+    expect(again.cond).toBe(result.cond)
+  })
+
+  it('있는 스킬만 체크: 시리즈·그룹 스킬도 세팅에서 발동한 것만, 세팅의 스킬이 하나도 없으면 모두 끈다', () => {
+    const skills = buildSkills(db, sampleBuild(), [talisman])
+    const bonuses = cond({
+      required: [
+        { skillId: sid('쇄인룡의 굶주림'), level: 1, off: true },
+        { skillId: sid('모피의 유혹'), level: 1 },
+      ],
+    })
+    expect(checkBuildSkills(db, skills, bonuses).checked).toEqual([{ skillId: sid('쇄인룡의 굶주림'), level: 1, off: false }])
+
+    const none = cond({ required: [{ skillId: sid('체술'), level: 3 }] })
+    const result = checkBuildSkills(db, skills, none)
+    expect(result.checked).toEqual([])
+    expect(result.cond.required).toEqual([{ skillId: sid('체술'), level: 3, off: true }])
+  })
+
   it('같은 무기로 찾는 조건인지: 거극 아티어 스킬은 보지 않고, 직접 입력 무기는 슬롯 순서와 상관없이 슬롯·스킬로', () => {
     const gogmaChoice = dbWeaponChoice(gogma.id, { setSkillId: sid('쇄인룡의 굶주림'), groupSkillId: null })
     const gogmaCond = cond({ weaponMode: 'db', weaponId: gogma.id, weaponGroupSkillId: sid('주인의 혼') })
@@ -222,6 +276,103 @@ describe('저장한 조건에 세팅의 스킬 더하기', () => {
     })
     expect(searchesWithWeapon(db, customCond, custom(1))).toBe(true)
     expect(searchesWithWeapon(db, customCond, custom(2))).toBe(false)
+  })
+})
+
+describe('저장한 조건의 무기에 맞춰 넣기 (거극 아티어 스킬·무기 장식주)', () => {
+  const level = (points: readonly { skillId: number; level: number }[], name: string) =>
+    points.find((p) => p.skillId === sid(name))?.level ?? 0
+  const sameWeapon = cond({ weaponMode: 'db', weaponKind: 'great-sword', weaponId: gogma.id })
+
+  it('같은 무기면 무기에 세팅의 거극 아티어 스킬을 붙여 세팅의 스킬을 그대로 넣는다 (세팅에서 고르지 않은 칸은 그 조건 것)', () => {
+    const build = sampleBuild()
+    const on = buildForPreset(db, build, [talisman], sameWeapon)
+    expect(on.gogmaIds).toEqual([sid('쇄인룡의 굶주림'), sid('주인의 혼')])
+    expect(on.cond).toEqual({ ...sameWeapon, weaponSetSkillId: sid('쇄인룡의 굶주림'), weaponGroupSkillId: sid('주인의 혼') })
+    expect(on.skills).toEqual(buildSkills(db, build, [talisman]))
+    expect(on.reduced).toEqual([])
+
+    // 이미 같으면 조건을 바꾸지 않는다
+    const again = buildForPreset(db, build, [talisman], on.cond)
+    expect(again.cond).toBe(on.cond)
+    expect(again.gogmaIds).toEqual([])
+
+    const setOnly = { ...build, weapon: dbWeaponChoice(gogma.id, { setSkillId: sid('쇄인룡의 굶주림'), groupSkillId: null }) }
+    const other = { ...sameWeapon, weaponSetSkillId: sid('벽수의 힘'), weaponGroupSkillId: sid('주인의 혼') }
+    const partial = buildForPreset(db, setOnly, [talisman], other)
+    expect(partial.gogmaIds).toEqual([sid('쇄인룡의 굶주림')])
+    expect(partial.cond).toMatchObject({ weaponSetSkillId: sid('쇄인룡의 굶주림'), weaponGroupSkillId: sid('주인의 혼') })
+  })
+
+  it('다른 무기·무기 미지정이면 세팅을 그 무기로 바꿔 낀 것처럼 다시 센다 (세팅에 없던 스킬·세팅보다 높은 레벨은 넣지 않음)', () => {
+    const build = sampleBuild()
+    const full = buildSkills(db, build, [talisman])
+    const on = (patch: Partial<SearchConditions>) => buildForPreset(db, build, [talisman], cond(patch))
+
+    // 무기 미지정: 무기 장식주(공격주Ⅲ)와 무기가 센 거극 아티어 1부위가 빠진다. 무기는 그대로
+    const none = on({})
+    expect(none.gogmaIds).toEqual([])
+    expect(none.cond).toEqual(cond({}))
+    expect(level(none.skills, '공격')).toBe(0)
+    expect(none.reduced).toEqual([
+      { skillId: sid('공격'), level: 3, to: 0 },
+      { skillId: sid('쇄인룡의 굶주림'), level: 2, to: 1 },
+    ])
+    // 그룹 스킬은 방어구만으로도 3부위라 그대로
+    expect(level(none.skills, '주인의 혼')).toBe(1)
+
+    // 아티어 무기 직접 입력 (슬롯 3-3-3): 무기 장식주는 옮겨 끼우고 거극 아티어 1부위만 빠진다
+    expect(on({ weaponMode: 'custom', customWeaponSlots: [3, 3, 3] }).reduced).toEqual([
+      { skillId: sid('쇄인룡의 굶주림'), level: 2, to: 1 },
+    ])
+    // 크기 3 장식주가 들어갈 슬롯이 없는 무기
+    expect(level(on({ weaponMode: 'custom', customWeaponSlots: [2, 1, 0] }).skills, '공격')).toBe(0)
+    expect(level(on({ weaponMode: 'db', weaponId: plainGreatSword.id }).skills, '공격')).toBe(0)
+
+    // 그 무기 자체 스킬은 세팅의 레벨까지만 (공격 3+1 → 3), 세팅에 없던 스킬(간파)은 넣지 않는다
+    const own = on({
+      weaponMode: 'custom',
+      customWeaponSlots: [3, 0, 0],
+      customWeaponSkills: [
+        { skillId: sid('공격'), level: 1 },
+        { skillId: sid('간파'), level: 1 },
+      ],
+    })
+    expect(level(own.skills, '공격')).toBe(3)
+    expect(level(own.skills, '간파')).toBe(0)
+    for (const result of [none, own]) {
+      expect(result.skills.every((p) => p.level <= level(full, db.skill(p.skillId).name.ko))).toBe(true)
+    }
+  })
+
+  it('무기가 달라도 그 세팅의 방어구로 조건을 채워서 검색하면 조건을 모두 채우는 조합이 나온다 (더하기·체크)', () => {
+    const build = sampleBuild()
+    // 세팅보다 높은 레벨·세팅에 없는 스킬이 섞인 원하는 스킬 목록 (체크용)
+    const pool = [
+      { skillId: sid('약점 특효'), level: 5 },
+      { skillId: sid('공격'), level: 5, off: true },
+      { skillId: sid('속성 변환'), level: 3, off: true },
+      { skillId: sid('쇄인룡의 굶주림'), level: 2, off: true },
+      { skillId: sid('주인의 혼'), level: 1, off: true },
+      { skillId: sid('벽수의 힘'), level: 2, off: true },
+      { skillId: sid('도전자'), level: 5 },
+    ]
+    const weapons: Partial<SearchConditions>[] = [
+      { weaponMode: 'db', weaponId: gogma.id },
+      { weaponMode: 'db', weaponId: gogma.id, weaponSetSkillId: sid('벽수의 힘') },
+      {},
+      { weaponMode: 'custom', customWeaponSlots: [3, 3, 3] },
+    ]
+    for (const weapon of weapons) {
+      for (const [mode, required] of [
+        ['add', [{ skillId: sid('약점 특효'), level: 5 }]],
+        ['check', pool],
+      ] as const satisfies readonly (readonly [PresetMode, unknown])[]) {
+        const result = presetFromBuild(db, build, [talisman], cond({ ...weapon, required: [...required] }), mode)
+        const response = runSearch(db, { ...buildRequest(db, result.cond, [talisman]), limit: 1 })
+        expect({ weapon, mode, shortfall: response.shortfall }).toEqual({ weapon, mode, shortfall: 0 })
+      }
+    }
   })
 })
 

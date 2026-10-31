@@ -36,7 +36,7 @@ export function SavedBuildsPage() {
   const toast = useToast()
   const confirmReplace = useConfirmReplaceManual()
   const { presets } = useSearchPresets()
-  const { startNew, addToPreset } = useSearchWithBuild()
+  const { startNew, loadPreset } = useSearchWithBuild()
   const [query, setQuery] = useState('')
   const [kindFilter, setKindFilter] = useState<KindFilter>('all')
   const [importOpen, setImportOpen] = useState(false)
@@ -244,9 +244,9 @@ export function SavedBuildsPage() {
           setSearchTarget(null)
           startNew(saved)
         }}
-        onAddToPreset={(saved, preset) => {
+        onChoosePreset={(saved, preset, mode) => {
           setSearchTarget(null)
-          addToPreset(saved, preset)
+          loadPreset(saved, preset, mode)
         }}
       />
       {shareTarget && (
@@ -328,7 +328,7 @@ function SavedBuildCard({
         </Button>
         <Button
           size="sm"
-          title="이 세팅의 발동 스킬로 세팅 검색을 해요. 저장한 조건에 없는 스킬만 더하거나, 새 조건으로 원하는 스킬·무기를 이 세팅대로 바꿔요."
+          title="이 세팅의 발동 스킬로 세팅 검색을 해요. 저장한 조건에 없는 스킬만 더하거나 있는 스킬만 체크하고, 새 조건으로 원하는 스킬·무기를 이 세팅대로 바꿀 수도 있어요."
           onClick={onSearch}
         >
           검색 조건으로

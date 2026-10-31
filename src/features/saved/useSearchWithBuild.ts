@@ -4,16 +4,24 @@ import { skillName } from '../../data/format'
 import { useAppState } from '../../state/context'
 import { useToast } from '../../state/toast'
 import { useSearchConditions, useSearchPresets } from '../search/conditionsContext'
-import { addBuildSkills, buildSkills, conditionsFromBuild } from '../search/fromBuild'
+import { conditionsFromBuild, presetFromBuild, type PresetFromBuild, type PresetMode } from '../search/fromBuild'
 import { presetConditions, type SearchPreset } from '../search/presets'
+
+const namesText = (db: GameDb, ids: readonly number[]) => ids.map((id) => skillName(db, id)).join('·')
 
 /** 알림 끝에 붙는 '비선호 스킬(체술·앙심)은 뺐어요' */
 function skippedText(db: GameDb, skippedIds: readonly number[]): string {
-  return skippedIds.length > 0 ? ` · 비선호 스킬(${skippedIds.map((id) => skillName(db, id)).join('·')})은 뺐어요` : ''
+  return skippedIds.length > 0 ? ` · 비선호 스킬(${namesText(db, skippedIds)})은 뺐어요` : ''
+}
+
+/** 알림에 붙는 무기 이야기: 같은 무기라 거극 아티어 스킬을 세팅대로 맞췄거나, 다른 무기라 세팅의 스킬을 그 무기로 다시 셌을 때 */
+function weaponText(db: GameDb, { gogmaIds, reduced }: Pick<PresetFromBuild, 'gogmaIds' | 'reduced'>): string {
+  const gogma = gogmaIds.length > 0 ? ` · 무기의 거극 아티어 스킬을 세팅대로 맞췄어요(${namesText(db, gogmaIds)})` : ''
+  return gogma + (reduced.length > 0 ? ` · 무기가 달라 무기에 달린 스킬 ${reduced.length}개는 빼거나 낮춰 셌어요` : '')
 }
 
 /**
- * 내 세팅의 '검색 조건으로': 세팅의 발동 스킬로 세팅 검색 조건을 만들고 세팅 검색 맨 위로 간다 (DESIGN.md §8).
+ * 내 세팅의 '검색 조건으로': 세팅의 발동 스킬로 세팅 검색 조건을 만들거나 저장한 조건을 고치고 세팅 검색 맨 위로 간다 (DESIGN.md §8).
  * 알림의 '되돌리기'로 바로 전 조건·사용 중인 조건으로 돌아간다
  */
 export function useSearchWithBuild() {
@@ -51,35 +59,37 @@ export function useSearchWithBuild() {
   }
 
   /**
-   * 저장한 조건에 더하기: 그 조건을 불러와 사용 중으로 두고, 없는 스킬만 세팅의 레벨로 더한다. 더한 것은 고친 것이라
-   * 그 조건에 바로 저장된다 (update → SearchConditionsProvider 의 자동 저장). 무기·옵션·이미 있는 스킬은 그 조건 그대로
+   * 저장한 조건 불러오기: 그 조건을 불러와 사용 중으로 두고 세팅의 스킬을 넣는다 (presetFromBuild — 없는 스킬 더하기 / 있는 스킬만
+   * 체크, 같은 무기면 무기의 거극 아티어 스킬도 세팅대로). 고친 것은 그 조건에 바로 저장되므로(update → SearchConditionsProvider 의
+   * 자동 저장) 되돌리기는 저장한 조건도 되돌린다
    */
-  const addToPreset = (saved: SavedBuild, preset: SearchPreset) => {
-    const result = addBuildSkills(db, buildSkills(db, saved.build, customTalismans), presetConditions(preset, cond))
+  const loadPreset = (saved: SavedBuild, preset: SearchPreset, mode: PresetMode) => {
+    const result = presetFromBuild(db, saved.build, customTalismans, presetConditions(preset, cond), mode)
     const previous = cond
     const previousActive = active?.id ?? null
     update(() => result.cond)
     setActiveId(preset.id)
     setTab('search', { top: true })
-    const added = result.added.length
-    toast(
-      (added > 0
-        ? `‘${preset.name}’ 조건을 불러와 세팅에만 있는 스킬 ${added}개를 더했어요`
-        : `‘${preset.name}’ 조건을 불러왔어요 · 세팅의 스킬이 모두 들어 있어요`) + skippedText(db, result.skippedIds),
-      {
-        label: '되돌리기',
-        onClick: () => {
-          replace(previous)
-          setActiveId(previousActive)
-          // 더한 스킬은 그 조건에 저장됐으므로 저장한 조건도 되돌린다
-          if (added > 0) {
-            const updatedAt = new Date().toISOString()
-            setPresets((list) => list.map((p) => (p.id === preset.id ? { ...p, conditions: preset.conditions, updatedAt } : p)))
-          }
-        },
+    const count = result.skills.length
+    const head =
+      mode === 'check'
+        ? `‘${preset.name}’ 조건을 불러와 세팅에 있는 스킬 ${count}개만 체크했어요` +
+          (result.lowered > 0 ? ` · ${result.lowered}개는 세팅 레벨로 낮췄어요` : '')
+        : count > 0
+          ? `‘${preset.name}’ 조건을 불러와 세팅에만 있는 스킬 ${count}개를 더했어요`
+          : `‘${preset.name}’ 조건을 불러왔어요 · 세팅의 스킬이 모두 들어 있어요`
+    toast(head + weaponText(db, result) + skippedText(db, result.skippedIds), {
+      label: '되돌리기',
+      onClick: () => {
+        replace(previous)
+        setActiveId(previousActive)
+        if (result.changed) {
+          const updatedAt = new Date().toISOString()
+          setPresets((list) => list.map((p) => (p.id === preset.id ? { ...p, conditions: preset.conditions, updatedAt } : p)))
+        }
       },
-    )
+    })
   }
 
-  return { startNew, addToPreset }
+  return { startNew, loadPreset }
 }
