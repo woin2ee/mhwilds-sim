@@ -1,4 +1,4 @@
-import { useMemo, useState, type MouseEvent } from 'react'
+import { Fragment, useMemo, useState, type MouseEvent } from 'react'
 import { SkillChip, type SkillTone } from '../../components/SkillChip'
 import { SlotBadge, SlotList } from '../../components/SlotBadge'
 import { Badge, Button, ChevronIcon } from '../../components/ui'
@@ -577,16 +577,21 @@ export function ResultCard({
       {decorations.length > 0 && (
         <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs">
           <span className="text-muted">장식주</span>
-          {decorations.map(({ deco, count }) => (
-            <span
-              key={deco.id}
-              className={cx('inline-flex items-center gap-1', unwanted.decorationIds.has(deco.id) && 'text-bad')}
-              title={skillPointsText(db, deco.skills)}
-            >
-              <SlotBadge slot={{ kind: deco.kind, level: deco.size }} size="sm" filled />
-              {nameOf(deco.name)}
-              {count > 1 && <span className="text-muted">×{count}</span>}
-            </span>
+          {decorations.map(({ deco, count }, i) => (
+            <Fragment key={deco.id}>
+              {/* 무기 장식주(앞)와 방어구 장식주 사이 구분선 */}
+              {i > 0 && decorations[i - 1].deco.kind !== deco.kind && (
+                <span aria-hidden className="h-3.5 w-px bg-muted/50" />
+              )}
+              <span
+                className={cx('inline-flex items-center gap-1', unwanted.decorationIds.has(deco.id) && 'text-bad')}
+                title={skillPointsText(db, deco.skills)}
+              >
+                <SlotBadge slot={{ kind: deco.kind, level: deco.size }} size="sm" filled />
+                {nameOf(deco.name)}
+                {count > 1 && <span className="text-muted">×{count}</span>}
+              </span>
+            </Fragment>
           ))}
         </div>
       )}
