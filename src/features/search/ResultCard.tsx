@@ -10,7 +10,7 @@ import type { SearchRequest, SearchResultItem } from '../../core/search/types'
 import { armorDefense, armorSlots, canTranscend } from '../../core/transcend'
 import type { EquipKey } from '../../core/types'
 import { nameOf, type GameDb } from '../../data/db'
-import { signed, skillName, skillPointsText, talismanName } from '../../data/format'
+import { compareDecorations, signed, skillName, skillPointsText, talismanName } from '../../data/format'
 import { ARMOR_KIND_LABEL, ELEMENT_LABEL } from '../../data/labels'
 import { ARMOR_KINDS, ELEMENTS, type ArmorKind, type Skill, type SkillPoint } from '../../data/types'
 import { cx } from '../../lib/cx'
@@ -370,7 +370,7 @@ export function ResultCard({
         const deco = db.decorations.get(id)
         return deco ? [{ deco, count }] : []
       })
-      .sort((a, b) => b.deco.size - a.deco.size || a.deco.name.ko.localeCompare(b.deco.name.ko, 'ko'))
+      .sort((a, b) => compareDecorations(a.deco, b.deco))
   }, [db, summary])
 
   const toggle = (key: Expandable) => setOpen((current) => (current === key ? null : key))

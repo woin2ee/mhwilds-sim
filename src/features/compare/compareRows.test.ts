@@ -86,15 +86,40 @@ describe('세팅 비교 행', () => {
     expect(rows.every((r) => r.cells.every((c) => c.required === null && !c.unwanted))).toBe(true)
   })
 
-  it('장식주: 칸마다 개수를 세고 큰 장식주부터', () => {
-    const columns = [searchColumn(0), searchColumn(3)]
+  it('장식주: 칸마다 개수를 세고 무기 장식주 먼저, 같은 종류면 큰 장식주부터', () => {
+    // 무기 슬롯 3-1 이라 무기 장식주【1】이 방어구 장식주【2】와 함께 들어간 결과 (크기로만 줄 세우면 무기 장식주가 뒤로 섞인다)
+    const weaponRequest = buildRequest(
+      db,
+      normalizeConditions({
+        ...DEFAULT_CONDITIONS,
+        weaponMode: 'custom',
+        customWeaponSlots: [3, 1, 0],
+        required: [
+          { skillId: sid('약점 특효'), level: 5 },
+          { skillId: sid('슈퍼회심'), level: 3 },
+          { skillId: sid('회피 성능'), level: 3 },
+          { skillId: sid('간파'), level: 1 },
+        ],
+      }),
+      [],
+    )
+    const weaponColumn: CompareColumn = {
+      summary: computeBuild(db, resultToBuild(db, runSearch(db, weaponRequest).items[0], weaponRequest)),
+      required: weaponRequest.required,
+      excludedSkills: weaponRequest.excludedSkills,
+    }
+    const columns = [searchColumn(0), searchColumn(3), weaponColumn]
     const rows = decorationRows(db, columns)
     columns.forEach((column, c) => {
       const filled = column.summary.slots.filter((s) => s.decorationId !== null).length
       expect(rows.reduce((sum, row) => sum + row.counts[c], 0)).toBe(filled)
     })
-    const sizes = rows.map((r) => db.decorations.get(r.decorationId)!.size)
-    expect(sizes).toEqual([...sizes].sort((x, y) => y - x))
+    const decorations = rows.map((r) => db.decorations.get(r.decorationId)!)
+    expect(decorations.some((w) => w.kind === 'weapon' && decorations.some((a) => a.kind === 'armor' && a.size > w.size))).toBe(
+      true,
+    )
+    const order = decorations.map((d) => (d.kind === 'weapon' ? 0 : 10) + 3 - d.size)
+    expect(order).toEqual([...order].sort((x, y) => x - y))
   })
 
   it('장비: 초월 여부만 다른 같은 방어구는 슬롯이 그대로면 같은 장비, 장식주 배치는 보지 않는다', () => {

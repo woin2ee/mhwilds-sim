@@ -1,7 +1,7 @@
-// 화면 공용 표시 문자열 도우미
+// 화면 공용 표시 도우미 (문자열·목록 순서)
 import type { CustomTalisman, TalismanChoice } from '../core/types'
 import { nameOf, type GameDb } from './db'
-import type { Skill, SkillPoint } from './types'
+import type { Decoration, Skill, SkillPoint } from './types'
 
 export function skillName(db: GameDb, skillId: number): string {
   const skill = db.skills.get(skillId)
@@ -40,4 +40,10 @@ export function talismanName(db: GameDb, ref: TalismanChoice | null, customTalis
 /** 내성 등 부호 있는 숫자: +2 / -3 / 0 */
 export function signed(value: number): string {
   return value > 0 ? `+${value}` : String(value)
+}
+
+/** 장식주 목록 순서: 남은 슬롯 요약처럼 무기 장식주 먼저, 같은 종류면 큰 것 → 이름 순 */
+export function compareDecorations(a: Decoration, b: Decoration): number {
+  if (a.kind !== b.kind) return a.kind === 'weapon' ? -1 : 1
+  return b.size - a.size || nameOf(a.name).localeCompare(nameOf(b.name), 'ko')
 }

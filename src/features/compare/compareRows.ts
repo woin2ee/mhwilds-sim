@@ -2,6 +2,7 @@
 import { unwantedSkillsOf, type BuildSummary } from '../../core/calc'
 import type { BuildState, EquipKey } from '../../core/types'
 import { nameOf, type GameDb } from '../../data/db'
+import { compareDecorations } from '../../data/format'
 import type { SkillPoint } from '../../data/types'
 
 /** 한 번에 비교할 수 있는 세팅 수 (휴대폰 폭에 3칸까지 들어간다) */
@@ -133,7 +134,7 @@ export interface DecorationRow {
   unwanted: boolean[]
 }
 
-/** 비교할 세팅들에 들어간 장식주를 모두 모은 행 (큰 장식주 → 이름 순) */
+/** 비교할 세팅들에 들어간 장식주를 모두 모은 행 (무기 장식주 먼저, 큰 장식주 → 이름 순) */
 export function decorationRows(db: GameDb, columns: readonly CompareColumn[]): DecorationRow[] {
   const counts = columns.map(({ summary }) => {
     const byId = new Map<number, number>()
@@ -145,7 +146,7 @@ export function decorationRows(db: GameDb, columns: readonly CompareColumn[]): D
     const deco = db.decorations.get(id)
     return deco ? [deco] : []
   })
-  decorations.sort((a, b) => b.size - a.size || nameOf(a.name).localeCompare(nameOf(b.name), 'ko'))
+  decorations.sort(compareDecorations)
   return decorations.map((deco) => ({
     decorationId: deco.id,
     counts: counts.map((byId) => byId.get(deco.id) ?? 0),
