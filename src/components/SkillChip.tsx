@@ -2,13 +2,15 @@ import type { ReactNode } from 'react'
 import { cx } from '../lib/cx'
 
 /**
- * required: 원하는 스킬 (충족) / missing: 원하는 스킬 (미달) / unwanted: 비선호 스킬 (금지 표시도 붙는다)
+ * required: 원하는 스킬 (충족) / required-bonus: 원하는 시리즈·그룹 스킬 (충족, 초록과 조금 다른 청록)
+ * missing: 원하는 스킬 (미달) / unwanted: 비선호 스킬 (금지 표시도 붙는다)
  * bonus: 시리즈·그룹 스킬 / extra: 그 외 추가 스킬 / neutral: 기본
  */
-export type SkillTone = 'required' | 'missing' | 'unwanted' | 'bonus' | 'extra' | 'neutral'
+export type SkillTone = 'required' | 'required-bonus' | 'missing' | 'unwanted' | 'bonus' | 'extra' | 'neutral'
 
 const TONE: Record<SkillTone, string> = {
   required: 'border-good/50 bg-good/10 text-good',
+  'required-bonus': 'border-good-bonus/50 bg-good-bonus/10 text-good-bonus',
   missing: 'border-warn/50 bg-warn/10 text-warn',
   unwanted: 'border-bad/50 bg-bad/10 text-bad',
   bonus: 'border-accent/50 bg-accent/10 text-accent',

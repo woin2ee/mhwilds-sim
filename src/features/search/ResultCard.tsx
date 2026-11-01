@@ -79,7 +79,7 @@ function skillChips(db: GameDb, summary: BuildSummary, request: SearchRequest): 
       level,
       shown: chipLevel(skill, level),
       maxLevel: bonus ? undefined : skill.maxLevel,
-      tone: level >= r.level ? 'required' : 'missing',
+      tone: level < r.level ? 'missing' : bonus ? 'required-bonus' : 'required',
       pieces: pieces.get(r.skillId),
       short: level < r.level ? shortfallLabel(skill, level, r.level) : undefined,
     })

@@ -12,6 +12,7 @@
   --color-accent: var(--accent);
   --color-accent-fg: var(--accent-fg);
   --color-good: var(--good);
+  --color-good-bonus: var(--good-bonus);
   --color-bad: var(--bad);
   --color-warn: var(--warn);
   --color-slot-1: var(--slot-1);
@@ -35,6 +36,8 @@
   --accent: #b45309;
   --accent-fg: #ffffff;
   --good: #15803d;
+  /* 채운 원하는 스킬 중 시리즈·그룹 스킬. good 과 같은 초록 계열이되 일반 스킬과 구분되게 청록 쪽으로 */
+  --good-bonus: #0f766e;
   --bad: #c2271d;
   --warn: #a15c07;
   /* 장식주 슬롯 레벨 1·2·3. 세 색이 서로 붙어 나오므로 색각 이상 시뮬레이션에서도 모든 쌍이 구분되게 골랐다 */
@@ -54,6 +57,7 @@
   --accent: #f59e0b;
   --accent-fg: #1a1206;
   --good: #4ade80;
+  --good-bonus: #2dd4bf;
   --bad: #f87171;
   --warn: #facc15;
   --slot-1: #22d3ee;
