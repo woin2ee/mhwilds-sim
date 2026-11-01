@@ -15,4 +15,12 @@ describe('text matching', () => {
     expect(matchesQuery('없는스킬', ['간파'])).toBe(false)
     expect(matchesQuery('', ['간파'])).toBe(true)
   })
+
+  it('입력기가 붙인 겹받침(ㄳ·ㅄ·ㄻ …)은 초성 두 개로 본다', () => {
+    // ㄱㅅㅂㅎ·ㅂㅅㅅ·ㅍㄹㅁㅇ 을 치면 입력기에는 이렇게 들어온다
+    expect(matchScore('ㄳㅂㅎ', ['고속 변형'])).toBe(1)
+    expect(matchScore('ㅄㅅ', ['불속성 공격 강화'])).toBe(1)
+    expect(matchScore('ㅍㄻㅇ', ['피리 명인'])).toBe(1)
+    expect(matchesQuery('ㄳ', ['간파'])).toBe(false)
+  })
 })

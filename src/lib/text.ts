@@ -4,9 +4,15 @@ const CHOSUNG = 'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ'
 const HANGUL_START = 0xac00
 const HANGUL_END = 0xd7a3
 const CHOSUNG_ONLY = /^[ㄱ-ㅎ]+$/
+// 초성만 이어 치면 입력기가 ㄱ+ㅅ → ㄳ, ㅂ+ㅅ → ㅄ 처럼 겹받침 한 글자로 붙인다. 초성에는 겹자음이 없으니 낱자로 푼다
+const SPLIT_JAMO: Record<string, string> = {
+  ㄳ: 'ㄱㅅ', ㄵ: 'ㄴㅈ', ㄶ: 'ㄴㅎ', ㅄ: 'ㅂㅅ',
+  ㄺ: 'ㄹㄱ', ㄻ: 'ㄹㅁ', ㄼ: 'ㄹㅂ', ㄽ: 'ㄹㅅ', ㄾ: 'ㄹㅌ', ㄿ: 'ㄹㅍ', ㅀ: 'ㄹㅎ',
+}
+const COMPOUND_JAMO = new RegExp(`[${Object.keys(SPLIT_JAMO).join('')}]`, 'g')
 
 export function normalize(text: string): string {
-  return text.toLowerCase().replace(/\s+/g, '')
+  return text.toLowerCase().replace(/\s+/g, '').replace(COMPOUND_JAMO, (ch) => SPLIT_JAMO[ch])
 }
 
 export function toChosung(text: string): string {
