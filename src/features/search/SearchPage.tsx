@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { MobileBar } from '../../components/MobileBar'
 import { SlotList } from '../../components/SlotBadge'
 import { Button, EmptyState, Panel, Segmented, Toggle, type PanelCollapse } from '../../components/ui'
@@ -12,6 +12,7 @@ import type {
 } from '../../core/search/types'
 import { cx } from '../../lib/cx'
 import { useScrollMemory } from '../../lib/scroll'
+import { useStickyColumnHeight } from '../../lib/stickyColumn'
 import { usePersistentState } from '../../lib/storage'
 import { useAppState } from '../../state/context'
 import { DEFAULT_CONDITIONS, buildRequest, requestKey, withRequiredOrder } from './conditions'
@@ -172,6 +173,14 @@ export function SearchPage() {
     [result, request.required],
   )
   const resultSeq = result?.seq ?? 0
+  // 데스크톱 결과 열(아래 JSX)의 높이를 맞추고, 새 결과(다시 검색·정렬 바꾸기)는 결과 칸 맨 위부터 보여 준다
+  const conditionsRef = useRef<HTMLDivElement>(null)
+  const resultColumnRef = useRef<HTMLDivElement>(null)
+  const resultsRef = useRef<HTMLDivElement>(null)
+  useStickyColumnHeight(resultColumnRef, conditionsRef)
+  useLayoutEffect(() => {
+    resultsRef.current?.scrollTo({ top: 0 })
+  }, [resultSeq])
   const compare = useMemo<CompareControl>(
     () => ({
       has: (key) => compareEntries.some((e) => e.key === key),
@@ -208,7 +217,7 @@ export function SearchPage() {
   return (
     // 1단(lg 미만)에서는 블록으로 둬야 맨 끝의 MobileBar 가 sticky 로 화면 아래에 붙는다 (grid 칸 안에선 안 움직임)
     <div className="max-lg:space-y-4 lg:grid lg:grid-cols-[380px_minmax(0,1fr)] lg:items-start lg:gap-4">
-      <div className={cx('space-y-4', pane !== 'conditions' && 'max-lg:hidden')}>
+      <div ref={conditionsRef} className={cx('space-y-4', pane !== 'conditions' && 'max-lg:hidden')}>
         <SearchPresets collapse={collapse('presets', undefined)} />
 
         <Panel
@@ -345,8 +354,17 @@ export function SearchPage() {
         </Panel>
       </div>
 
-      <div className={cx('min-w-0 space-y-4', pane !== 'results' && 'max-lg:hidden')}>
-        <Panel>
+      {/* 데스크톱: 결과 열을 화면에 붙여 두고 결과만 그 안에서 스크롤한다 (수동 세팅의 요약 열처럼).
+          긴 조건 열을 내려 고친 뒤에도 검색 버튼이 보이고, 다시 검색해도 보던 조건 자리는 그대로다.
+          높이는 페이지 끝에서 푸터에 밀려 올라가지 않게 useStickyColumnHeight 가 맞춘다 */}
+      <div
+        ref={resultColumnRef}
+        className={cx(
+          'min-w-0 space-y-4 lg:sticky lg:top-16 lg:flex lg:max-h-[var(--sticky-max-h,calc(100vh-5rem))] lg:flex-col',
+          pane !== 'results' && 'max-lg:hidden',
+        )}
+      >
+        <Panel className="lg:shrink-0">
           <div className="flex flex-wrap items-center gap-3">
             {/* 휴대폰·태블릿에서는 화면 아래 바의 버튼을 쓴다 */}
             {running ? (
@@ -406,35 +424,42 @@ export function SearchPage() {
           {stale && !running && <p className="mt-2 text-xs text-warn">조건이 바뀌었어요. 다시 검색하면 반영돼요.</p>}
         </Panel>
 
-        {error && (
-          <p className="rounded-md border border-bad/40 bg-bad/10 px-3 py-2 text-sm text-bad">
-            검색 중 오류가 발생했어요: {error}
-          </p>
-        )}
+        {/* 좌우 1px 여유: 비교에 넣은 카드의 테두리(ring)가 스크롤 칸 가장자리에서 잘리지 않게 */}
+        <div
+          ref={resultsRef}
+          className="space-y-4 lg:-mx-px lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:overscroll-contain lg:px-px"
+        >
+          {error && (
+            <p className="rounded-md border border-bad/40 bg-bad/10 px-3 py-2 text-sm text-bad">
+              검색 중 오류가 발생했어요: {error}
+            </p>
+          )}
 
-        {result ? (
-          <div className={running ? 'pointer-events-none opacity-60' : undefined}>
-            <ResultList
-              key={result.seq}
-              request={shownRequest ?? result.request}
-              response={result.response}
-              onSortChange={onSortChange}
-              exclude={{ excluded: cond.excluded, required: cond.required, onChange: (excluded) => patch({ excluded }) }}
-              compare={compare}
-            />
-          </div>
-        ) : (
-          !running && <EmptyState>원하는 스킬을 고르고 검색을 눌러 주세요.</EmptyState>
-        )}
+          {result ? (
+            <div className={running ? 'pointer-events-none opacity-60' : undefined}>
+              <ResultList
+                key={result.seq}
+                request={shownRequest ?? result.request}
+                response={result.response}
+                onSortChange={onSortChange}
+                exclude={{ excluded: cond.excluded, required: cond.required, onChange: (excluded) => patch({ excluded }) }}
+                compare={compare}
+              />
+            </div>
+          ) : (
+            !running && <EmptyState>원하는 스킬을 고르고 검색을 눌러 주세요.</EmptyState>
+          )}
+        </div>
 
-        {/* 데스크톱: 결과를 스크롤하는 동안 화면 아래에 떠 있는 비교 목록. 휴대폰·태블릿은 아래 바의 '비교' 버튼 */}
+        {/* 데스크톱: 결과 열 맨 아래에 늘 보이는 비교 목록 (결과 칸 밖이라 화면 아래에 띄우지 않는다).
+            휴대폰·태블릿은 아래 바의 '비교' 버튼 */}
         {compareEntries.length > 0 && (
           <CompareTray
             items={compareEntries.map((entry) => compareTrayItemOf(entry, resultSeq))}
             onOpen={() => setComparing(true)}
             onRemove={removeCompare}
             onClear={clearCompare}
-            className="max-lg:hidden"
+            className="max-lg:hidden lg:static lg:shrink-0"
           />
         )}
       </div>
