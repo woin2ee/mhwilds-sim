@@ -1,9 +1,10 @@
-/** 정렬 키: primary → secondary → tertiary → quaternary 가 클수록, 같으면 먼저 찾은(seq 작은) 쪽이 앞 */
+/** 정렬 키: primary → secondary → tertiary → quaternary → quinary 가 클수록, 같으면 먼저 찾은(seq 작은) 쪽이 앞 */
 export interface Ranked {
   primary: number
   secondary: number
   tertiary: number
   quaternary: number
+  quinary: number
   seq: number
 }
 
@@ -14,6 +15,7 @@ export function compareRanked(a: Ranked, b: Ranked): number {
     a.secondary - b.secondary ||
     a.tertiary - b.tertiary ||
     a.quaternary - b.quaternary ||
+    a.quinary - b.quinary ||
     b.seq - a.seq
   )
 }

@@ -11,6 +11,7 @@ import {
   type SkillPoint,
   type SlotLevel,
 } from '../../data/types'
+import { bonusLevel } from '../calc'
 import { resolveWeapon } from '../equipment'
 import { armorDefense, armorSlots, canTranscend } from '../transcend'
 import type { CustomTalisman, Slot, SlotKind } from '../types'
@@ -48,6 +49,28 @@ export function bonusShortfall(bonus: BonusRequirement, pieces: number): number 
   return short
 }
 
+/** 더 발동한 시리즈/그룹 단계(§6.5)의 상한을 정수로 셀 때 곱하는 수: 기울기 = 단계 수 / 부위 수(1~5)가 이 수의 배수로 떨어진다 */
+export const EXTRA_SCALE = 60
+
+/**
+ * 순위 키의 '더 발동한 시리즈/그룹 단계' (§6.5): 원하는 단계보다 더 발동한 단계 수(원하지 않은 스킬은 발동한 단계 전부)를
+ * 스킬마다 더한다. 후보 방어구·무기에 붙은 시리즈/그룹 스킬마다 하나
+ */
+export interface ExtraBonus {
+  skillId: number
+  /** 시리즈 스킬이면 true, 그룹 스킬이면 false. 상한은 둘을 따로 내림해서 더한다 */
+  series: boolean
+  /** [a] = 방어구 a 부위(0~5, 무기가 센 부위는 따로 더해서)일 때 더 발동한 단계 수 */
+  extra: Int8Array
+  /** 방어구 1부위가 더하는 몫의 상한 ×EXTRA_SCALE: max over a ≥ 1 of extra[a] / a. 부위마다 나눠 더하면 extra 의 상한이 된다 */
+  slope: number
+  /**
+   * [c × 6 + m] = 이미 c 부위일 때 m 부위까지 더 껴서 몫(slope × 더 낀 부위)보다 더 얻을 수 있는 단계 ×EXTRA_SCALE (0 이상).
+   * c = 0 이면 기울기가 처음부터의 상한이라 늘 0 이다
+   */
+  excess: Int16Array
+}
+
 /**
  * α/β 바꾸기 (§6.2.1): 같은 탐색 클래스의 짝 옵션(β)에 장식주 jewels 를 넣은 것과 스킬이 같고, 그 장식주가 들어가던 슬롯 extra 만
  * 없는 옵션(α). 짝으로 만든 결과와 스킬·남는 슬롯이 같으면 따로 결과로 내지 않고 짝 결과의 대체 후보가 된다
@@ -77,9 +100,25 @@ export interface ArmorOption {
   defense: number
   /** 시리즈/그룹 스킬 id (정렬) */
   bonusIds: number[]
+  /** bonusIds 의 Prepared.extras 인덱스 */
+  extras: number[]
+  /** extras 의 시리즈 스킬 기울기 합, 그룹 스킬 기울기 합 (×EXTRA_SCALE) */
+  seriesSlope: number
+  groupSlope: number
   /** Prepared.resElements 의 내성 (조건을 건 내성 §6.9, 내성순 정렬 속성 §6.10) */
   res: Int32Array
   swap: OptionSwap | null
+}
+
+/** 묶음 안에서 시리즈/그룹 스킬까지 같은 옵션들: 묶음 조합을 이것으로 고르면 더 발동한 시리즈/그룹 단계가 정해진다 (§6.5) */
+export interface OptionVariant {
+  /** options 인덱스, 방어력 내림차순 */
+  options: number[]
+  defense: number
+  /** 옵션들의 extras (모두 같다) */
+  extras: number[]
+  seriesSlope: number
+  groupSlope: number
 }
 
 /** 잎에서 함께 세는 옵션 묶음: 슬롯·내성(res)이 같은 옵션들, 또는 α 옵션 하나 (§6.5) */
@@ -90,6 +129,11 @@ export interface OptionGroup {
   options: number[]
   /** 가장 높은 방어력 */
   defense: number
+  /** 시리즈/그룹 스킬로 나눈 옵션들 (가장 높은 방어력 순) */
+  variants: OptionVariant[]
+  /** variants 중 가장 큰 기울기 합 (시리즈, 그룹 따로) */
+  seriesSlope: number
+  groupSlope: number
   swap: OptionSwap | null
 }
 
@@ -111,6 +155,11 @@ export interface ArmorClass {
   unwanted: number[]
   /** 옵션 중 가장 높은 방어력 */
   defense: number
+  /** 옵션 중 가장 큰 시리즈·그룹 스킬 기울기 합 (따로, ×EXTRA_SCALE): 잎의 더 발동한 단계 상한 (§6.5) */
+  seriesSlope: number
+  groupSlope: number
+  /** 옵션들에 붙은 시리즈/그룹 스킬 (Prepared.extras 인덱스, 중복 없이) */
+  extras: number[]
   /** Prepared.resElements 의 내성마다 옵션 중 가장 낮은·높은 값. 조건을 건 내성으로 나눈 클래스는 그 내성의 둘이 같다 (§6.9) */
   resMin: Int32Array
   resMax: Int32Array
@@ -159,6 +208,8 @@ export interface Prepared {
   resElements: Element[]
   /** 내성순 정렬 속성이 resElements 에서 몇 번째인지 (내성순이 아니면 -1) */
   sortRes: number
+  /** 순위 키의 더 발동한 시리즈/그룹 단계를 셀 스킬 (§6.5). 옵션의 extras 가 가리킨다 */
+  extras: ExtraBonus[]
   /** 비선호 스킬 (요구 스킬과 겹치면 제외, 정렬) */
   excluded: number[]
   /** 탐색 순서대로의 방어구 부위 (클래스 수가 적은 부위부터) */
@@ -258,6 +309,7 @@ function strictOptions(
   bonuses: readonly BonusRequirement[],
   excluded: ReadonlySet<number>,
   resElements: readonly Element[],
+  extraOf: (bonusIds: readonly number[]) => Pick<ArmorOption, 'extras' | 'seriesSlope' | 'groupSlope'>,
 ): StrictOption[] {
   const byKey = new Map<string, StrictOption>()
   const defenses = new Map<ArmorPiece, number>()
@@ -276,7 +328,16 @@ function strictOptions(
       const bonus = Uint8Array.from(bonuses, (b) => (bonusIds.includes(b.skillId) ? 1 : 0))
       const unwanted = unwantedOf(piece.skills, excluded)
       strict = {
-        option: { members: [], slots, slotCounts: countSlots(slots), defense: 0, bonusIds, res, swap: null },
+        option: {
+          members: [],
+          slots,
+          slotCounts: countSlots(slots),
+          defense: 0,
+          bonusIds,
+          ...extraOf(bonusIds),
+          res,
+          swap: null,
+        },
         levels,
         pts,
         bonus,
@@ -370,27 +431,55 @@ function swapOf(
   return { delta, jewels, extra: countSlots(extra), bonusDiff }
 }
 
-/** 잎 DP 묶음: α 가 아닌 옵션은 슬롯·내성(res)이 같은 것끼리, α 옵션은 하나씩 */
+/** 잎 DP 묶음: α 가 아닌 옵션은 슬롯·내성(res)이 같은 것끼리, α 옵션은 하나씩. 묶음 안은 시리즈/그룹 스킬이 같은 것끼리 나눈다 */
 function optionGroups(options: readonly ArmorOption[]): OptionGroup[] {
   const groups: OptionGroup[] = []
   const bySlots = new Map<string, OptionGroup>()
+  const empty = (option: ArmorOption, swap: OptionSwap | null): OptionGroup => ({
+    slotCounts: option.slotCounts,
+    res: option.res,
+    options: [],
+    defense: 0,
+    variants: [],
+    seriesSlope: 0,
+    groupSlope: 0,
+    swap,
+  })
   options.forEach((option, index) => {
     if (option.swap) {
-      groups.push({ slotCounts: option.slotCounts, res: option.res, options: [index], defense: option.defense, swap: option.swap })
+      const group = empty(option, option.swap)
+      group.options.push(index)
+      groups.push(group)
       return
     }
     const key = `${option.slots.join('')}|${option.res.join(',')}`
     let group = bySlots.get(key)
     if (!group) {
-      group = { slotCounts: option.slotCounts, res: option.res, options: [], defense: 0, swap: null }
+      group = empty(option, null)
       bySlots.set(key, group)
       groups.push(group)
     }
     group.options.push(index)
   })
+  const byDefense = (a: number, b: number) => options[b].defense - options[a].defense || a - b
   for (const group of groups) {
-    group.options.sort((a, b) => options[b].defense - options[a].defense || a - b)
+    group.options.sort(byDefense)
     group.defense = options[group.options[0]].defense
+    const byBonus = new Map<string, OptionVariant>()
+    for (const index of group.options) {
+      const option = options[index]
+      const key = option.bonusIds.join(',')
+      let variant = byBonus.get(key)
+      if (!variant) {
+        const { extras, seriesSlope, groupSlope } = option
+        variant = { options: [], defense: option.defense, extras, seriesSlope, groupSlope }
+        byBonus.set(key, variant)
+        group.variants.push(variant)
+        group.seriesSlope = Math.max(group.seriesSlope, seriesSlope)
+        group.groupSlope = Math.max(group.groupSlope, groupSlope)
+      }
+      variant.options.push(index)
+    }
   }
   return groups
 }
@@ -554,6 +643,45 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
     ]),
   )
 
+  // ---- 순위 키의 더 발동한 시리즈/그룹 단계 (§6.5): 후보 방어구·무기에 붙은 시리즈/그룹 스킬마다 ----
+  const bonusIdsSeen = new Set(weapon.bonusIds)
+  for (const pieces of candidatesOf.values()) {
+    for (const piece of pieces) for (const id of piece.bonusSkillIds) bonusIdsSeen.add(id)
+  }
+  const extras: ExtraBonus[] = []
+  const extraIndex = new Map<number, number>()
+  for (const skillId of [...bonusIdsSeen].sort((a, b) => a - b)) {
+    const skill = db.skill(skillId)
+    const fromWeapon = weapon.bonusIds.filter((id) => id === skillId).length
+    const wanted = merged.get(skillId) ?? 0
+    const size = ARMOR_KINDS.length + 1
+    const extra = Int8Array.from({ length: size }, (_, a) => Math.max(0, bonusLevel(skill, fromWeapon + a) - wanted))
+    let slope = 0
+    for (let a = 1; a < size; a++) slope = Math.max(slope, Math.ceil((EXTRA_SCALE * extra[a]) / a))
+    const excess = new Int16Array(size * size)
+    for (let c = 0; c < size; c++) {
+      for (let m = 0; m < size; m++) {
+        let best = 0
+        for (let u = 1; u <= m && c + u < size; u++) {
+          best = Math.max(best, EXTRA_SCALE * (extra[c + u] - extra[c]) - slope * u)
+        }
+        excess[c * size + m] = best
+      }
+    }
+    extraIndex.set(skillId, extras.length)
+    extras.push({ skillId, series: skill.kind === 'set', extra, slope, excess })
+  }
+  const extraOf = (bonusIds: readonly number[]) => {
+    const indices = bonusIds.map((id) => extraIndex.get(id)!)
+    let seriesSlope = 0
+    let groupSlope = 0
+    for (const i of indices) {
+      if (extras[i].series) seriesSlope += extras[i].slope
+      else groupSlope += extras[i].slope
+    }
+    return { extras: indices, seriesSlope, groupSlope }
+  }
+
   // ---- 내성 조건 (§6.9): 후보로 늘 채워지는 조건은 빼고(그 내성으로 결과를 나누지 않는다), 못 채우면 결과가 없다 ----
   const minOf = new Map<Element, number>()
   for (const { element, min } of request.minResistances) {
@@ -608,7 +736,15 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
    * 잎의 순위 상한은 장식주가 다 들어가는 조합으로 따로 구한다 (engine 의 bestFitRes, §6.10)
    */
   const classesOf = (kind: ArmorKind, splitRes: boolean): ArmorClass[] => {
-    const strictList = strictOptions(candidatesOf.get(kind)!, request.transcend, required, bonuses, excluded, resElements)
+    const strictList = strictOptions(
+      candidatesOf.get(kind)!,
+      request.transcend,
+      required,
+      bonuses,
+      excluded,
+      resElements,
+      extraOf,
+    )
     const moves = findSwaps(strictList, required, requiredIndex, swapJewel)
     // 원하는 스킬 점수·시리즈/그룹 소속·비선호(splitRes 면 조건을 건 내성도)가 같고 슬롯이 들어가는 첫 클래스(슬롯 많은 순)에
     // 붙인다. α 는 짝의 클래스로
@@ -629,6 +765,9 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
           slotCounts: strict.option.slotCounts,
           unwanted: strict.unwanted,
           defense: 0,
+          seriesSlope: 0,
+          groupSlope: 0,
+          extras: [],
           resMin: new Int32Array(resElements.length),
           resMax: new Int32Array(resElements.length),
           potential: [0, 0, 0],
@@ -652,6 +791,9 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
         slotCounts: [0, 0, 0],
         defense: 0,
         bonusIds: [],
+        extras: [],
+        seriesSlope: 0,
+        groupSlope: 0,
         res: new Int32Array(resElements.length),
         swap: null,
       }
@@ -664,6 +806,9 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
         slotCounts: [0, 0, 0],
         unwanted: [],
         defense: 0,
+        seriesSlope: 0,
+        groupSlope: 0,
+        extras: [],
         resMin: new Int32Array(resElements.length),
         resMax: new Int32Array(resElements.length),
         potential: [0, 0, 0],
@@ -671,6 +816,9 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
     }
     for (const cls of classes) {
       cls.defense = Math.max(...cls.options.map((o) => o.defense))
+      cls.seriesSlope = Math.max(...cls.options.map((o) => o.seriesSlope))
+      cls.groupSlope = Math.max(...cls.options.map((o) => o.groupSlope))
+      cls.extras = [...new Set(cls.options.flatMap((o) => o.extras))].sort((a, b) => a - b)
       resElements.forEach((_, j) => {
         cls.resMin[j] = Math.min(...cls.options.map((o) => o.res[j]))
         cls.resMax[j] = Math.max(...cls.options.map((o) => o.res[j]))
@@ -812,6 +960,7 @@ export function prepare(db: GameDb, request: SearchRequest): Prepared | null {
     resistances,
     resElements,
     sortRes,
+    extras,
     excluded: [...excluded].sort((a, b) => a - b),
     kinds,
     classes,

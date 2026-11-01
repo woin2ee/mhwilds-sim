@@ -62,6 +62,19 @@ function request(overrides: Partial<SearchRequest>): SearchRequest {
 
 const slotKey = (slots: readonly Slot[]) => slots.map((s) => `${s.kind[0]}${s.level}`).sort()
 const slotScore = (slots: readonly Slot[]) => slots.reduce((sum, s) => sum + s.level * s.level, 0)
+/** 원하는 단계보다 더 발동한 시리즈/그룹 단계 합 (순위 키 §6.5, 원하지 않은 스킬은 발동한 단계 전부) */
+const extraOf = (r: SearchRequest, item: SearchResultItem) =>
+  item.skillLevels.reduce((sum, { skillId, level }) => {
+    const { kind } = db.skill(skillId)
+    if (kind !== 'set' && kind !== 'group') return sum
+    const wanted = Math.max(0, ...r.required.filter((x) => x.skillId === skillId).map((x) => x.level))
+    return sum + Math.max(0, level - wanted)
+  }, 0)
+/** 순위 키를 앞에서부터 비교 (클수록 앞) */
+const byKeys = (a: readonly number[], b: readonly number[]) => {
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return b[i] - a[i]
+  return 0
+}
 
 /** 원하는 스킬보다 모자란 레벨 합 (시리즈/그룹 스킬은 단계) */
 const shortfallOf = (summary: ReturnType<typeof computeBuild>, required: readonly SkillPoint[]) =>
@@ -318,9 +331,14 @@ describe('runSearch', () => {
       const unwanted = res.items.filter((i) => i.unwantedSkills.length > 0)
       expect(unwanted.length).toBeGreaterThan(0)
       expect(unwanted.every((i) => i.unwantedSkills.includes(excludedSkills[0]))).toBe(true)
-      const key = (i: SearchResultItem) => [slotScore(i.freeSlots), i.defense, i.unwantedSkills.length > 0 ? 0 : 1]
+      const key = (i: SearchResultItem) => [
+        slotScore(i.freeSlots),
+        extraOf(r, i),
+        i.defense,
+        i.unwantedSkills.length > 0 ? 0 : 1,
+      ]
       const keys = res.items.map(key)
-      expect(keys).toEqual([...keys].sort((a, b) => b[0] - a[0] || b[1] - a[1] || b[2] - a[2]))
+      expect(keys).toEqual([...keys].sort(byKeys))
       // 비선호 스킬이 없는 결과 중 1등은 exclude 모드의 1등과 같은 값이다
       const clean = res.items.find((i) => i.unwantedSkills.length === 0)!
       expect(key(clean)).toEqual(key(excluded.items[0]))
@@ -493,6 +511,71 @@ describe('runSearch', () => {
     expect(defenses[0]).toBeGreaterThanOrEqual(Math.max(...bySlots.items.map((i) => i.defense)))
     verify(base, bySlots)
     verify({ ...base, sort: 'defense' }, byDefense)
+  })
+
+  describe('더 발동한 시리즈/그룹 단계 (남는 슬롯 다음 순위 키)', () => {
+    /**
+     * 결과의 순위 키: 남는 슬롯순 = 남는 슬롯 점수 → 더 발동한 시리즈/그룹 단계 → 방어력,
+     * 방어력순 = 방어력 → 남는 슬롯 점수 → 더 발동한 단계. 모두 같으면 비선호 스킬이 없으면 1
+     */
+    const rankOf = (r: SearchRequest, item: SearchResultItem) => {
+      const slots = slotScore(item.freeSlots)
+      const clean = item.unwantedSkills.length > 0 ? 0 : 1
+      return r.sort === 'defense'
+        ? [item.defense, slots, extraOf(r, item), clean]
+        : [slots, extraOf(r, item), item.defense, clean]
+    }
+    /** 모두 찾은 결과가 순위 키 순이고, 상위 20개만 찾아도 그 앞쪽과 같은지. 모두 찾은 응답을 돌려준다 */
+    function checkOrder(r: SearchRequest): SearchResponse {
+      const all = runSearch(db, { ...r, limit: 100_000 })
+      expect(all.truncated).toBe(false)
+      expect(all.items).toHaveLength(all.total)
+      const ranks = all.items.map((item) => rankOf(r, item))
+      expect(ranks).toEqual([...ranks].sort(byKeys))
+      // 잎·상태·묶음마다 시리즈/그룹 스킬 기울기로 잡은 상한으로 자르고 펼친 상위 결과가 모두 찾아 정렬한 앞쪽과 같다
+      const limited = { ...r, limit: 20 }
+      const top = runSearch(db, limited)
+      expect(top.items.map((item) => rankOf(r, item))).toEqual(ranks.slice(0, 20))
+      verify(limited, top)
+      return all
+    }
+    /** 남는 슬롯 점수가 같은 바로 뒤 결과보다 방어력이 낮은데 더 발동한 단계가 많아 앞에 온 결과가 있는지 */
+    const raised = (r: SearchRequest, items: readonly SearchResultItem[]) =>
+      items.some((item, i) => {
+        const next = items[i + 1]
+        return (
+          next !== undefined &&
+          slotScore(item.freeSlots) === slotScore(next.freeSlots) &&
+          item.defense < next.defense &&
+          extraOf(r, item) > extraOf(r, next)
+        )
+      })
+
+    it('남는 슬롯이 같으면 원하지 않은 시리즈/그룹 스킬이 더 발동한 결과가 방어력이 높은 결과보다 앞', () => {
+      const r = request({ required: req(['쇄인룡의 굶주림', 2], ['약점 특효', 5], ['도전자', 5]) })
+      expect(raised(r, checkOrder(r).items)).toBe(true)
+      checkOrder({ ...r, sort: 'defense' })
+    })
+
+    it('원하는 시리즈 스킬은 원하는 단계보다 더 발동한 단계만 센다', () => {
+      const hunger = sid('쇄인룡의 굶주림')
+      const r = request({ required: req(['쇄인룡의 굶주림', 1], ['약점 특효', 5], ['도전자', 5], ['연격', 3], ['회피 성능', 3]) })
+      // 1단계(2부위)를 원했는데 4부위를 껴서 2단계가 된 결과는 1단계 더 발동한 것
+      const levels = checkOrder(r).items.map((item) => item.skillLevels.find((s) => s.skillId === hunger)?.level)
+      expect(levels).toContain(2)
+    })
+
+    it('거극 아티어 무기에 붙은 시리즈/그룹 스킬도 1부위로 센다', () => {
+      const skills = { setSkillId: sid('쇄인룡의 굶주림'), groupSkillId: sid('주인의 혼') }
+      const weapon = weaponOf(dbWeaponChoice(db.weaponByGameKey('great-sword', 87)!.id, skills))
+      const required = req(['약점 특효', 5], ['도전자', 5], ['연격', 3], ['회피 성능', 3], ['체술', 2], ['귀마개', 2])
+      checkOrder(request({ required, weapon }))
+    })
+
+    it('모자란 조합 찾기도 같은 순서', () => {
+      const required = req(['약점 특효', 5], ['도전자', 5], ['연격', 5], ['힘의 해방', 5], ['회피 성능', 5], ['회피 거리 UP', 3], ['체술', 3])
+      expect(checkOrder(request({ required, maxShortfall: 99 })).shortfall).toBe(7)
+    })
   })
 
   it('탐색 상한·중단 요청에 걸리면 truncated', () => {
@@ -750,14 +833,14 @@ describe('runSearch', () => {
 
   describe('내성순 정렬', () => {
     const hunger = req(['쇄인룡의 굶주림', 2], ['약점 특효', 5], ['도전자', 5])
-    /** 결과의 순위 키: 정렬 속성 내성(대표 조합) → 남는 슬롯 점수 → 방어력 → 비선호 스킬이 없으면 1 */
+    /** 결과의 순위 키: 정렬 속성 내성(대표 조합) → 남는 슬롯 점수 → 더 발동한 시리즈/그룹 단계 → 방어력 → 비선호 스킬이 없으면 1 */
     const rankOf = (r: SearchRequest, item: SearchResultItem) => [
       computeBuild(db, resultToBuild(db, item, r)).resistances[r.sort as Element],
       slotScore(item.freeSlots),
+      extraOf(r, item),
       item.defense,
       item.unwantedSkills.length > 0 ? 0 : 1,
     ]
-    const byRank = (a: number[], b: number[]) => b[0] - a[0] || b[1] - a[1] || b[2] - a[2] || b[3] - a[3]
 
     /**
      * 결과를 모두 찾으면 순위 키 순이고 펼친 조합이 남는 슬롯순과 같은지, 상위 limit 개만 찾아도 그 앞쪽과 같은지,
@@ -771,7 +854,7 @@ describe('runSearch', () => {
       expect(all.shortfall).toBe(bySlots.shortfall)
       expect(physical(all.items).sort()).toEqual(physical(bySlots.items).sort())
       const ranks = all.items.map((item) => rankOf(r, item))
-      expect(ranks).toEqual([...ranks].sort(byRank))
+      expect(ranks).toEqual([...ranks].sort(byKeys))
       expect(new Set(ranks.map((rank) => rank[0])).size).toBeGreaterThan(2)
       // 잎마다 장식주가 다 들어가는 조합의 가장 높은 내성으로 자르고 펼친 상위 결과가 모두 찾아 정렬한 앞쪽과 같다
       const limited = { ...r, limit: 20 }
@@ -795,7 +878,7 @@ describe('runSearch', () => {
       return { all, top }
     }
 
-    it('정렬 속성 내성 → 남는 슬롯 → 방어력 순으로 상위 limit 개를 찾는다', () => {
+    it('정렬 속성 내성 → 남는 슬롯 → 더 발동한 시리즈/그룹 단계 → 방어력 순으로 상위 limit 개를 찾는다', () => {
       for (const sort of ['fire', 'dragon'] as const) {
         const { all, top } = checkSorted(request({ required: hunger, sort }))
         // 따로 보이는 α 결과가 없는 조건이라 잎마다 센 개수가 정확하다
