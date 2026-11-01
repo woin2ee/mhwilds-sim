@@ -10,6 +10,7 @@ import { useToast } from '../../state/toast'
 import { CompareDialog } from '../compare/CompareDialog'
 import { COMPARE_MAX, type CompareItem } from '../compare/compareRows'
 import { CompareTray } from '../compare/CompareTray'
+import { useGameOverlay } from '../manual/overlayContext'
 import { useSearchPresets } from '../search/conditionsContext'
 import { buildSkills } from '../search/fromBuild'
 import { formatDateTime } from './backupFile'
@@ -33,6 +34,7 @@ export function SavedBuildsPage() {
   const { db, customTalismans, savedBuilds, setSavedBuilds, openInManual, manualSourceId } = useAppState()
   const toast = useToast()
   const confirmReplace = useConfirmReplaceManual()
+  const overlay = useGameOverlay()
   const { presets } = useSearchPresets()
   const { startNew, loadPreset } = useSearchWithBuild()
   const [query, setQuery] = useState('')
@@ -101,6 +103,10 @@ export function SavedBuildsPage() {
     toast(`수동 세팅에서 열었어요 · ${saved.name}`)
     return true
   }
+  /** 게임 위에 띄우기: 수동 세팅에 불러오지 않고 이 세팅을 띄운다 (창에 다른 세팅이 떠 있으면 이 세팅으로 바꾼다) */
+  const isFloating = (saved: SavedBuild) => overlay.target?.type === 'saved' && overlay.target.id === saved.id
+  const toggleFloat = (saved: SavedBuild) =>
+    isFloating(saved) ? overlay.close() : overlay.show({ type: 'saved', id: saved.id })
   /** 저장한 검색 조건이 있으면 더할 조건을 고르는 창을 열고, 없으면 바로 새 조건으로 */
   const searchWith = (saved: SavedBuild) => {
     if (buildSkills(db, saved.build, customTalismans).length === 0) toast('이 세팅에는 발동 스킬이 없어요')
@@ -181,8 +187,10 @@ export function SavedBuildsPage() {
               weaponKind={kindOf(saved)}
               active={saved.id === manualSourceId}
               compared={compareIds.includes(saved.id)}
+              floating={isFloating(saved)}
               onToggleCompare={() => toggleCompare(saved)}
               onLoad={() => load(saved)}
+              onToggleFloat={() => toggleFloat(saved)}
               onSearch={() => searchWith(saved)}
               onShare={() => setShareTarget(saved)}
               onEdit={() => setEditTarget(saved)}
@@ -265,8 +273,10 @@ function SavedBuildCard({
   weaponKind,
   active,
   compared,
+  floating,
   onToggleCompare,
   onLoad,
+  onToggleFloat,
   onSearch,
   onShare,
   onEdit,
@@ -278,8 +288,12 @@ function SavedBuildCard({
   active: boolean
   /** 비교 목록에 넣은 세팅 */
   compared: boolean
+  /** 게임 위에 띄운 창에 보이는 세팅 */
+  floating: boolean
   onToggleCompare: () => void
   onLoad: () => void
+  /** 게임 위에 띄우기 / 띄운 창 닫기 */
+  onToggleFloat: () => void
   /** 이 세팅의 스킬로 세팅 검색 (저장한 조건에 더하기 / 새 조건) */
   onSearch: () => void
   onShare: () => void
@@ -323,6 +337,15 @@ function SavedBuildCard({
       <div className="flex flex-wrap gap-1.5">
         <Button size="sm" variant="primary" onClick={onLoad}>
           불러오기
+        </Button>
+        {/* 게임은 PC 에서 하므로 휴대폰·태블릿에서는 숨긴다 */}
+        <Button
+          size="sm"
+          title="수동 세팅으로 불러오지 않고 이 세팅을 다른 창 위에 늘 떠 있는 작은 창으로 띄워요. 게임 화면으로 돌아가도 보여요."
+          className="pointer-coarse:hidden"
+          onClick={onToggleFloat}
+        >
+          {floating ? '띄운 창 닫기' : '게임 위에 띄우기'}
         </Button>
         <Button
           size="sm"

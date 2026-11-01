@@ -6,6 +6,7 @@ import { Badge } from './components/ui'
 import { GameDb, loadGameData } from './data/db'
 import { cx } from './lib/cx'
 import { DictionaryPage } from './features/dictionary/DictionaryPage'
+import { GameOverlayProvider } from './features/manual/GameOverlayProvider'
 import { ManualBuilder } from './features/manual/ManualBuilder'
 import { BackupPage } from './features/saved/BackupPage'
 import { SavedBuildsPage } from './features/saved/SavedBuildsPage'
@@ -37,7 +38,10 @@ export default function App() {
         <AppStateProvider db={db}>
           {/* 세팅 검색 조건은 사전(원하는 스킬에 추가)도 함께 쓴다 */}
           <SearchConditionsProvider>
-            <Shell />
+            {/* 게임 위에 띄운 작은 창은 하나라 수동 세팅·내 세팅이 함께 쓴다 */}
+            <GameOverlayProvider>
+              <Shell />
+            </GameOverlayProvider>
           </SearchConditionsProvider>
           <SharedLinkHandler />
         </AppStateProvider>
