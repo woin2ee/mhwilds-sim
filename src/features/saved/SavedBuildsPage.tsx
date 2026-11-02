@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type MouseEvent } from 'react'
 import { Badge, Button, EmptyState, Panel } from '../../components/ui'
 import { NAME_MAX, newSavedBuild, weaponKindOf, type SavedBuild } from '../../core/savedBuilds'
 import { WEAPON_KIND_LABEL } from '../../data/labels'
 import { WEAPON_KINDS } from '../../data/types'
+import { isCardClick } from '../../lib/cardClick'
 import { cx } from '../../lib/cx'
 import { matchesQuery } from '../../lib/text'
 import { useAppState } from '../../state/context'
@@ -301,11 +302,16 @@ function SavedBuildCard({
   onDuplicate: () => void
   onDelete: () => void
 }) {
+  // 카드 빈 곳이나 글자를 눌러도 공유 창을 연다 (이미지 탭이면 장식주·스킬까지 다 든 세팅 이미지). 키보드는 '공유' 버튼
+  const onCardClick = (event: MouseEvent<HTMLElement>) => {
+    if (isCardClick(event)) onShare()
+  }
   return (
     <article
+      onClick={onCardClick}
       className={cx(
-        'space-y-3 rounded-lg border bg-surface p-3',
-        compared ? 'border-accent ring-1 ring-accent' : active ? 'border-accent/60' : 'border-line',
+        'cursor-pointer space-y-3 rounded-lg border bg-surface p-3',
+        compared ? 'border-accent ring-1 ring-accent' : active ? 'border-accent/60' : 'border-line hover:border-muted/60',
       )}
     >
       <header className="flex items-start justify-between gap-3">

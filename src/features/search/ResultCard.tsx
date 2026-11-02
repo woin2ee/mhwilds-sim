@@ -13,6 +13,7 @@ import { nameOf, type GameDb } from '../../data/db'
 import { compareDecorations, signed, skillName, skillPointsText, talismanName } from '../../data/format'
 import { ARMOR_KIND_LABEL, ELEMENT_LABEL } from '../../data/labels'
 import { ARMOR_KINDS, ELEMENTS, type ArmorKind, type Skill, type SkillPoint } from '../../data/types'
+import { isCardClick } from '../../lib/cardClick'
 import { cx } from '../../lib/cx'
 import { useAppState } from '../../state/context'
 import { useToast } from '../../state/toast'
@@ -22,9 +23,6 @@ import { buildKey, isAlternative, selectArmor, type CompareEntry, type ResultVar
 import { chipLevel, formatCount, shortfallLabel } from './format'
 
 type Expandable = ArmorKind | 'talisman'
-
-/** 카드를 눌러도 상세 창을 열지 않는 곳: 버튼·입력 요소, 카드 안에서 따로 연 내용(스킬 효과·대체 후보), 저장 창 */
-const OWN_CLICK = 'button, a, input, select, textarea, label, dialog, [data-own-click]'
 
 /** 결과 카드에서 비선호 스킬을 바로 넣고 빼는 데 쓰는 지금 검색 조건 (결과를 만든 요청과 다를 수 있다) */
 export interface ExcludeControl {
@@ -449,15 +447,9 @@ export function ResultCard({
   const shownResistances = ELEMENTS.filter(
     (element) => element === request.sort || request.minResistances.some((r) => r.element === element),
   )
-  // 카드 빈 곳이나 글자를 눌러도 상세 창을 연다. 키보드는 머리의 '#N' 버튼
+  // 카드 빈 곳이나 글자를 눌러도 상세 창을 연다 (카드 안의 저장 창·스킬 효과·대체 후보는 빼고). 키보드는 머리의 '#N' 버튼
   const onCardClick = (event: MouseEvent<HTMLElement>) => {
-    const card = event.currentTarget
-    const target = event.target as Element
-    // 대화상자 같은 포털 안이나 버튼 등을 누른 것, 두 번 눌러 글자를 고르는 것, 끌어서 글자를 고른 것은 빼고
-    const own = target.closest(OWN_CLICK)
-    if (!card.contains(target) || (own && card.contains(own)) || event.detail > 1) return
-    if (window.getSelection()?.isCollapsed === false) return
-    onOpenDetail()
+    if (isCardClick(event)) onOpenDetail()
   }
   return (
     // 비선호 스킬이 든 결과도 카드 자체는 똑같이 두고, 그 스킬 칩·붙은 부위·장식주에만 표시한다. 비교 목록에 넣은 카드는 강조 테두리.
