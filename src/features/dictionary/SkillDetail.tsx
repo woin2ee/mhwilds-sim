@@ -12,9 +12,10 @@ import { cx } from '../../lib/cx'
 import { usePersistentState } from '../../lib/storage'
 import { useAppState, useDb } from '../../state/context'
 import { useToast } from '../../state/toast'
-import { addRequiredSkill, removeRequiredSkill } from '../search/conditions'
+import { removeRequiredSkill } from '../search/conditions'
 import { useSearchConditions } from '../search/conditionsContext'
 import { bonusRankLabel } from '../search/format'
+import { addWithinWeaponLimit } from '../search/weaponSkillLimit'
 import {
   isBonusSkill,
   skillSources,
@@ -137,7 +138,7 @@ function SkillOverview({ skill }: { skill: Skill }) {
 
 /** 세팅 검색의 원하는 스킬에 넣기. 이미 원하는 스킬이나 비선호 스킬이면 그렇다고 보여 주고 세팅 검색으로 잇는다 */
 function RequiredAction({ skill }: { skill: Skill }) {
-  const { db, setTab } = useAppState()
+  const { db, setTab, customTalismans } = useAppState()
   const { cond, update } = useSearchConditions()
   const toast = useToast()
   const required = cond.required.find((r) => r.skillId === skill.id)
@@ -158,8 +159,11 @@ function RequiredAction({ skill }: { skill: Skill }) {
     )
   }
   const add = () => {
-    update((current) => addRequiredSkill(db, current, skill))
-    toast(`원하는 스킬에 넣었어요 · ${nameOf(skill.name)} ${levelLabel(skill, skill.maxLevel)}`, {
+    // 켠 무기 스킬과 함께 못 띄우는 무기 스킬은 꺼 둔 채로 넣는다 (세팅 검색의 선택 상자와 같다)
+    const { blocked } = addWithinWeaponLimit(db, cond, customTalismans, skill)
+    update((current) => addWithinWeaponLimit(db, current, customTalismans, skill).list)
+    const added = `${nameOf(skill.name)} ${levelLabel(skill, skill.maxLevel)}`
+    toast(blocked ? `원하는 스킬에 꺼 둔 채로 넣었어요 · ${added} — ${blocked}` : `원하는 스킬에 넣었어요 · ${added}`, {
       label: '되돌리기',
       onClick: () => update((current) => removeRequiredSkill(db, current, skill.id)),
     })

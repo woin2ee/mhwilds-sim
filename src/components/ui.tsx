@@ -223,32 +223,37 @@ export function EmptyState({ children }: { children: ReactNode }) {
   return <div className="rounded-md border border-dashed border-line px-4 py-8 text-center text-sm text-muted">{children}</div>
 }
 
-/** 1 ~ max 레벨 선택 */
+/** 1 ~ max 레벨 선택. enabledMax 를 주면 그보다 높은 레벨은 보이되 고를 수 없다 */
 export function LevelSelect({
   value,
   max,
   min = 1,
+  enabledMax = max,
   onChange,
   className,
   ariaLabel = '레벨',
+  title,
 }: {
   value: number
   max: number
   min?: number
+  enabledMax?: number
   onChange: (level: number) => void
   className?: string
   ariaLabel?: string
+  title?: string
 }) {
   const levels = Array.from({ length: Math.max(0, max - min + 1) }, (_, i) => min + i)
   return (
     <select
       aria-label={ariaLabel}
+      title={title}
       value={value}
       onChange={(e) => onChange(Number(e.target.value))}
       className={cx('h-8 rounded-md border border-line bg-surface-2 px-1.5 text-sm pointer-coarse:h-10', className)}
     >
       {levels.map((level) => (
-        <option key={level} value={level}>
+        <option key={level} value={level} disabled={level > enabledMax}>
           Lv{level}
         </option>
       ))}

@@ -43,6 +43,7 @@ import { compareItemOf, compareTrayItemOf } from './compareList'
 import { ExcludedArmorCondition } from './ExcludedArmorCondition'
 import { excludedArmorIds } from './excludedArmor'
 import { useCompareList } from './useCompareList'
+import { addWithinWeaponLimit, weaponSkillLimit } from './weaponSkillLimit'
 
 const EXCLUDE_MODE_OPTIONS: { value: ExcludeMode; label: string }[] = [
   { value: 'mark', label: '표시만' },
@@ -86,6 +87,7 @@ export function SearchPage() {
   // 사전 탭에서도 원하는 스킬을 넣으므로 조건은 SearchConditionsProvider 가 들고 있다
   const { cond, patch } = useSearchConditions()
   const request = useMemo(() => buildRequest(db, cond, customTalismans), [db, cond, customTalismans])
+  const weaponLimit = useMemo(() => weaponSkillLimit(db, cond, customTalismans), [db, cond, customTalismans])
   const excludedArmorCount = useMemo(() => excludedArmorIds(db, cond.excludedArmor).length, [db, cond.excludedArmor])
   const [collapsedSections, setCollapsedSections] = usePersistentState<Section[]>('search-collapsed:v1', [], isSectionList)
   const collapse = (section: Section, summary: PanelCollapse['summary']): PanelCollapse => ({
@@ -235,7 +237,9 @@ export function SearchPage() {
             required={cond.required}
             dividers={cond.requiredDividers}
             excluded={cond.excluded}
+            weaponLimit={weaponLimit}
             onChange={patch}
+            onAdd={(skill) => patch(addWithinWeaponLimit(db, cond, customTalismans, skill).list)}
           />
         </Panel>
 

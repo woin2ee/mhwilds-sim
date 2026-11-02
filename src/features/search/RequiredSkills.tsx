@@ -1,4 +1,13 @@
-import { useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
+import {
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type PointerEvent,
+  type ReactNode,
+} from 'react'
 import { SectionTitle } from '../../components/controls'
 import { SkillChip } from '../../components/SkillChip'
 import { SkillSelect } from '../../components/SkillSelect'
@@ -11,7 +20,6 @@ import { newId } from '../../lib/id'
 import { useDb } from '../../state/context'
 import {
   REQUIRED_KIND_ORDER,
-  addRequiredSkill,
   applyRequiredLayout,
   requiredLayout,
   type RequiredDivider,
@@ -20,6 +28,7 @@ import {
   type SearchConditions,
 } from './conditions'
 import { bonusRankLabel } from './format'
+import { weaponLimitWarning, weaponRowLimitText, type WeaponSkillLimit } from './weaponSkillLimit'
 
 const UNWANTED_KINDS: readonly SkillKind[] = ['armor', 'weapon']
 
@@ -128,11 +137,14 @@ function shiftOf(drag: Drag, i: number): number {
 function RequiredGroupList({
   kind,
   rows,
+  weaponLimit,
   onUpdate,
   onLayout,
 }: {
   kind: SkillKind
   rows: Row[]
+  /** 무기 스킬 묶음만: 켠 무기 스킬과 함께 띄울 수 있는 레벨 */
+  weaponLimit?: WeaponSkillLimit
   onUpdate: (skillId: number, change: Partial<RequiredSkill>) => void
   /** 줄을 옮기거나 지우거나 구분선을 넣은 뒤의 줄 (화면 순서) */
   onLayout: (rows: readonly RequiredItem[]) => void
@@ -266,7 +278,8 @@ function RequiredGroupList({
               key={row.key}
               style={drag ? { transform: `translateY(${shiftOf(drag, i)}px)` } : undefined}
               className={cx(
-                '-mx-1 flex items-center gap-2 rounded-md px-1',
+                // 못 켜는 무기 스킬 줄은 까닭을 둘째 줄에 보인다 (flex-wrap)
+                '-mx-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-md px-1',
                 dragging && 'relative z-10 bg-surface shadow-lg ring-1 ring-line',
                 drag && !dragging && 'transition-transform duration-150 motion-reduce:transition-none',
               )}
@@ -283,6 +296,7 @@ function RequiredGroupList({
                 <SkillRow
                   row={row}
                   grip={handle(row, i, nameOf(row.skill.name), 'h-8')}
+                  weaponLimit={weaponLimit}
                   onUpdate={onUpdate}
                   onRemove={() => remove(i)}
                 />
@@ -291,6 +305,9 @@ function RequiredGroupList({
           )
         })}
       </ul>
+      {weaponLimit && !weaponLimit.fits && (
+        <p className="mt-1.5 text-xs text-warn">{weaponLimitWarning(weaponLimit)}</p>
+      )}
       <p className="sr-only" aria-live="polite">
         {moved}
       </p>
@@ -298,38 +315,66 @@ function RequiredGroupList({
   )
 }
 
-/** 원하는 스킬 한 줄의 손잡이 뒤: 검색에 포함 체크, 레벨, 고정, 제거 */
+/**
+ * 무기 스킬 줄을 켠 무기 스킬과 함께 띄울 수 있는 만큼만: 끈 줄은 지금 레벨로 못 켜면 그 까닭(blocked), 켠 줄은 고를 수 있는
+ * 가장 높은 레벨(enabledMax)과 더 못 올리는 까닭(levelTitle). 낮추기·끄기는 늘 된다
+ */
+function weaponRowState(r: RequiredSkill, skill: Skill, weaponLimit: WeaponSkillLimit | undefined) {
+  const limit = weaponLimit?.rows.get(r.skillId)
+  if (!weaponLimit || !limit) return { blocked: null, enabledMax: undefined, levelTitle: undefined }
+  if (r.off) {
+    const blocked = r.level > limit.max ? weaponRowLimitText(weaponLimit, limit) : null
+    return { blocked, enabledMax: undefined, levelTitle: undefined }
+  }
+  const levelTitle =
+    limit.max >= skill.maxLevel
+      ? undefined
+      : weaponLimit.fits
+        ? weaponRowLimitText(weaponLimit, limit)
+        : '켠 무기 스킬을 모두 띄울 수 없어 레벨을 올릴 수 없어요'
+  return { blocked: null, enabledMax: limit.max, levelTitle }
+}
+
+/** 원하는 스킬 한 줄의 손잡이 뒤: 검색에 포함 체크, 레벨, 고정, 제거 (+ 못 켜는 무기 스킬은 둘째 줄에 까닭) */
 function SkillRow({
   row,
   grip,
+  weaponLimit,
   onUpdate,
   onRemove,
 }: {
   row: Extract<Row, { type: 'skill' }>
   grip: ReactNode
+  weaponLimit?: WeaponSkillLimit
   onUpdate: (skillId: number, change: Partial<RequiredSkill>) => void
   onRemove: () => void
 }) {
   const { required: r, skill } = row
   const name = nameOf(skill.name)
+  const reasonId = useId()
+  const { blocked, enabledMax, levelTitle } = weaponRowState(r, skill, weaponLimit)
   return (
     <>
       {grip}
       {/* self-stretch: 줄 높이(터치 기기 40px)만큼 누르는 영역을 넓힌다 */}
       <label
         className={cx(
-          'flex min-w-0 flex-1 cursor-pointer items-center gap-2 self-stretch text-sm',
+          'flex min-w-0 flex-1 items-center gap-2 self-stretch text-sm',
+          blocked ? 'cursor-default' : 'cursor-pointer',
           r.off && 'text-muted',
         )}
         title={skill.description}
       >
         <input
           type="checkbox"
-          className="size-4 shrink-0 accent-[var(--accent)] pointer-coarse:size-5"
+          // 막힌 상자는 다크 테마에서 기본 모양이 켤 수 있는 상자와 거의 같아서 흐리게
+          className="size-4 shrink-0 accent-[var(--accent)] disabled:opacity-50 pointer-coarse:size-5"
           checked={!r.off}
+          disabled={blocked !== null}
           onChange={(e) => onUpdate(r.skillId, { off: !e.target.checked })}
           aria-label={`${name} 검색에 포함`}
-          title="검색에 포함 (끄면 목록에 둔 채 검색에서만 빠져요)"
+          aria-describedby={blocked ? reasonId : undefined}
+          title={blocked ?? '검색에 포함 (끄면 목록에 둔 채 검색에서만 빠져요)'}
         />
         <span className="truncate">{name}</span>
       </label>
@@ -339,8 +384,10 @@ function SkillRow({
         <LevelSelect
           value={r.level}
           max={skill.maxLevel}
+          enabledMax={enabledMax}
           onChange={(level) => onUpdate(r.skillId, { level })}
           ariaLabel={`${name} 레벨`}
+          title={levelTitle}
         />
       )}
       {/* 고정: 조건을 채우는 조합이 없어 가장 가까운 조합을 찾을 때도 이 스킬은 낮추지 않는다.
@@ -366,24 +413,36 @@ function SkillRow({
       <Button variant="ghost" size="sm" aria-label={`${name} 제거`} onClick={onRemove}>
         ×
       </Button>
+      {/* 이름 아래에 맞춘다: 손잡이(w-5·w-8) + 간격 + 체크(size-4·size-5) + 간격 */}
+      {blocked && (
+        <p id={reasonId} className="basis-full pl-13 text-xs text-muted pointer-coarse:pl-17">
+          {blocked}
+        </p>
+      )}
     </>
   )
 }
 
 /**
  * 원하는 스킬 + 레벨 목록. 방어구·무기·시리즈·그룹 스킬 묶음으로 나눠 보여 주고, 이 순서가 결과 카드의 스킬 칩 순서가 된다.
- * 체크를 끈 스킬은 지우지 않고 검색에서만 뺀다. 구분선은 목록을 나눠 보기만 하고 검색에는 영향이 없다
+ * 체크를 끈 스킬은 지우지 않고 검색에서만 뺀다. 구분선은 목록을 나눠 보기만 하고 검색에는 영향이 없다.
+ * 무기 스킬은 켠 무기 스킬과 함께 띄울 수 있는 만큼만 켠다 (weaponLimit)
  */
 export function RequiredSkills({
   required,
   dividers,
   excluded,
+  weaponLimit,
   onChange,
+  onAdd,
 }: {
   required: RequiredSkill[]
   dividers: RequiredDivider[]
   excluded: number[]
+  weaponLimit: WeaponSkillLimit
   onChange: (change: Partial<Pick<SearchConditions, 'required' | 'requiredDividers'>>) => void
+  /** 선택 상자에서 고른 스킬 넣기 (함께 못 띄우는 무기 스킬은 꺼 둔 채로, addWithinWeaponLimit) */
+  onAdd: (skill: Skill) => void
 }) {
   const db = useDb()
   const hiddenIds = useMemo(() => [...required.map((r) => r.skillId), ...excluded], [required, excluded])
@@ -416,6 +475,7 @@ export function RequiredSkills({
               key={kind}
               kind={kind}
               rows={rows}
+              weaponLimit={kind === 'weapon' ? weaponLimit : undefined}
               onUpdate={update}
               onLayout={(items) => setLayout(kind, items)}
             />
@@ -425,7 +485,7 @@ export function RequiredSkills({
       <SkillSelect
         value={null}
         // 새 스킬은 그 묶음의 끝(맨 아래 구분선보다 아래)에 들어간다
-        onChange={(skill) => skill && onChange(addRequiredSkill(db, { required, requiredDividers: dividers }, skill))}
+        onChange={(skill) => skill && onAdd(skill)}
         hiddenIds={hiddenIds}
         placeholder="원하는 스킬 추가 (초성 검색 가능)"
         ariaLabel="원하는 스킬 추가"
