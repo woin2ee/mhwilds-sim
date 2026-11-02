@@ -21,6 +21,14 @@ const SHAPES: Record<Exclude<TabId, 'manual' | 'talismans'>, ReactNode> = {
   ),
   // 책갈피
   saved: <path d="M18.5 21 12 17l-6.5 4V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2z" />,
+  // 계산기 (화면 + 단추)
+  calculator: (
+    <>
+      <rect x="4.5" y="2.5" width="15" height="19" rx="2.5" />
+      <path d="M8 7h8" />
+      <path d="M8.5 12h.01M12 12h.01M15.5 12h.01M8.5 16.5h.01M12 16.5h.01M15.5 16.5h.01" />
+    </>
+  ),
   // 보관 상자
   backup: (
     <>

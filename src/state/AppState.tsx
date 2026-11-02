@@ -8,7 +8,13 @@ import { AppStateContext, type TabId } from './context'
 import { isBuildState, isNullableString, isSavedBuildList, isTalismanList, STORAGE_KEYS } from './storedValues'
 
 const isTab = (v: unknown): v is TabId =>
-  v === 'manual' || v === 'search' || v === 'dictionary' || v === 'saved' || v === 'talismans' || v === 'backup'
+  v === 'manual' ||
+  v === 'search' ||
+  v === 'dictionary' ||
+  v === 'saved' ||
+  v === 'talismans' ||
+  v === 'calculator' ||
+  v === 'backup'
 
 /** 앱 전역 상태. 호석·수동 세팅·내 세팅·현재 탭은 localStorage 에 자동 저장된다. */
 export function AppStateProvider({ db, children }: { db: GameDb; children: ReactNode }) {
