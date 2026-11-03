@@ -3,6 +3,8 @@ import { SectionTitle } from '../../components/controls'
 import { SlotBadge, SlotList } from '../../components/SlotBadge'
 import { Badge, Button, ChevronIcon, EmptyState, Panel } from '../../components/ui'
 import { isGogmaArtian } from '../../core/gogmaArtian'
+import type { GameTerm } from '../../core/gameTerms'
+import { skillValues } from '../../core/skillValues'
 import type { CustomTalisman } from '../../core/types'
 import { nameOf, otherNamesOf } from '../../data/db'
 import { skillName } from '../../data/format'
@@ -25,6 +27,9 @@ import {
   type WeaponKindSource,
 } from './skillLookup'
 import type { DictionaryEntry } from './dictionarySearch'
+import { TermBody } from './TermDetail'
+import { termsOfSkill } from './termLookup'
+import { Disclosure, SkillValuesBody } from './ValueParts'
 
 const isWeaponKindOrNull = (v: unknown): v is WeaponKind | null => v === null || WEAPON_KINDS.includes(v as WeaponKind)
 const isBoolean = (v: unknown): v is boolean => typeof v === 'boolean'
@@ -32,10 +37,14 @@ const isBoolean = (v: unknown): v is boolean => typeof v === 'boolean'
 /** 원하는 스킬 레벨 표시: Lv5, 시리즈·그룹 스킬은 '4부위 (Ⅱ)'·'3부위' */
 const levelLabel = (skill: Skill, level: number) => (isBonusSkill(skill) ? bonusRankLabel(skill, level) : `Lv${level}`)
 
-/** 사전 오른쪽(휴대폰은 '상세') 열의 스킬: 스킬 설명·레벨 효과와 그 스킬을 얻는 곳. onOpen 은 방어구 세트를 사전에서 연다 */
+/**
+ * 사전 오른쪽(휴대폰은 '상세') 열의 스킬: 스킬 설명·레벨 효과, 눌러서 펼치는 상세 설명·글에 나오는 용어, 그 스킬을 얻는 곳.
+ * onOpen 은 방어구 세트·용어를 사전에서 연다
+ */
 export function SkillDetail({ skill, onOpen }: { skill: Skill; onOpen: (entry: DictionaryEntry) => void }) {
   const { db, customTalismans } = useAppState()
   const sources = useMemo(() => skillSources(db, skill), [db, skill])
+  const terms = useMemo(() => termsOfSkill(skill), [skill])
   const myTalismans = useMemo(
     () => customTalismans.filter((t) => t.skills.some((p) => p.skillId === skill.id)),
     [customTalismans, skill],
@@ -49,7 +58,7 @@ export function SkillDetail({ skill, onOpen }: { skill: Skill; onOpen: (entry: D
     0
   return (
     <>
-      <SkillOverview skill={skill} />
+      <SkillOverview skill={skill} terms={terms} onOpen={onOpen} />
       {sources.decorations.length > 0 && <DecorationPanel skill={skill} decorations={sources.decorations} />}
       {sources.weapons.length > 0 && <WeaponPanel skill={skill} groups={sources.weapons} />}
       {sources.armorSets.length > 0 && <ArmorPanel skill={skill} sets={sources.armorSets} onOpen={onOpen} />}
@@ -87,11 +96,20 @@ function PointsText({ points, skillId }: { points: readonly SkillPoint[]; skillI
   )
 }
 
-function SkillOverview({ skill }: { skill: Skill }) {
+function SkillOverview({
+  skill,
+  terms,
+  onOpen,
+}: {
+  skill: Skill
+  terms: readonly GameTerm[]
+  onOpen: (entry: DictionaryEntry) => void
+}) {
   const bonus = isBonusSkill(skill)
   const others = otherNamesOf(skill.name)
   // 레벨 효과가 스킬 설명과 똑같은 1레벨 스킬은 효과 줄을 빼고, 시리즈·그룹 스킬은 스킬 설명이 없고 단계마다 이름·효과가 있다
   const ranks = skill.ranks.filter((r) => bonus || r.description !== skill.description)
+  const values = skillValues(skill.gameId)
   return (
     <Panel>
       <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
@@ -131,6 +149,21 @@ function SkillOverview({ skill }: { skill: Skill }) {
             </li>
           ))}
         </ol>
+      )}
+      {/* 궁금할 때만 펼쳐 보는 것: 게임 글에 없는 수치·효과 시간(상세 설명)과 글에 나오는 용어 */}
+      {(values || terms.length > 0) && (
+        <div className="mt-3 divide-y divide-line rounded-md border border-line">
+          {values && (
+            <Disclosure title="상세 설명" aside="게임 파일 분석·공략 자료">
+              <SkillValuesBody skill={skill} values={values} />
+            </Disclosure>
+          )}
+          {terms.map((term) => (
+            <Disclosure key={term.id} title={nameOf(term.name)} aside="용어">
+              <TermBody term={term} onOpen={onOpen} />
+            </Disclosure>
+          ))}
+        </div>
       )}
     </Panel>
   )

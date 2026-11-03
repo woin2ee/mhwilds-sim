@@ -8,6 +8,7 @@ import { normalize } from '../../lib/text'
 import { useDb } from '../../state/context'
 import {
   buildDictionaryIndex,
+  sameEntry,
   searchDictionary,
   type DictionaryEntry,
   type DictionaryFilter,
@@ -19,6 +20,7 @@ const FILTER_OPTIONS: { value: DictionaryFilter; label: string }[] = [
   { value: 'all', label: '전체' },
   { value: 'skill', label: '스킬' },
   { value: 'armor', label: '방어구' },
+  { value: 'term', label: '용어' },
 ]
 
 const KIND_SHORT: Record<SkillKind, string> = { armor: '방어구', weapon: '무기', set: '시리즈', group: '그룹' }
@@ -36,15 +38,28 @@ function skillMeta(skill: Skill): string {
   return isBonusSkill(skill) ? `${skill.ranks.map((r) => r.pieces).join('·')}부위` : `Lv${skill.maxLevel}`
 }
 
-const itemKey = (item: DictionaryItem) => (item.type === 'skill' ? `s${item.skill.id}` : `a${item.entry.set.id}`)
+const itemKey = (item: DictionaryItem) =>
+  item.type === 'skill' ? `s${item.skill.id}` : item.type === 'term' ? `t${item.term.id}` : `a${item.entry.set.id}`
 
 function entryOf(item: DictionaryItem): DictionaryEntry {
   if (item.type === 'skill') return { kind: 'skill', id: item.skill.id }
+  if (item.type === 'term') return { kind: 'term', id: item.term.id }
   return { kind: 'armor', id: item.entry.set.id, ...(item.piece ? { pieceId: item.piece.id } : {}) }
 }
 
+function itemName(item: DictionaryItem) {
+  return nameOf(item.type === 'skill' ? item.skill.name : item.type === 'term' ? item.term.name : item.entry.set.name)
+}
+
+/** 목록 줄 오른쪽 글. 검색 중에는 종류를 앞에 붙인다 */
+function itemMeta(item: DictionaryItem, searching: boolean) {
+  if (item.type === 'skill') return `${searching ? `${KIND_SHORT[item.skill.kind]} · ` : ''}${skillMeta(item.skill)}`
+  if (item.type === 'term') return '용어'
+  return `${searching ? '방어구 · ' : ''}레어도 ${item.entry.rarity}${item.entry.hr100 ? ' · HR 100' : ''}`
+}
+
 /**
- * 사전 왼쪽(휴대폰은 '목록') 열: 검색 칸 + 전체/스킬/방어구 + 목록.
+ * 사전 왼쪽(휴대폰은 '목록') 열: 검색 칸 + 전체/스킬/방어구/용어 + 목록.
  * 검색 칸에 포커스를 둔 채 ↑↓ 로 고르고 Enter 로 연다 (선택 상자 Combobox 와 같은 방식이라 목록 줄은 탭 순서에 넣지 않는다)
  */
 export function DictionaryList({
@@ -70,6 +85,7 @@ export function DictionaryList({
   const listRef = useRef<HTMLUListElement>(null)
 
   const groupOf = (item: DictionaryItem) => {
+    if (item.type === 'term') return '용어'
     if (item.type === 'armor') return searching ? '방어구' : `방어구 · 레어도 ${item.entry.rarity}`
     return searching ? VIA_TITLE[item.via] : SKILL_KIND_LABEL[item.skill.kind]
   }
@@ -120,7 +136,7 @@ export function DictionaryList({
             autoCorrect="off"
             autoCapitalize="off"
             spellCheck={false}
-            placeholder="스킬·방어구·효과로 찾기 (초성 가능)"
+            placeholder="스킬·방어구·용어·효과로 찾기 (초성 가능)"
             value={query}
             onChange={(e) => changeQuery(e.target.value)}
             onKeyDown={onKeyDown}
@@ -165,7 +181,7 @@ export function DictionaryList({
       >
         {items.length === 0 && (
           <li className="px-3 py-6 text-center text-sm text-muted">
-            찾는 스킬·방어구가 없어요.
+            찾는 스킬·방어구·용어가 없어요.
             <span className="mt-1 block text-xs">이름·초성, 스킬 효과 글, 장식주 이름으로 찾을 수 있어요.</span>
           </li>
         )}
@@ -173,11 +189,7 @@ export function DictionaryList({
           const group = groupOf(item)
           // 묶음이 바뀌는 첫 줄 위에 묶음 이름을 붙인다
           const header = i === 0 || groupOf(items[i - 1]) !== group
-          const isSelected =
-            selected !== null &&
-            (item.type === 'skill'
-              ? selected.kind === 'skill' && selected.id === item.skill.id
-              : selected.kind === 'armor' && selected.id === item.entry.set.id)
+          const isSelected = sameEntry(selected, entryOf(item))
           return (
             <li key={itemKey(item)} role="presentation">
               {header && (
@@ -201,12 +213,8 @@ export function DictionaryList({
                 )}
               >
                 <span className="flex items-center justify-between gap-2">
-                  <span className="truncate">{nameOf(item.type === 'skill' ? item.skill.name : item.entry.set.name)}</span>
-                  <span className="shrink-0 text-xs font-normal text-muted">
-                    {item.type === 'skill'
-                      ? `${searching ? `${KIND_SHORT[item.skill.kind]} · ` : ''}${skillMeta(item.skill)}`
-                      : `${searching ? '방어구 · ' : ''}레어도 ${item.entry.rarity}${item.entry.hr100 ? ' · HR 100' : ''}`}
-                  </span>
+                  <span className="truncate">{itemName(item)}</span>
+                  <span className="shrink-0 text-xs font-normal text-muted">{itemMeta(item, searching)}</span>
                 </span>
                 {item.hint && <span className="block truncate text-xs font-normal text-muted">{item.hint}</span>}
               </div>

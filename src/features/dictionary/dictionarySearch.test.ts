@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { GAME_TERMS } from '../../core/gameTerms'
 import { ARMOR_KINDS } from '../../data/types'
 import { armorByName, loadTestDb, skillIdByName } from '../../test/testDb'
 import { armorSetEntries, searchArmor } from './armorLookup'
@@ -13,7 +14,8 @@ import {
 const db = loadTestDb()
 const entries = armorSetEntries(db)
 const index = buildDictionaryIndex(db)
-const label = (item: DictionaryItem) => (item.type === 'skill' ? item.skill.name.ko : item.entry.set.name.ko)
+const label = (item: DictionaryItem) =>
+  item.type === 'skill' ? item.skill.name.ko : item.type === 'term' ? item.term.name.ko : item.entry.set.name.ko
 const setNames = (query: string) => searchArmor(entries, query).map((m) => m.entry.set.name.ko)
 
 describe('armorSetEntries', () => {
@@ -58,18 +60,20 @@ describe('searchArmor', () => {
 })
 
 describe('searchDictionary', () => {
-  it('검색어가 없으면 스킬(종류 → 이름) 다음에 방어구 세트, 종류로 거른다', () => {
+  it('검색어가 없으면 스킬(종류 → 이름) 다음에 용어, 방어구 세트, 종류로 거른다', () => {
     const all = searchDictionary(index, '', 'all')
-    expect(all).toHaveLength(db.data.skills.length + entries.length)
-    expect(all.findIndex((i) => i.type === 'armor')).toBe(db.data.skills.length)
+    expect(all).toHaveLength(db.data.skills.length + GAME_TERMS.length + entries.length)
+    expect(all.findIndex((i) => i.type === 'term')).toBe(db.data.skills.length)
+    expect(all.findIndex((i) => i.type === 'armor')).toBe(db.data.skills.length + GAME_TERMS.length)
     expect(searchDictionary(index, '', 'skill').every((i) => i.type === 'skill')).toBe(true)
     expect(searchDictionary(index, '', 'armor').every((i) => i.type === 'armor')).toBe(true)
+    expect(searchDictionary(index, '', 'term').map(label)).toEqual(GAME_TERMS.map((t) => t.name.ko))
   })
 
-  it('스킬 이름 → 방어구 → 장식주 이름·효과 글로 찾은 스킬 순서', () => {
+  it('스킬 이름 → 용어 → 방어구 → 장식주 이름·효과 글로 찾은 스킬 순서', () => {
     // '수호룡': 그룹 스킬 이름(수호룡의 방어·맥동)과 방어구(수호룡 세크레트)가 함께 맞는다
     const items = searchDictionary(index, '수호룡', 'all')
-    const types = items.map((i) => (i.type === 'armor' ? 'armor' : i.via === 'rank' ? 'name' : i.via))
+    const types = items.map((i) => (i.type !== 'skill' ? i.type : i.via === 'rank' ? 'name' : i.via))
     expect(types).toEqual([...types].sort((a, b) => ORDER.indexOf(a) - ORDER.indexOf(b)))
     expect(items.map(label)).toEqual(expect.arrayContaining(['수호룡의 방어', '수호룡 세크레트β']))
     expect(items[0].type).toBe('skill')
@@ -82,16 +86,32 @@ describe('searchDictionary', () => {
     expect(searchDictionary(index, '공격', 'armor').every((i) => i.type === 'armor')).toBe(true)
   })
 
+  it('용어는 스킬 이름 다음, 효과 글로 찾은 스킬보다 앞', () => {
+    // '광룡': 스킬 이름에는 없고 용어 광룡증, 효과 글에 무아지경·흑식룡의 힘
+    const items = searchDictionary(index, '광룡', 'all')
+    expect(items[0]).toMatchObject({ type: 'term', term: { id: 'frenzy' } })
+    expect(items.map(label)).toEqual(expect.arrayContaining(['무아지경', '흑식룡의 힘']))
+    const types = items.map((i) => (i.type !== 'skill' ? i.type : i.via === 'rank' ? 'name' : i.via))
+    expect(types).toEqual([...types].sort((a, b) => ORDER.indexOf(a) - ORDER.indexOf(b)))
+    // '거품': 시리즈 스킬 단계 이름(거품의 춤)이 먼저, 그다음 용어
+    expect(searchDictionary(index, '거품', 'all').slice(0, 2).map(label)).toEqual(['포호룡의 힘', '거품 상태'])
+    expect(searchDictionary(index, '광룡', 'term').every((i) => i.type === 'term')).toBe(true)
+  })
+
   it('저장된 항목 모양을 검사하고 이름을 찾는다', () => {
     expect(isDictionaryEntry({ kind: 'skill', id: 3 })).toBe(true)
     expect(isDictionaryEntry({ kind: 'armor', id: 3, pieceId: 7 })).toBe(true)
     expect(isDictionaryEntry({ kind: 'armor', id: 3, pieceId: 'x' })).toBe(false)
     expect(isDictionaryEntry({ kind: 'weapon', id: 3 })).toBe(false)
+    expect(isDictionaryEntry({ kind: 'term', id: 'frenzy' })).toBe(true)
+    expect(isDictionaryEntry({ kind: 'term', id: 3 })).toBe(false)
     expect(isDictionaryEntry(3)).toBe(false)
     expect(entryName(db, { kind: 'skill', id: skillIdByName(db, '공격') })).toBe('공격')
     expect(entryName(db, { kind: 'armor', id: armorByName(db, '도샤구마헬름β').setId })).toBe('도샤구마β')
     expect(entryName(db, { kind: 'skill', id: 999999 })).toBeNull()
+    expect(entryName(db, { kind: 'term', id: 'frenzy' })).toBe('광룡증')
+    expect(entryName(db, { kind: 'term', id: 'nothing' })).toBeNull()
   })
 })
 
-const ORDER = ['name', 'armor', 'decoration', 'effect']
+const ORDER = ['name', 'term', 'armor', 'decoration', 'effect']

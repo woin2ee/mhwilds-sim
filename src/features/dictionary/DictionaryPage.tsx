@@ -5,12 +5,14 @@ import { cx } from '../../lib/cx'
 import { useCoarsePointer } from '../../lib/media'
 import { useScrollMemory } from '../../lib/scroll'
 import { usePersistentState } from '../../lib/storage'
+import { gameTerm } from '../../core/gameTerms'
 import { useAppState } from '../../state/context'
 import { ArmorSetDetail } from './ArmorDetail'
 import { armorSetEntry } from './armorLookup'
 import { DictionaryList } from './DictionaryList'
 import { entryName, isDictionaryEntry, type DictionaryEntry } from './dictionarySearch'
 import { SkillDetail } from './SkillDetail'
+import { TermDetail } from './TermDetail'
 
 /** lg 미만(1단)에서 한 번에 하나만 보여 주는 패널 */
 type Pane = 'list' | 'detail'
@@ -22,7 +24,8 @@ const PANE_OPTIONS: { value: Pane; label: string }[] = [
 const isEntryOrNull = (v: unknown): v is DictionaryEntry | null => v === null || isDictionaryEntry(v)
 
 /**
- * 사전: 스킬과 방어구를 한 검색 칸에서 찾아 본다. 스킬은 설명·레벨 효과·얻는 곳, 방어구는 세트의 부위마다 스킬·슬롯.
+ * 사전: 스킬·방어구·용어를 한 검색 칸에서 찾아 본다. 스킬은 설명·레벨 효과·펼쳐 보는 상세 설명과 글에 나오는 용어·얻는 곳,
+ * 방어구는 세트의 부위마다 스킬·슬롯, 용어(상태 이상·게임 규칙)는 설명·수치와 그 용어가 나오는 스킬.
  * 데스크톱은 왼쪽 목록 + 오른쪽 상세, 휴대폰·태블릿은 목록/상세를 아래 바로 바꾼다.
  * 상세 안의 링크(방어구의 스킬 칩, 스킬의 '세트 전체 보기')로 옮겨 가면 '←' 로 돌아온다
  */
@@ -32,6 +35,7 @@ export function DictionaryPage() {
   /** 링크로 옮겨 오기 전에 보던 항목들 (목록에서 고르면 비운다) */
   const [history, setHistory] = useState<DictionaryEntry[]>([])
   const skill = selected?.kind === 'skill' ? (db.skills.get(selected.id) ?? null) : null
+  const term = selected?.kind === 'term' ? (gameTerm(selected.id) ?? null) : null
   const armor = useMemo(() => {
     const set = selected?.kind === 'armor' ? db.armorSets.get(selected.id) : undefined
     return set ? armorSetEntry(db, set) : null
@@ -77,6 +81,8 @@ export function DictionaryPage() {
         )}
         {skill ? (
           <SkillDetail key={`s${skill.id}`} skill={skill} onOpen={open} />
+        ) : term ? (
+          <TermDetail key={`t${term.id}`} term={term} onOpen={open} />
         ) : armor ? (
           <ArmorSetDetail
             key={`a${armor.set.id}`}
@@ -86,8 +92,8 @@ export function DictionaryPage() {
           />
         ) : (
           <EmptyState>
-            궁금한 스킬이나 방어구를 목록에서 고르거나 찾아 보세요. 이름·초성뿐 아니라 스킬 효과 글(예: 회심률)이나 장식주
-            이름으로도 찾을 수 있어요.
+            궁금한 스킬·방어구·용어(광룡증 같은 상태 이상)를 목록에서 고르거나 찾아 보세요. 이름·초성뿐 아니라 스킬 효과
+            글(예: 회심률)이나 장식주 이름으로도 찾을 수 있어요.
           </EmptyState>
         )}
       </div>
