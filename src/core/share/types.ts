@@ -40,13 +40,14 @@ export interface BackupFile {
   dataVersion: string
   talismans: BackupTalisman[]
   /**
-   * code 는 이름을 뺀 공유 코드 (이름은 name 에). weaponKind 는 저장할 때 고른 무기 종류, favorite 는 즐겨찾기
-   * (SavedBuild 와 같음, 없으면 키 없음)
+   * code 는 이름을 뺀 공유 코드 (이름은 name 에). weaponKind 는 저장할 때 고른 무기 종류, tags 는 태그,
+   * favorite 는 즐겨찾기 (SavedBuild 와 같음, 없으면 키 없음)
    */
   builds: {
     name: string
     memo: string
     weaponKind?: WeaponKind
+    tags?: string[]
     favorite?: true
     createdAt: string
     updatedAt: string

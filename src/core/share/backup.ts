@@ -1,6 +1,7 @@
 // 백업 만들기/가져오기 (DESIGN.md §8.3). 파일과 백업 코드가 같은 BackupFile 을 담는다.
 import type { GameDb } from '../../data/db'
 import type { SkillPoint, SlotLevel, WeaponKind } from '../../data/types'
+import { readTags, tagsField, tagsOf } from '../buildTags'
 import { linkTalisman, sameTalisman } from '../buildUpdates'
 import { favoriteField, isFavorite, isWeaponKind, weaponKindField, type SavedBuild } from '../savedBuilds'
 import type { BuildState, CustomTalisman, Slot, TalismanDraft } from '../types'
@@ -32,6 +33,7 @@ export function createBackup(
       name: s.name,
       memo: s.memo,
       ...weaponKindField(s.weaponKind),
+      ...tagsField(tagsOf(s)),
       ...favoriteField(isFavorite(s)),
       createdAt: s.createdAt,
       updatedAt: s.updatedAt,
@@ -92,6 +94,7 @@ export function importBackup(
       memo: entry.memo,
       build,
       ...weaponKindField(entry.weaponKind),
+      ...tagsField(entry.tags),
       ...favoriteField(entry.favorite),
       createdAt: entry.createdAt,
       updatedAt: entry.updatedAt,
@@ -121,6 +124,7 @@ interface ParsedBuild {
   name: string
   memo: string
   weaponKind: WeaponKind | null
+  tags: string[]
   favorite: boolean
   createdAt: string
   updatedAt: string
@@ -178,6 +182,8 @@ function parseBuild(value: unknown): ParsedBuild {
     memo: text(value.memo, ''),
     // 모르는 무기 종류는 미지정으로 (세팅은 그대로 가져온다)
     weaponKind: isWeaponKind(value.weaponKind) ? value.weaponKind : null,
+    // 글자가 아닌 태그는 빼고 다듬는다 (세팅은 그대로 가져온다)
+    tags: readTags(value.tags),
     favorite: value.favorite === true,
     createdAt: text(value.createdAt, now),
     updatedAt: text(value.updatedAt, now),

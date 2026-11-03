@@ -2,6 +2,7 @@
 import type { GameDb } from '../data/db'
 import { skillName } from '../data/format'
 import { WEAPON_KINDS, type SkillPoint, type WeaponKind } from '../data/types'
+import { tagsField } from './buildTags'
 import type { BuildSummary } from './calc'
 import type { BuildState } from './types'
 
@@ -20,6 +21,11 @@ export interface SavedBuild {
    * 고친 날(updatedAt)은 그대로이고, 기기 동기화는 세팅 내용과 따로 맞춘다 (mergeSync)
    */
   favorite?: true
+  /**
+   * 태그 (카드 이름 아래, 목록에서 태그로 거르고 검색 칸으로 찾는다, buildTags.ts). 붙인 것만 키로 담는다.
+   * 이름·메모처럼 세팅 정보라 고치면 고친 날(updatedAt)도 바뀐다
+   */
+  tags?: string[]
   /** ISO 시각 */
   createdAt: string
   updatedAt: string
@@ -49,7 +55,13 @@ export function withFavorite(saved: SavedBuild, on: boolean): SavedBuild {
   return next
 }
 
-export function newSavedBuild(build: BuildState, name: string, memo = '', weaponKind?: WeaponKind | null): SavedBuild {
+export function newSavedBuild(
+  build: BuildState,
+  name: string,
+  memo = '',
+  weaponKind?: WeaponKind | null,
+  tags: readonly string[] = [],
+): SavedBuild {
   const now = new Date().toISOString()
   return {
     id: crypto.randomUUID(),
@@ -57,18 +69,20 @@ export function newSavedBuild(build: BuildState, name: string, memo = '', weapon
     memo: memo.trim(),
     build,
     ...weaponKindField(weaponKind),
+    ...tagsField(tags),
     createdAt: now,
     updatedAt: now,
   }
 }
 
-/** 내 세팅에 덮어쓰기: id·만든 날·즐겨찾기는 그대로 두고 세팅·이름·메모·무기 종류를 바꾼다. 이름을 비우면 원래 이름 */
+/** 내 세팅에 덮어쓰기: id·만든 날·즐겨찾기는 그대로 두고 세팅·이름·메모·무기 종류·태그를 바꾼다. 이름을 비우면 원래 이름 */
 export function overwriteSavedBuild(
   target: SavedBuild,
   build: BuildState,
   name: string,
   memo = '',
   weaponKind?: WeaponKind | null,
+  tags: readonly string[] = [],
 ): SavedBuild {
   return {
     id: target.id,
@@ -76,6 +90,7 @@ export function overwriteSavedBuild(
     memo: memo.trim(),
     build,
     ...weaponKindField(weaponKind),
+    ...tagsField(tags),
     ...favoriteField(isFavorite(target)),
     createdAt: target.createdAt,
     updatedAt: new Date().toISOString(),

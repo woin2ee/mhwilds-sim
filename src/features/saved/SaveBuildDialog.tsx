@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { SelectBox } from '../../components/controls'
 import { Dialog } from '../../components/Dialog'
 import { Button, Segmented } from '../../components/ui'
+import { tagsOf } from '../../core/buildTags'
 import { computeBuild, type BuildSummary } from '../../core/calc'
 import {
   buildWeaponKind,
@@ -26,6 +27,8 @@ import { matchesQuery } from '../../lib/text'
 import { useAppState } from '../../state/context'
 import { useToast } from '../../state/toast'
 import { StarIcon } from './FavoriteStar'
+import { TagField } from './TagField'
+import { useKnownTags, withTypedTag } from './useKnownTags'
 import { WeaponKindBadge, type KindKey } from './WeaponKindBadge'
 
 const INPUT =
@@ -36,7 +39,11 @@ const isWeaponKindOrNull = (v: unknown): v is WeaponKind | null => v === null ||
 /** 저장·정보 수정 창의 칸 */
 interface SaveInfo {
   name: string
+  /** 예전에 적은 메모 (메모 칸은 메모가 있는 세팅만 보인다, 새로 적는 칸은 태그로 바뀜) */
   memo: string
+  tags: string[]
+  /** 태그 칸에 쳤지만 아직 붙이지 않은 글자. 저장하면 이것도 태그로 붙는다 */
+  tagText: string
   /** 고른 무기 종류. 세팅에 DB 무기가 있으면 그 무기의 종류가 먼저다 */
   kind: WeaponKind | null
 }
@@ -47,7 +54,7 @@ const SAVE_MODES: { value: SaveMode; label: string }[] = [
   { value: 'overwrite', label: '덮어쓰기' },
 ]
 
-/** 내 세팅이 이만큼 있으면 덮어쓸 세팅 목록 위에 이름·메모 검색 칸 */
+/** 내 세팅이 이만큼 있으면 덮어쓸 세팅 목록 위에 이름·태그 검색 칸 */
 const TARGET_SEARCH_MIN = 6
 
 interface SaveFormProps {
@@ -92,6 +99,8 @@ export function SaveBuildDialog({
 function useSaveActions({ build, onSaved, onClose }: SaveFormProps) {
   const { db, setSavedBuilds } = useAppState()
   const toast = useToast()
+  const knownTags = useKnownTags()
+  const tagsToSave = (info: SaveInfo) => withTypedTag(info.tags, info.tagText, knownTags)
   // 무기 없는 세팅을 저장할 때 마지막으로 고른 무기 종류 (다음 저장의 처음 값).
   // 고를 때 바로 기억한다: 저장하면 창이 닫혀 이 폼이 사라지므로 그때 바꾼 값은 브라우저에 써지지 않는다
   const [lastKind, setLastKind] = usePersistentState<WeaponKind | null>(
@@ -108,10 +117,12 @@ function useSaveActions({ build, onSaved, onClose }: SaveFormProps) {
     infoOf: (saved: SavedBuild): SaveInfo => ({
       name: saved.name,
       memo: saved.memo,
+      tags: tagsOf(saved),
+      tagText: '',
       kind: weaponKindOf(db, saved) ?? lastKind,
     }),
     saveNew: (info: SaveInfo) => {
-      const saved = newSavedBuild(build, info.name, info.memo, fixedKind ?? info.kind)
+      const saved = newSavedBuild(build, info.name, info.memo, fixedKind ?? info.kind, tagsToSave(info))
       setSavedBuilds((list) => [saved, ...list])
       void requestPersistentStorage()
       onSaved?.(saved)
@@ -119,7 +130,7 @@ function useSaveActions({ build, onSaved, onClose }: SaveFormProps) {
       toast(`내 세팅에 저장했어요 · ${saved.name}`)
     },
     overwrite: (target: SavedBuild, info: SaveInfo) => {
-      const saved = overwriteSavedBuild(target, build, info.name, info.memo, fixedKind ?? info.kind)
+      const saved = overwriteSavedBuild(target, build, info.name, info.memo, fixedKind ?? info.kind, tagsToSave(info))
       setSavedBuilds((list) => list.map((s) => (s.id === saved.id ? saved : s)))
       onSaved?.(saved)
       onClose()
@@ -167,7 +178,13 @@ function PickSaveForm(props: SaveFormProps) {
   const { savedBuilds } = useAppState()
   const { fixedKind, lastKind, setLastKind, infoOf, saveNew, overwrite } = useSaveActions(props)
   const [mode, setMode] = useState<SaveMode>('new')
-  const [draft, setDraft] = useState<SaveInfo>(() => ({ name: props.defaultName, memo: '', kind: lastKind }))
+  const [draft, setDraft] = useState<SaveInfo>(() => ({
+    name: props.defaultName,
+    memo: '',
+    tags: [],
+    tagText: '',
+    kind: lastKind,
+  }))
   /** 덮어쓸 세팅 id 와 그 세팅 것으로 채운 칸 */
   const [picked, setPicked] = useState<{ id: string; info: SaveInfo } | null>(null)
   /** 덮어쓸 세팅 목록을 펼쳐 고르는 중 */
@@ -207,6 +224,7 @@ function PickSaveForm(props: SaveFormProps) {
           {!listOpen && picked && target && (
             <>
               <InfoFields
+                key={picked.id}
                 value={picked.info}
                 fixedKind={fixedKind}
                 onChange={(info) => setPicked({ id: picked.id, info })}
@@ -253,7 +271,7 @@ const ROW = 'block w-full rounded-md border px-2.5 py-1.5 text-left pointer-coar
 const ROW_CHECKED = 'border-accent bg-accent/10'
 
 /**
- * 덮어쓸 내 세팅 고르기. 펼치면 내 세팅 목록처럼 최근에 고친 순으로 줄마다 무기 종류와 발동 스킬, 많으면 이름·메모로 찾는다.
+ * 덮어쓸 내 세팅 고르기. 펼치면 내 세팅 목록처럼 최근에 고친 순으로 줄마다 무기 종류·태그와 발동 스킬, 많으면 이름·태그로 찾는다.
  * 고르면 그 세팅 한 줄로 접고 '다른 세팅 고르기'로 다시 편다
  */
 function TargetPicker({
@@ -320,7 +338,7 @@ function TargetList({
   useEffect(() => {
     listRef.current?.querySelector('[aria-checked="true"]')?.scrollIntoView({ block: 'nearest' })
   }, [])
-  const shown = rows.filter(({ saved }) => matchesQuery(query, [saved.name, saved.memo]))
+  const shown = rows.filter(({ saved }) => matchesQuery(query, [saved.name, saved.memo, ...tagsOf(saved)]))
   return (
     <>
       {rows.length >= TARGET_SEARCH_MIN && (
@@ -335,7 +353,7 @@ function TargetList({
               e.currentTarget.blur()
             }
           }}
-          placeholder="이름·메모 검색"
+          placeholder="이름·태그 검색"
           aria-label="덮어쓸 세팅 검색"
           className={INPUT}
         />
@@ -363,6 +381,7 @@ function TargetList({
 }
 
 function TargetRowContent({ row, checked }: { row: TargetRow; checked: boolean }) {
+  const tags = tagsOf(row.saved)
   return (
     <>
       <span className="flex min-w-0 items-center gap-1.5">
@@ -373,13 +392,17 @@ function TargetRowContent({ row, checked }: { row: TargetRow; checked: boolean }
         )}
         <WeaponKindBadge kind={row.kind} />
         <span className={cx('truncate text-sm font-medium', checked && 'text-accent')}>{row.saved.name}</span>
+        {/* 좁으면 이름보다 태그를 먼저 줄인다 */}
+        {tags.length > 0 && (
+          <span className="min-w-0 shrink-[3] truncate text-xs text-muted">{tags.map((t) => `#${t}`).join(' ')}</span>
+        )}
       </span>
       <span className="mt-0.5 block truncate text-xs text-muted">{row.skills}</span>
     </>
   )
 }
 
-/** 내 세팅의 이름·무기 종류·메모 수정 */
+/** 내 세팅의 이름·무기 종류·태그 수정 */
 export function EditSavedDialog({ target, onClose }: { target: SavedBuild | null; onClose: () => void }) {
   return (
     <Dialog open={target !== null} onClose={onClose} title="세팅 정보 수정">
@@ -390,15 +413,19 @@ export function EditSavedDialog({ target, onClose }: { target: SavedBuild | null
 
 function EditForm({ target, onClose }: { target: SavedBuild; onClose: () => void }) {
   const { db, setSavedBuilds } = useAppState()
+  const knownTags = useKnownTags()
   const [info, setInfo] = useState<SaveInfo>(() => ({
     name: target.name,
     memo: target.memo,
+    tags: tagsOf(target),
+    tagText: '',
     kind: weaponKindOf(db, target),
   }))
   const fixedKind = buildWeaponKind(db, target.build)
   const submit = (e: FormEvent) => {
     e.preventDefault()
     const weaponKind = fixedKind ?? info.kind
+    const tags = withTypedTag(info.tags, info.tagText, knownTags)
     setSavedBuilds((list) =>
       list.map((s) =>
         s.id === target.id
@@ -407,6 +434,7 @@ function EditForm({ target, onClose }: { target: SavedBuild; onClose: () => void
               name: info.name.trim() || s.name,
               memo: info.memo.trim(),
               weaponKind: weaponKind ?? undefined,
+              tags: tags.length > 0 ? tags : undefined,
               updatedAt: new Date().toISOString(),
             }
           : s,
@@ -429,7 +457,10 @@ function EditForm({ target, onClose }: { target: SavedBuild; onClose: () => void
   )
 }
 
-/** 이름·무기 종류·메모. fixedKind 가 있으면 세팅의 DB 무기로 정해진 종류라 고를 수 없다 */
+/**
+ * 이름·무기 종류·태그. fixedKind 가 있으면 세팅의 DB 무기로 정해진 종류라 고를 수 없다.
+ * 메모 칸은 예전에 메모를 적은 세팅만 보인다 (고치거나 지울 수 있게. 처음 값으로 정해서 지우는 중에 사라지지 않는다)
+ */
 function InfoFields({
   value,
   fixedKind,
@@ -442,6 +473,7 @@ function InfoFields({
   /** 무기 종류를 골랐을 때 (저장 창은 다음 저장의 처음 값으로 기억한다) */
   onPickKind?: (kind: WeaponKind | null) => void
 }) {
+  const [hasMemo] = useState(() => value.memo.trim() !== '')
   return (
     <>
       <label className="block space-y-1 text-xs text-muted">
@@ -463,17 +495,19 @@ function InfoFields({
           onPickKind?.(kind)
         }}
       />
-      <label className="block space-y-1 text-xs text-muted">
-        <span>메모 (선택)</span>
-        <textarea
-          rows={3}
-          maxLength={MEMO_MAX}
-          value={value.memo}
-          onChange={(e) => onChange({ ...value, memo: e.target.value })}
-          placeholder="예: 아르세베로 토벌용, 회피 장전 대신 연격"
-          className={INPUT}
-        />
-      </label>
+      <TagField tags={value.tags} text={value.tagText} onChange={(tags, tagText) => onChange({ ...value, tags, tagText })} />
+      {hasMemo && (
+        <label className="block space-y-1 text-xs text-muted">
+          <span>메모</span>
+          <textarea
+            rows={2}
+            maxLength={MEMO_MAX}
+            value={value.memo}
+            onChange={(e) => onChange({ ...value, memo: e.target.value })}
+            className={INPUT}
+          />
+        </label>
+      )}
     </>
   )
 }

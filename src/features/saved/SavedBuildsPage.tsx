@@ -1,5 +1,6 @@
 import { useMemo, useState, type MouseEvent } from 'react'
 import { Badge, Button, EmptyState, Panel } from '../../components/ui'
+import { collectTags, tagKey, tagsOf } from '../../core/buildTags'
 import { isFavorite, NAME_MAX, newSavedBuild, weaponKindOf, withFavorite, type SavedBuild } from '../../core/savedBuilds'
 import { WEAPON_KIND_LABEL } from '../../data/labels'
 import { WEAPON_KINDS } from '../../data/types'
@@ -41,6 +42,8 @@ export function SavedBuildsPage() {
   const { startNew, loadPreset } = useSearchWithBuild()
   const [query, setQuery] = useState('')
   const [kindFilter, setKindFilter] = useState<KindFilter>('all')
+  /** 거르는 태그의 열쇠 (tagKey, 고른 순서). 모두 붙은 세팅만 보인다 (무기 종류·검색 칸과 함께 걸린다) */
+  const [tagFilter, setTagFilter] = useState<string[]>([])
   /** 즐겨찾기만 보기 (무기 종류·검색 칸과 함께 걸린다) */
   const [favoritesOnly, setFavoritesOnly] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
@@ -75,14 +78,35 @@ export function SavedBuildsPage() {
   // 즐겨찾기가 하나도 없으면(다른 기기에서 끈 것이 동기화돼도) 전체를 보인다
   const showFavorites = favoritesOnly && favoriteCount > 0
 
+  /** 세팅 id → 태그 */
+  const tagsById = useMemo(() => new Map(savedBuilds.map((s) => [s.id, tagsOf(s)])), [savedBuilds])
+  const tagsOfSaved = (saved: SavedBuild): string[] => tagsById.get(saved.id) ?? []
+  /** 내 세팅에 붙은 태그 (많이 붙은 순) */
+  const allTags = useMemo(() => collectTags(savedBuilds), [savedBuilds])
+  // 거르는 태그 (글자는 내 세팅에 붙은 그대로). 어느 세팅에도 없게 되면(태그를 빼거나 세팅을 지움) 거르기에서 빠진다
+  const activeTags = useMemo(
+    () => tagFilter.flatMap((key) => allTags.find((t) => tagKey(t.tag) === key)?.tag ?? []),
+    [tagFilter, allTags],
+  )
+  const isActiveTag = (tag: string) => activeTags.some((t) => tagKey(t) === tagKey(tag))
+  const toggleTag = (tag: string) => {
+    const keys = activeTags.map(tagKey)
+    const key = tagKey(tag)
+    setTagFilter(keys.includes(key) ? keys.filter((k) => k !== key) : [...keys, key])
+  }
+
   const list = useMemo(
     () =>
       savedBuilds
         .filter((s) => !showFavorites || isFavorite(s))
         .filter((s) => activeFilter === 'all' || kinds.get(s.id) === activeFilter)
-        .filter((s) => matchesQuery(query, [s.name, s.memo]))
+        .filter((s) => {
+          const keys = (tagsById.get(s.id) ?? []).map(tagKey)
+          return activeTags.every((tag) => keys.includes(tagKey(tag)))
+        })
+        .filter((s) => matchesQuery(query, [s.name, s.memo, ...(tagsById.get(s.id) ?? [])]))
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
-    [savedBuilds, kinds, showFavorites, activeFilter, query],
+    [savedBuilds, kinds, showFavorites, activeFilter, tagsById, activeTags, query],
   )
 
   const compared = useMemo(
@@ -93,10 +117,14 @@ export function SavedBuildsPage() {
     () =>
       compared.map((saved): CompareItem => {
         const kind = kinds.get(saved.id) ?? 'none'
-        const badges = [kind !== 'none' ? kindLabel(kind) : '', saved.id === manualSourceId ? '수동 세팅에서 사용 중' : '']
+        const badges = [
+          kind !== 'none' ? kindLabel(kind) : '',
+          saved.id === manualSourceId ? '수동 세팅에서 사용 중' : '',
+          ...(tagsById.get(saved.id) ?? []).map((tag) => `#${tag}`),
+        ]
         return { key: saved.id, title: saved.name, badges: badges.filter(Boolean), build: saved.build }
       }),
-    [kinds, compared, manualSourceId],
+    [kinds, compared, manualSourceId, tagsById],
   )
   const removeCompare = (id: string) => setCompareIds((ids) => ids.filter((x) => x !== id))
   const toggleCompare = (saved: SavedBuild) => {
@@ -142,7 +170,7 @@ export function SavedBuildsPage() {
   }
   const duplicate = (saved: SavedBuild) => {
     const name = `${saved.name} (복사)`.slice(0, NAME_MAX)
-    setSavedBuilds((all) => [newSavedBuild(saved.build, name, saved.memo, saved.weaponKind), ...all])
+    setSavedBuilds((all) => [newSavedBuild(saved.build, name, saved.memo, saved.weaponKind, tagsOfSaved(saved)), ...all])
     toast('복제했어요')
   }
   const remove = (saved: SavedBuild) => {
@@ -171,7 +199,7 @@ export function SavedBuildsPage() {
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="이름·메모 검색"
+              placeholder="이름·태그 검색"
               aria-label="내 세팅 검색"
               className="h-9 min-w-0 flex-1 rounded-md border border-line bg-surface-2 px-2.5 text-sm text-fg placeholder:text-muted focus:border-accent focus:outline-none sm:w-72 sm:flex-none pointer-coarse:h-10"
             />
@@ -203,6 +231,18 @@ export function SavedBuildsPage() {
             ))}
           </div>
         )}
+        {allTags.length > 0 && (
+          <div role="group" aria-label="태그" className="mt-2 flex flex-wrap items-center gap-1 pointer-coarse:gap-1.5">
+            {allTags.map(({ tag, count }) => (
+              <TagChip key={tag} tag={tag} count={count} pressed={isActiveTag(tag)} onClick={() => toggleTag(tag)} />
+            ))}
+            {activeTags.length > 0 && (
+              <Button size="sm" variant="ghost" onClick={() => setTagFilter([])}>
+                태그 거르기 풀기
+              </Button>
+            )}
+          </div>
+        )}
       </Panel>
 
       {savedBuilds.length === 0 ? (
@@ -213,6 +253,7 @@ export function SavedBuildsPage() {
         <EmptyState>
           {query && `‘${query}’에 맞는 `}
           {showFavorites && '즐겨찾기한 '}
+          {activeTags.length > 0 && `${activeTags.map((tag) => `#${tag}`).join('·')} 태그가 붙은 `}
           {activeFilter !== 'all' && `${kindLabel(activeFilter)} `}세팅이 없어요.
         </EmptyState>
       ) : (
@@ -223,6 +264,9 @@ export function SavedBuildsPage() {
               key={saved.id}
               saved={saved}
               weaponKind={kindOf(saved)}
+              tags={tagsOfSaved(saved)}
+              isActiveTag={isActiveTag}
+              onToggleTag={toggleTag}
               favorite={isFavorite(saved)}
               active={saved.id === manualSourceId}
               compared={compareIds.includes(saved.id)}
@@ -311,6 +355,9 @@ export function SavedBuildsPage() {
 function SavedBuildCard({
   saved,
   weaponKind,
+  tags,
+  isActiveTag,
+  onToggleTag,
   favorite,
   active,
   compared,
@@ -327,6 +374,11 @@ function SavedBuildCard({
 }: {
   saved: SavedBuild
   weaponKind: KindKey
+  tags: readonly string[]
+  /** 목록을 이 태그로 거르는 중인지 */
+  isActiveTag: (tag: string) => boolean
+  /** 카드의 태그를 누르면 그 태그로 거르거나 거르기를 푼다 */
+  onToggleTag: (tag: string) => void
   favorite: boolean
   active: boolean
   /** 비교 목록에 넣은 세팅 */
@@ -371,6 +423,28 @@ function SavedBuildCard({
             {active && <Badge className="shrink-0">수동 세팅에서 사용 중</Badge>}
           </h3>
           {saved.memo && <p className="mt-0.5 text-xs whitespace-pre-line text-muted">{saved.memo}</p>}
+          {tags.length > 0 && (
+            <div className="mt-1 flex flex-wrap gap-1">
+              {tags.map((tag) => {
+                const on = isActiveTag(tag)
+                return (
+                  <button
+                    key={tag}
+                    type="button"
+                    aria-pressed={on}
+                    title={on ? '이 태그로 거르기 풀기' : '이 태그가 붙은 세팅만 보기'}
+                    onClick={() => onToggleTag(tag)}
+                    className={cx(
+                      'rounded border px-1.5 py-px text-[11px] pointer-coarse:px-2 pointer-coarse:py-0.5 pointer-coarse:text-xs',
+                      on ? 'border-accent/60 bg-accent/10 text-accent' : 'border-line bg-surface-2 text-muted hover:text-fg',
+                    )}
+                  >
+                    #{tag}
+                  </button>
+                )
+              })}
+            </div>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <span className="text-[11px] text-muted" title={`만든 날 ${formatDateTime(saved.createdAt)}`}>
@@ -440,6 +514,33 @@ function FavoriteFilter({ count, checked, onClick }: { count: number; checked: b
     >
       <StarIcon filled className="size-3.5" />
       즐겨찾기 <span className="tabular-nums opacity-70">{count}</span>
+    </button>
+  )
+}
+
+/** 태그 거르기 칩. 무기 종류 칩과 같은 모양이고 여러 개를 함께 켠다 (모두 붙은 세팅만) */
+function TagChip({
+  tag,
+  count,
+  pressed,
+  onClick,
+}: {
+  tag: string
+  count: number
+  pressed: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={pressed}
+      onClick={onClick}
+      className={cx(
+        'rounded-md border px-2 py-1 text-xs whitespace-nowrap pointer-coarse:px-2.5 pointer-coarse:py-1.5 pointer-coarse:text-sm',
+        pressed ? 'border-accent bg-accent/10 font-semibold text-accent' : 'border-line bg-surface-2 text-muted hover:text-fg',
+      )}
+    >
+      #{tag} <span className="tabular-nums opacity-70">{count}</span>
     </button>
   )
 }

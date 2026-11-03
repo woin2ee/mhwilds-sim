@@ -41,6 +41,12 @@ describe('내 세팅 무기 종류', () => {
     expect(newSavedBuild(emptyBuild(), '세팅')).not.toHaveProperty('weaponKind')
     expect(newSavedBuild(emptyBuild(), '세팅', '', null)).not.toHaveProperty('weaponKind')
   })
+
+  it('새 세팅은 붙인 태그만 키로 담는다', () => {
+    expect(newSavedBuild(emptyBuild(), '세팅', '', null, ['극딜용', ' #안정성 ']).tags).toEqual(['극딜용', '안정성'])
+    expect(newSavedBuild(emptyBuild(), '세팅')).not.toHaveProperty('tags')
+    expect(newSavedBuild(emptyBuild(), '세팅', '', null, [])).not.toHaveProperty('tags')
+  })
 })
 
 describe('내 세팅 덮어쓰기', () => {
@@ -65,6 +71,12 @@ describe('내 세팅 덮어쓰기', () => {
     expect(saved.name).toBe('옛 세팅')
     expect(saved.memo).toBe('')
     expect(saved).not.toHaveProperty('weaponKind')
+  })
+
+  it('태그는 새것으로 바꾸고, 비우면 키도 지운다', () => {
+    const tagged = { ...target, tags: ['솔플'] }
+    expect(overwriteSavedBuild(tagged, build, '새 이름', '', null, ['극딜용']).tags).toEqual(['극딜용'])
+    expect(overwriteSavedBuild(tagged, build, '새 이름', '', null, [])).not.toHaveProperty('tags')
   })
 
   it('즐겨찾기는 그대로 둔다', () => {

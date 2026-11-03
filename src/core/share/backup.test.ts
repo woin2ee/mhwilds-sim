@@ -136,6 +136,25 @@ describe('백업', () => {
     }
   })
 
+  it('세팅의 태그를 담아 그대로 가져오고, 글자가 아닌 태그는 뺀다', () => {
+    const tagged = [{ ...savedBuilds[1], tags: ['극딜용', '안정성'] }, savedBuilds[2]]
+    const file = createBackup(db, tagged, talismans)
+    expect(file.builds[0].tags).toEqual(['극딜용', '안정성'])
+    expect(file.builds[1]).not.toHaveProperty('tags')
+    const empty = { savedBuilds: [], customTalismans: [] }
+    const result = importBackup(db, roundTripJson(file), empty, counter('id'))
+    expect(result.savedBuilds[0].tags).toEqual(['극딜용', '안정성'])
+    expect(result.savedBuilds[1]).not.toHaveProperty('tags')
+
+    const odd = { ...file, builds: file.builds.map((b) => ({ ...b, tags: [' #솔플 ', 3, null, '솔플'] })) }
+    const cleaned = importBackup(db, JSON.parse(JSON.stringify(odd)), empty, counter('id'))
+    for (const s of cleaned.savedBuilds) expect(s.tags).toEqual(['솔플'])
+    const notList = { ...file, builds: file.builds.map((b) => ({ ...b, tags: '극딜용' })) }
+    for (const s of importBackup(db, JSON.parse(JSON.stringify(notList)), empty, counter('id')).savedBuilds) {
+      expect(s).not.toHaveProperty('tags')
+    }
+  })
+
   it('같은 백업을 다시 가져오면 모두 건너뛴다', () => {
     const file = roundTripJson(createBackup(db, savedBuilds, talismans))
     const first = importBackup(db, file, { savedBuilds: [], customTalismans: [] }, counter('id'))
