@@ -120,6 +120,22 @@ describe('백업', () => {
     for (const s of dropped.savedBuilds) expect(s).not.toHaveProperty('weaponKind')
   })
 
+  it('즐겨찾기한 세팅은 즐겨찾기를 담아 그대로 가져온다', () => {
+    const marked = [{ ...savedBuilds[1], favorite: true as const }, savedBuilds[2]]
+    const file = createBackup(db, marked, talismans)
+    expect(file.builds[0].favorite).toBe(true)
+    expect(file.builds[1]).not.toHaveProperty('favorite')
+    const empty = { savedBuilds: [], customTalismans: [] }
+    const result = importBackup(db, roundTripJson(file), empty, counter('id'))
+    expect(result.savedBuilds[0].favorite).toBe(true)
+    expect(result.savedBuilds[1]).not.toHaveProperty('favorite')
+
+    const odd = { ...file, builds: file.builds.map((b) => ({ ...b, favorite: 'yes' })) }
+    for (const s of importBackup(db, JSON.parse(JSON.stringify(odd)), empty, counter('id')).savedBuilds) {
+      expect(s).not.toHaveProperty('favorite')
+    }
+  })
+
   it('같은 백업을 다시 가져오면 모두 건너뛴다', () => {
     const file = roundTripJson(createBackup(db, savedBuilds, talismans))
     const first = importBackup(db, file, { savedBuilds: [], customTalismans: [] }, counter('id'))

@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { loadTestDb } from '../test/testDb'
 import { customWeaponChoice, dbWeaponChoice } from './gogmaArtian'
-import { buildWeaponKind, newSavedBuild, overwriteSavedBuild, weaponKindOf } from './savedBuilds'
+import {
+  buildWeaponKind,
+  isFavorite,
+  newSavedBuild,
+  overwriteSavedBuild,
+  weaponKindOf,
+  withFavorite,
+} from './savedBuilds'
 import { emptyBuild, type WeaponChoice } from './types'
 
 const db = loadTestDb()
@@ -58,5 +65,29 @@ describe('내 세팅 덮어쓰기', () => {
     expect(saved.name).toBe('옛 세팅')
     expect(saved.memo).toBe('')
     expect(saved).not.toHaveProperty('weaponKind')
+  })
+
+  it('즐겨찾기는 그대로 둔다', () => {
+    expect(overwriteSavedBuild(withFavorite(target, true), build, '새 이름').favorite).toBe(true)
+    expect(overwriteSavedBuild(target, build, '새 이름')).not.toHaveProperty('favorite')
+  })
+})
+
+describe('내 세팅 즐겨찾기', () => {
+  const saved = { ...newSavedBuild(emptyBuild(), '세팅', '메모', 'bow'), updatedAt: '2026-01-01T00:00:00.000Z' }
+
+  it('켜면 키를 담고 끄면 키를 지운다. 고친 날과 다른 값은 그대로', () => {
+    const on = withFavorite(saved, true)
+    expect(on).toEqual({ ...saved, favorite: true })
+    expect(isFavorite(on)).toBe(true)
+    const off = withFavorite(on, false)
+    expect(off).toEqual(saved)
+    expect(off).not.toHaveProperty('favorite')
+    expect(saved).not.toHaveProperty('favorite')
+  })
+
+  it('새 세팅은 즐겨찾기가 아니고, 저장값의 true 가 아닌 값은 꺼진 것으로 본다', () => {
+    expect(isFavorite(saved)).toBe(false)
+    for (const value of [false, 'true', 1, null]) expect(isFavorite({ favorite: value as never })).toBe(false)
   })
 })

@@ -5,6 +5,7 @@ import { Button, Segmented } from '../../components/ui'
 import { computeBuild, type BuildSummary } from '../../core/calc'
 import {
   buildWeaponKind,
+  isFavorite,
   isWeaponKind,
   MEMO_MAX,
   NAME_MAX,
@@ -24,6 +25,7 @@ import { requestPersistentStorage, usePersistentState } from '../../lib/storage'
 import { matchesQuery } from '../../lib/text'
 import { useAppState } from '../../state/context'
 import { useToast } from '../../state/toast'
+import { StarIcon } from './FavoriteStar'
 import { WeaponKindBadge, type KindKey } from './WeaponKindBadge'
 
 const INPUT =
@@ -364,6 +366,11 @@ function TargetRowContent({ row, checked }: { row: TargetRow; checked: boolean }
   return (
     <>
       <span className="flex min-w-0 items-center gap-1.5">
+        {isFavorite(row.saved) && (
+          <span role="img" aria-label="즐겨찾기" title="즐겨찾기" className="shrink-0 text-accent">
+            <StarIcon filled className="size-3.5" />
+          </span>
+        )}
         <WeaponKindBadge kind={row.kind} />
         <span className={cx('truncate text-sm font-medium', checked && 'text-accent')}>{row.saved.name}</span>
       </span>

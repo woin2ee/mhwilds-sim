@@ -1,6 +1,6 @@
 import { useMemo, useState, type MouseEvent } from 'react'
 import { Badge, Button, EmptyState, Panel } from '../../components/ui'
-import { NAME_MAX, newSavedBuild, weaponKindOf, type SavedBuild } from '../../core/savedBuilds'
+import { isFavorite, NAME_MAX, newSavedBuild, weaponKindOf, withFavorite, type SavedBuild } from '../../core/savedBuilds'
 import { WEAPON_KIND_LABEL } from '../../data/labels'
 import { WEAPON_KINDS } from '../../data/types'
 import { isCardClick } from '../../lib/cardClick'
@@ -18,6 +18,7 @@ import { formatDateTime } from './backupFile'
 import { BackupTabLink } from './BackupPage'
 import { BuildPreview } from './BuildPreview'
 import { ImportDialog } from './ImportDialog'
+import { FavoriteButton, StarIcon } from './FavoriteStar'
 import { EditSavedDialog } from './SaveBuildDialog'
 import { SearchWithBuildDialog } from './SearchWithBuildDialog'
 import { ShareDialog } from './ShareDialog'
@@ -40,6 +41,8 @@ export function SavedBuildsPage() {
   const { startNew, loadPreset } = useSearchWithBuild()
   const [query, setQuery] = useState('')
   const [kindFilter, setKindFilter] = useState<KindFilter>('all')
+  /** 즐겨찾기만 보기 (무기 종류·검색 칸과 함께 걸린다) */
+  const [favoritesOnly, setFavoritesOnly] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
   const [shareTarget, setShareTarget] = useState<SavedBuild | null>(null)
   const [editTarget, setEditTarget] = useState<SavedBuild | null>(null)
@@ -68,13 +71,18 @@ export function SavedBuildsPage() {
   const activeFilter: KindFilter =
     kindGroups.length > 1 && kindGroups.some((g) => g.key === kindFilter) ? kindFilter : 'all'
 
+  const favoriteCount = useMemo(() => savedBuilds.filter(isFavorite).length, [savedBuilds])
+  // 즐겨찾기가 하나도 없으면(다른 기기에서 끈 것이 동기화돼도) 전체를 보인다
+  const showFavorites = favoritesOnly && favoriteCount > 0
+
   const list = useMemo(
     () =>
       savedBuilds
+        .filter((s) => !showFavorites || isFavorite(s))
         .filter((s) => activeFilter === 'all' || kinds.get(s.id) === activeFilter)
         .filter((s) => matchesQuery(query, [s.name, s.memo]))
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
-    [savedBuilds, kinds, activeFilter, query],
+    [savedBuilds, kinds, showFavorites, activeFilter, query],
   )
 
   const compared = useMemo(
@@ -114,6 +122,24 @@ export function SavedBuildsPage() {
     else if (presets.length > 0) setSearchTarget(saved)
     else startNew(saved)
   }
+  /** 즐겨찾기 켜기/끄기. 세팅을 고친 것이 아니라 고친 날·목록 순서는 그대로다 */
+  const toggleFavorite = (saved: SavedBuild) => {
+    const on = !isFavorite(saved)
+    const setFavorite = (value: boolean) =>
+      setSavedBuilds((all) => all.map((s) => (s.id === saved.id ? withFavorite(s, value) : s)))
+    setFavorite(on)
+    if (on || !showFavorites) return
+    // 즐겨찾기만 보는 중에 끄면 카드가 목록에서 사라지므로 알리고 되돌릴 수 있게 한다.
+    // 마지막 하나를 끄면 거르기도 푼다 (다음에 별을 켰을 때 갑자기 그 세팅만 보이지 않게)
+    if (favoriteCount <= 1) setFavoritesOnly(false)
+    toast(`즐겨찾기에서 뺐어요 · ${saved.name}`, {
+      label: '되돌리기',
+      onClick: () => {
+        setFavorite(true)
+        setFavoritesOnly(true)
+      },
+    })
+  }
   const duplicate = (saved: SavedBuild) => {
     const name = `${saved.name} (복사)`.slice(0, NAME_MAX)
     setSavedBuilds((all) => [newSavedBuild(saved.build, name, saved.memo, saved.weaponKind), ...all])
@@ -140,14 +166,23 @@ export function SavedBuildsPage() {
           가끔 내 호석과 함께 내보내 두세요.
         </p>
         {savedBuilds.length > 0 && (
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="이름·메모 검색"
-            aria-label="내 세팅 검색"
-            className="mt-3 h-9 w-full rounded-md border border-line bg-surface-2 px-2.5 text-sm text-fg placeholder:text-muted focus:border-accent focus:outline-none sm:w-72 pointer-coarse:h-10"
-          />
+          <div className="mt-3 flex items-center gap-2">
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="이름·메모 검색"
+              aria-label="내 세팅 검색"
+              className="h-9 min-w-0 flex-1 rounded-md border border-line bg-surface-2 px-2.5 text-sm text-fg placeholder:text-muted focus:border-accent focus:outline-none sm:w-72 sm:flex-none pointer-coarse:h-10"
+            />
+            {favoriteCount > 0 && (
+              <FavoriteFilter
+                count={favoriteCount}
+                checked={showFavorites}
+                onClick={() => setFavoritesOnly(!showFavorites)}
+              />
+            )}
+          </div>
         )}
         {kindGroups.length > 1 && (
           <div role="radiogroup" aria-label="무기 종류" className="mt-2 flex flex-wrap gap-1 pointer-coarse:gap-1.5">
@@ -176,7 +211,9 @@ export function SavedBuildsPage() {
         </EmptyState>
       ) : list.length === 0 ? (
         <EmptyState>
-          ‘{query}’에 맞는 {activeFilter !== 'all' && `${kindLabel(activeFilter)} `}세팅이 없어요.
+          {query && `‘${query}’에 맞는 `}
+          {showFavorites && '즐겨찾기한 '}
+          {activeFilter !== 'all' && `${kindLabel(activeFilter)} `}세팅이 없어요.
         </EmptyState>
       ) : (
         // grid-cols-1(minmax(0,1fr)): 칸 폭을 화면에 묶어야 긴 이름(truncate)이 카드를 화면 밖으로 밀지 않는다
@@ -186,9 +223,11 @@ export function SavedBuildsPage() {
               key={saved.id}
               saved={saved}
               weaponKind={kindOf(saved)}
+              favorite={isFavorite(saved)}
               active={saved.id === manualSourceId}
               compared={compareIds.includes(saved.id)}
               floating={isFloating(saved)}
+              onToggleFavorite={() => toggleFavorite(saved)}
               onToggleCompare={() => toggleCompare(saved)}
               onLoad={() => load(saved)}
               onToggleFloat={() => toggleFloat(saved)}
@@ -272,9 +311,11 @@ export function SavedBuildsPage() {
 function SavedBuildCard({
   saved,
   weaponKind,
+  favorite,
   active,
   compared,
   floating,
+  onToggleFavorite,
   onToggleCompare,
   onLoad,
   onToggleFloat,
@@ -286,11 +327,13 @@ function SavedBuildCard({
 }: {
   saved: SavedBuild
   weaponKind: KindKey
+  favorite: boolean
   active: boolean
   /** 비교 목록에 넣은 세팅 */
   compared: boolean
   /** 게임 위에 띄운 창에 보이는 세팅 */
   floating: boolean
+  onToggleFavorite: () => void
   onToggleCompare: () => void
   onLoad: () => void
   /** 게임 위에 띄우기 / 띄운 창 닫기 */
@@ -316,8 +359,13 @@ function SavedBuildCard({
     >
       <header className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          {/* 이름이 길면 무기 종류 아래 줄로 내려 예전만큼의 폭에서 자른다 */}
+          {/* 이름이 길면 별·무기 종류 아래 줄로 내려 예전만큼의 폭에서 자른다. 별은 줄 높이를 늘리지 않게 바깥 여백을 줄인다 */}
           <h3 className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-semibold">
+            <FavoriteButton
+              on={favorite}
+              onToggle={onToggleFavorite}
+              className="-my-1 -mr-1 -ml-1.5 pointer-coarse:-my-2 pointer-coarse:-ml-2"
+            />
             <WeaponKindBadge kind={weaponKind} />
             <span className="truncate">{saved.name}</span>
             {active && <Badge className="shrink-0">수동 세팅에서 사용 중</Badge>}
@@ -374,6 +422,25 @@ function SavedBuildCard({
         </Button>
       </div>
     </article>
+  )
+}
+
+/** 즐겨찾기만 보기 (검색 칸 옆이라 칸 높이에 맞춘다, 켜진 모양은 무기 종류 칩과 같음) */
+function FavoriteFilter({ count, checked, onClick }: { count: number; checked: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={checked}
+      title="즐겨찾기한 세팅만 보기"
+      onClick={onClick}
+      className={cx(
+        'inline-flex h-9 shrink-0 items-center gap-1 rounded-md border px-2.5 text-sm whitespace-nowrap pointer-coarse:h-10',
+        checked ? 'border-accent bg-accent/10 font-semibold text-accent' : 'border-line bg-surface-2 text-muted hover:text-fg',
+      )}
+    >
+      <StarIcon filled className="size-3.5" />
+      즐겨찾기 <span className="tabular-nums opacity-70">{count}</span>
+    </button>
   )
 }
 

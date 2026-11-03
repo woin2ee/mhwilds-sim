@@ -145,6 +145,43 @@ describe('동기화 병합', () => {
     expect(result.localUpdates).toEqual({})
   })
 
+  it('즐겨찾기는 세팅 내용과 따로 맞춘다 (별만 바꾼 쪽이 고친 시각에서 져도 별은 남는다)', () => {
+    const fav = (s: SavedBuild): SavedBuild => ({ ...s, favorite: true })
+    const edited = (s: SavedBuild): SavedBuild => ({ ...s, name: '고친 이름', updatedAt: T2 })
+    const input = (base: SavedBuild, local: SavedBuild, remote: SavedBuild) =>
+      merge({
+        base: { [K.savedBuilds]: [base] },
+        local: { [K.savedBuilds]: [local] },
+        remote: file({ [K.savedBuilds]: [remote] }),
+        localChanged: changedKeys(K.savedBuilds),
+      })
+    const a = saved('a')
+    // 이 기기는 별만 켜고 다른 기기는 이름을 고침
+    const starredHere = input(a, fav(a), edited(a))
+    expect(starredHere.values[K.savedBuilds]).toEqual([fav(edited(a))])
+    expect(starredHere.upload?.values[K.savedBuilds]).toEqual([fav(edited(a))])
+    // 이 기기는 이름을 고치고 다른 기기는 별을 켬
+    const starredThere = input(a, edited(a), fav(a))
+    expect(starredThere.values[K.savedBuilds]).toEqual([fav(edited(a))])
+    expect(starredThere.localUpdates[K.savedBuilds]).toEqual([fav(edited(a))])
+    // 끈 것도 같다
+    const unstarred = input(fav(a), a, fav(edited(a)))
+    expect(unstarred.values[K.savedBuilds]).toStrictEqual([edited(a)])
+  })
+
+  it('처음 동기화: 이 기기에서만 즐겨찾기한 같은 세팅은 드라이브 것으로 합쳐도 즐겨찾기를 남긴다', () => {
+    const local = { [K.savedBuilds]: [{ ...saved('b-mine', '회심'), favorite: true as const }, saved('c-mine', '속성')] }
+    const remote = file({ [K.savedBuilds]: [saved('b-theirs', '회심'), { ...saved('c-theirs', '속성'), favorite: true as const }] })
+    const result = merge({ local, remote })
+    expect(result.values[K.savedBuilds]).toEqual([
+      { ...saved('b-theirs', '회심'), favorite: true },
+      { ...saved('c-theirs', '속성'), favorite: true },
+    ])
+    // 같은 것으로 본 세팅은 (드라이브에서 즐겨찾기했어도) 받은 것으로 세지 않는다
+    expect(result.summary).toEqual(noChange)
+    expect(result.upload?.values[K.savedBuilds]).toEqual(result.values[K.savedBuilds])
+  })
+
   it('지금 검색 조건은 불러온 저장한 조건과 함께, 둘 다 바꿨으면 나중에 바꾼 쪽을 고른다', () => {
     const base = { [K.searchConditions]: cond(), [K.searchPresetActive]: null }
     const local = { [K.searchConditions]: cond({ transcend: true }), [K.searchPresetActive]: null }

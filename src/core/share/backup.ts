@@ -2,7 +2,7 @@
 import type { GameDb } from '../../data/db'
 import type { SkillPoint, SlotLevel, WeaponKind } from '../../data/types'
 import { linkTalisman, sameTalisman } from '../buildUpdates'
-import { isWeaponKind, weaponKindField, type SavedBuild } from '../savedBuilds'
+import { favoriteField, isFavorite, isWeaponKind, weaponKindField, type SavedBuild } from '../savedBuilds'
 import type { BuildState, CustomTalisman, Slot, TalismanDraft } from '../types'
 import { decodeBuild, encodeBuild } from './codec'
 import { ShareCodeError, type BackupFile, type BackupImportResult } from './types'
@@ -32,6 +32,7 @@ export function createBackup(
       name: s.name,
       memo: s.memo,
       ...weaponKindField(s.weaponKind),
+      ...favoriteField(isFavorite(s)),
       createdAt: s.createdAt,
       updatedAt: s.updatedAt,
       code: encodeBuild(db, s.build, customTalismans, null),
@@ -91,6 +92,7 @@ export function importBackup(
       memo: entry.memo,
       build,
       ...weaponKindField(entry.weaponKind),
+      ...favoriteField(entry.favorite),
       createdAt: entry.createdAt,
       updatedAt: entry.updatedAt,
     })
@@ -119,6 +121,7 @@ interface ParsedBuild {
   name: string
   memo: string
   weaponKind: WeaponKind | null
+  favorite: boolean
   createdAt: string
   updatedAt: string
   code: string
@@ -175,6 +178,7 @@ function parseBuild(value: unknown): ParsedBuild {
     memo: text(value.memo, ''),
     // 모르는 무기 종류는 미지정으로 (세팅은 그대로 가져온다)
     weaponKind: isWeaponKind(value.weaponKind) ? value.weaponKind : null,
+    favorite: value.favorite === true,
     createdAt: text(value.createdAt, now),
     updatedAt: text(value.updatedAt, now),
     code: value.code,

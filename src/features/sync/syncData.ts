@@ -1,6 +1,6 @@
 // 기기끼리 맞추는 저장값과 병합 규칙 (DESIGN.md §8.5). 순수 함수라 화면 없이 테스트한다.
 import { detachTalisman, linkTalisman, sameTalisman } from '../../core/buildUpdates'
-import type { SavedBuild } from '../../core/savedBuilds'
+import { isFavorite, withFavorite, type SavedBuild } from '../../core/savedBuilds'
 import { canonicalJson, merge3, mergeList, sameJson, type Side } from '../../core/sync/merge'
 import type { BuildState, CustomTalisman, TalismanRef } from '../../core/types'
 import {
@@ -213,6 +213,7 @@ export function mergeSync(input: MergeInput): MergeOutput {
   }
   const talismans = list<CustomTalisman>('talismans', newer('talismans'))
   let builds = list<SavedBuild>('builds', byUpdatedAt('builds'))
+  if (builds) builds = mergeFavorites(builds, base?.builds, local.builds, remote?.builds)
   const presets = list<SearchPreset>('presets', byUpdatedAt('presets'))
 
   const merged: Data = { talismans, builds, presets }
@@ -266,6 +267,29 @@ export function mergeSync(input: MergeInput): MergeOutput {
     manual: !sameJson([before.manual, before.manualSource], [merged.manual, merged.manualSource]),
   }
   return { values, localUpdates, upload, summary }
+}
+
+/**
+ * 내 세팅의 즐겨찾기는 세팅 내용과 따로 맞춘다. 별을 켜고 꺼도 고친 시각(updatedAt)은 그대로라, 한 기기에서 별만 바꾸고 다른 기기에서
+ * 그 세팅을 고치면 세팅을 통째로 고를 때 별을 바꾼 쪽이 늘 진다. 마지막 동기화 때와 비교해 바꾼 쪽의 별을 쓰고,
+ * 그때 없던 세팅(처음 동기화에서 같은 세팅으로 합친 것)은 어느 한쪽이라도 켰으면 켠다 (처음 동기화는 합치기만 하므로)
+ */
+function mergeFavorites(
+  merged: SavedBuild[],
+  base: readonly SavedBuild[] | undefined,
+  local: readonly SavedBuild[] | undefined,
+  remote: readonly SavedBuild[] | undefined,
+): SavedBuild[] {
+  const favorites = (list: readonly SavedBuild[] = []) => new Map(list.map((s) => [s.id, isFavorite(s)]))
+  const [was, mine, theirs] = [favorites(base), favorites(local), favorites(remote)]
+  return merged.map((s) => {
+    const l = mine.get(s.id)
+    const r = theirs.get(s.id)
+    if (l === undefined || r === undefined) return s
+    const b = was.get(s.id)
+    const on = b === undefined ? l || r : l !== b ? l : r
+    return on === isFavorite(s) ? s : withFavorite(s, on)
+  })
 }
 
 /** 묶은 값의 병합. 한쪽에 아예 없으면 다른 쪽, 고른 쪽에 빠진 값은 다른 쪽 것으로 채운다 */
@@ -355,9 +379,11 @@ function dedupe(local: Data, remote: Data): Data {
 
   const moved = <T extends { id: string }>(id: string | null | undefined, pairs: Map<string, T>) =>
     (id && pairs.get(id)?.id) || id
+  // 드라이브 것으로 바꾼 세팅에도 이 기기에서 켠 즐겨찾기를 남긴다 (mergeFavorites 가 어느 한쪽이라도 켰으면 켠다)
+  const favorites = new Set(builds?.filter(isFavorite).map((s) => moved(s.id, sameBuilds.pairs)))
   return {
     talismans: talismans.list,
-    builds: sameBuilds.list,
+    builds: sameBuilds.list?.map((s) => (favorites.has(s.id) && !isFavorite(s) ? withFavorite(s, true) : s)),
     presets: samePresets.list,
     conditions: local.conditions && relinkConditions(local.conditions),
     activePreset: moved(local.activePreset, samePresets.pairs),

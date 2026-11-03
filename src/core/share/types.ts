@@ -39,8 +39,19 @@ export interface BackupFile {
   /** 내보낼 때의 데이터 버전 (참고용) */
   dataVersion: string
   talismans: BackupTalisman[]
-  /** code 는 이름을 뺀 공유 코드 (이름은 name 에). weaponKind 는 저장할 때 고른 무기 종류 (SavedBuild 와 같음, 없으면 키 없음) */
-  builds: { name: string; memo: string; weaponKind?: WeaponKind; createdAt: string; updatedAt: string; code: string }[]
+  /**
+   * code 는 이름을 뺀 공유 코드 (이름은 name 에). weaponKind 는 저장할 때 고른 무기 종류, favorite 는 즐겨찾기
+   * (SavedBuild 와 같음, 없으면 키 없음)
+   */
+  builds: {
+    name: string
+    memo: string
+    weaponKind?: WeaponKind
+    favorite?: true
+    createdAt: string
+    updatedAt: string
+    code: string
+  }[]
 }
 
 export interface BackupImportResult {
