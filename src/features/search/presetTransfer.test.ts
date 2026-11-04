@@ -6,7 +6,7 @@ import { GameDb } from '../../data/db'
 import { armorByName, loadTestDb, skillIdByName } from '../../test/testDb'
 import { DEFAULT_CONDITIONS, normalizeConditions, type SearchConditions } from './conditions'
 import type { ExcludedArmor } from './excludedArmor'
-import { conditionsKey, newPreset, presetPart, type SearchPreset } from './presets'
+import { conditionsKey, newPreset, presetPart, presetWeaponKind, type SearchPreset } from './presets'
 import {
   createPresetsFile,
   decodePresetsCode,
@@ -161,6 +161,28 @@ describe('검색 조건 내보내기·가져오기', () => {
     })
     const restored = importPresets(regenerated, roundTripJson(fixed), empty, counter('id'))
     expect(restored.added[0].conditions.fixedTalisman).toEqual({ type: 'fixed', id: fixedTalisman.id + shift })
+  })
+
+  it('무기 종류를 담아 가져온다 (무기를 못 찾아도 종류는 남고, 모르는 종류는 미지정)', () => {
+    const custom = { ...preset('c', '아티어 태도', cond({ weaponMode: 'custom' })), weaponKind: 'long-sword' as const }
+    const file = createPresetsFile(db, [...presets, custom], [mine])
+    expect(file.presets.map((p) => p.weaponKind)).toEqual([gogmaWeapon.kind, undefined, 'long-sword'])
+    expect(file.presets[1]).not.toHaveProperty('weaponKind')
+    const result = importPresets(db, roundTripJson(file), empty, counter('id'))
+    expect(result.added.map(presetWeaponKind)).toEqual([gogmaWeapon.kind, null, 'long-sword'])
+    expect(result.added[1]).not.toHaveProperty('weaponKind')
+
+    // 받는 쪽 데이터에 없는 무기여도 종류는 남는다
+    const lost = roundTripJson(createPresetsFile(db, presets.slice(0, 1), [mine])) as SearchPresetsFile
+    lost.presets[0].conditions.weaponId = 999_999
+    const [weaponLost] = importPresets(db, lost, empty, counter('id')).added
+    expect(weaponLost.conditions.weaponId).toBeNull()
+    expect(presetWeaponKind(weaponLost)).toBe(gogmaWeapon.kind)
+
+    // 모르는 종류(새 버전의 무기 등)는 미지정
+    const unknown = { ...file, presets: [{ ...file.presets[2], weaponKind: 'chainsaw' }] }
+    const [plain] = importPresets(db, roundTripJson(unknown as SearchPresetsFile), empty, counter('id')).added
+    expect(plain).not.toHaveProperty('weaponKind')
   })
 
   it('같은 것을 다시 가져오면 모두 건너뛰고, 이름이나 조건이 다르면 더한다', () => {

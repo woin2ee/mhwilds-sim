@@ -1,10 +1,10 @@
 // 저장한 검색 조건 내보내기·가져오기 (DESIGN.md §8.4). 검색 조건 코드와 파일이 같은 SearchPresetsFile 을 담는다
 import { sameTalisman } from '../../core/buildUpdates'
-import { NAME_MAX } from '../../core/savedBuilds'
+import { isWeaponKind, NAME_MAX, weaponKindField } from '../../core/savedBuilds'
 import { ShareCodeError, textCode } from '../../core/share'
 import type { CustomTalisman, Slot, TalismanDraft, TalismanRef } from '../../core/types'
 import type { GameDb } from '../../data/db'
-import { ARMOR_KINDS, WEAPON_KINDS, type ArmorKind, type ArmorSet, type SkillPoint } from '../../data/types'
+import { ARMOR_KINDS, WEAPON_KINDS, type ArmorKind, type ArmorSet, type SkillPoint, type WeaponKind } from '../../data/types'
 import {
   DEFAULT_CONDITIONS,
   isRequiredDivider,
@@ -17,7 +17,7 @@ import {
   type WeaponMode,
 } from './conditions'
 import { addExcludedArmor, type ExcludedArmor } from './excludedArmor'
-import { conditionsKey, presetPart, type PresetConditions, type SearchPreset } from './presets'
+import { conditionsKey, presetPart, presetWeaponKind, type PresetConditions, type SearchPreset } from './presets'
 
 // ---- 코드 ----
 
@@ -61,7 +61,8 @@ export interface SearchPresetsFile {
   exportedAt: string
   /** 내보낼 때의 데이터 버전 (참고용) */
   dataVersion: string
-  presets: { name: string; updatedAt: string; conditions: PortableConditions }[]
+  /** weaponKind: 저장한 조건의 무기 종류 (presetWeaponKind, 미지정이면 없음. 예전 파일엔 없다) */
+  presets: { name: string; updatedAt: string; weaponKind?: WeaponKind; conditions: PortableConditions }[]
   /**
    * '제외할 방어구도 내보내기'를 고르면 지금 제외 목록 (없으면 필드가 없다). 저장한 조건에는 담지 않는 값이라 조건과 따로 둔다
    * (DESIGN.md §7.2)
@@ -96,6 +97,7 @@ export function createPresetsFile(
     presets: presets.map((p) => ({
       name: p.name,
       updatedAt: p.updatedAt,
+      ...weaponKindField(presetWeaponKind(p)),
       conditions: portableConditions(db, p.conditions, customTalismans),
     })),
     ...(excluded.length > 0 ? { excludedArmor: excluded } : {}),
@@ -215,7 +217,13 @@ export function importPresets(
   const seen = new Set(current.presets.map(presetKey))
   const entries = file.presets.map((entry): PresetImportEntry => {
     const { conditions, missing, talismanMissing } = restoreConditions(db, entry.conditions, current.customTalismans)
-    const preset: SearchPreset = { id: createId(), name: entry.name, conditions, updatedAt: entry.updatedAt }
+    const preset: SearchPreset = {
+      id: createId(),
+      name: entry.name,
+      conditions,
+      ...weaponKindField(entry.weaponKind),
+      updatedAt: entry.updatedAt,
+    }
     const key = presetKey(preset)
     const exists = seen.has(key)
     seen.add(key)
@@ -240,6 +248,8 @@ const INVALID_FILE = '올바른 검색 조건 파일이 아니에요'
 interface ParsedPreset {
   name: string
   updatedAt: string
+  /** 모르는 종류(새 버전의 무기 등)는 미지정 */
+  weaponKind: WeaponKind | null
   conditions: Record<string, unknown>
 }
 
@@ -258,6 +268,7 @@ function parseFile(input: unknown): { presets: ParsedPreset[]; excludedArmor: un
       return {
         name: name || '이름 없는 조건',
         updatedAt: typeof p.updatedAt === 'string' ? p.updatedAt : now,
+        weaponKind: isWeaponKind(p.weaponKind) ? p.weaponKind : null,
         conditions: p.conditions,
       }
     }),

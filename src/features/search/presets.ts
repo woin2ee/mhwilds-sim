@@ -1,7 +1,8 @@
 // 검색 조건 저장: 무기를 바꾸면 크게 바뀌는 검색 조건을 이름을 붙여 저장해 두고 불러온다 (DESIGN.md §7.2)
-import { NAME_MAX } from '../../core/savedBuilds'
+import { isWeaponKind, NAME_MAX, weaponKindField } from '../../core/savedBuilds'
 import { nameOf, type GameDb } from '../../data/db'
 import { WEAPON_KIND_LABEL } from '../../data/labels'
+import type { WeaponKind } from '../../data/types'
 import { newId } from '../../lib/id'
 import { isStoredConditions, normalizeConditions, sortRequired, type SearchConditions } from './conditions'
 
@@ -15,6 +16,12 @@ export interface SearchPreset {
   id: string
   name: string
   conditions: PresetConditions
+  /**
+   * 무기 종류 (목록에 보이고 종류별로 거른다). 조건에 고른 무기가 있으면 그 무기의 종류가 먼저다 (presetWeaponKind).
+   * 슬롯 직접 지정·무기 미지정으로 찾는 조건은 저장·정보 수정 창에서 고른 종류이고, 무기를 고른 조건은 저장할 때마다 그 무기의
+   * 종류를 담아 둬서 나중에 무기를 빼도 그 종류가 남는다. 없으면 미지정
+   */
+  weaponKind?: WeaponKind
   /** ISO 시각 */
   updatedAt: string
 }
@@ -42,23 +49,59 @@ export function presetPart(cond: SearchConditions): PresetConditions {
 
 const trimName = (name: string) => name.trim().slice(0, NAME_MAX)
 
-export function newPreset(name: string, cond: SearchConditions): SearchPreset {
+/** 조건에서 고른 무기의 종류 (무기 선택에서 무기까지 골랐을 때). 슬롯 직접 지정·무기 미지정·아직 무기를 안 고름은 null */
+export function conditionsWeaponKind(cond: Partial<SearchConditions>): WeaponKind | null {
+  return cond.weaponMode === 'db' && Number.isInteger(cond.weaponId) && isWeaponKind(cond.weaponKind)
+    ? cond.weaponKind
+    : null
+}
+
+/** 저장한 조건의 무기 종류: 조건에서 고른 무기의 종류, 없으면 고른(담아 둔) 종류. 둘 다 없으면 null (미지정) */
+export function presetWeaponKind(preset: Pick<SearchPreset, 'conditions' | 'weaponKind'>): WeaponKind | null {
+  return conditionsWeaponKind(preset.conditions) ?? (isWeaponKind(preset.weaponKind) ? preset.weaponKind : null)
+}
+
+/** 무기 종류를 kind 로 바꾼 조건 (null 이면 키를 뺀다) */
+function withWeaponKind(preset: SearchPreset, kind: WeaponKind | null): SearchPreset {
+  const next = { ...preset }
+  delete next.weaponKind
+  return { ...next, ...weaponKindField(kind) }
+}
+
+/** weaponKind: 조건에서 무기를 고르지 않았을 때의 종류 (저장 창에서 고른 것) */
+export function newPreset(name: string, cond: SearchConditions, weaponKind: WeaponKind | null = null): SearchPreset {
   return {
     id: newId(),
     name: trimName(name) || '이름 없는 조건',
     conditions: presetPart(cond),
+    ...weaponKindField(conditionsWeaponKind(cond) ?? weaponKind),
     updatedAt: new Date().toISOString(),
   }
 }
 
-/** 지금 조건으로 덮어쓴다. 이름을 비우면 원래 이름 */
+/**
+ * 지금 조건으로 덮어쓴다. 이름을 비우면 원래 이름. 무기 종류는 조건에서 고른 무기가 있으면 그 종류로 바꾸고, 없으면 원래 종류를
+ * 둔다 (무기를 고른 조건에서 무기를 빼도 그 무기의 종류가 남아 목록의 다른 종류로 옮겨 가지 않는다)
+ */
 export function overwritePreset(preset: SearchPreset, cond: SearchConditions, name = preset.name): SearchPreset {
-  return {
+  const next = {
     ...preset,
     name: trimName(name) || preset.name,
     conditions: presetPart(cond),
     updatedAt: new Date().toISOString(),
   }
+  return withWeaponKind(next, conditionsWeaponKind(cond) ?? presetWeaponKind(preset))
+}
+
+/**
+ * 정보 수정: 이름(비우면 원래 이름)과 무기 종류. 조건에서 고른 무기가 있으면 종류는 그 무기의 종류라 weaponKind 는 쓰지 않는다.
+ * 바뀐 것이 없으면 받은 조건을 그대로 돌려준다 (고친 시각도 그대로)
+ */
+export function editPresetInfo(preset: SearchPreset, name: string, weaponKind: WeaponKind | null): SearchPreset {
+  const nextName = trimName(name) || preset.name
+  const kind = conditionsWeaponKind(preset.conditions) ?? weaponKind
+  if (nextName === preset.name && kind === presetWeaponKind(preset)) return preset
+  return withWeaponKind({ ...preset, name: nextName, updatedAt: new Date().toISOString() }, kind)
 }
 
 /**

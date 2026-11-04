@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { Dialog } from '../../components/Dialog'
 import { Button, Segmented } from '../../components/ui'
-import type { SavedBuild } from '../../core/savedBuilds'
+import { weaponKindOf, type SavedBuild } from '../../core/savedBuilds'
 import type { GameDb } from '../../data/db'
 import { skillName } from '../../data/format'
 import type { SkillPoint } from '../../data/types'
@@ -17,7 +17,8 @@ import {
   type PresetMode,
   type ReducedSkill,
 } from '../search/fromBuild'
-import { presetSummary, type SearchPreset } from '../search/presets'
+import { presetSummary, presetWeaponKind, type SearchPreset } from '../search/presets'
+import { WeaponKindBadge } from './WeaponKindBadge'
 
 /** 스킬 몇 개와 나머지 수. 예: "속성 변환3 · 쇄인자격2 외 4개" */
 function pointsText(db: GameDb, points: readonly SkillPoint[], max = 3): string {
@@ -44,7 +45,8 @@ const PRESET_MODES: { value: PresetMode; label: string }[] = [
 ]
 
 /**
- * 저장한 조건이 있을 때 '검색 조건으로'를 누르면 고르는 창: 저장한 조건 불러오기(같은 무기로 찾는 조건을 위로) 또는 새 조건으로 시작.
+ * 저장한 조건이 있을 때 '검색 조건으로'를 누르면 고르는 창: 저장한 조건 불러오기(같은 무기로 찾는 조건, 그다음 같은 무기 종류의
+ * 조건을 위로) 또는 새 조건으로 시작.
  * 저장한 조건에는 없는 스킬을 더하거나 있는 스킬만 체크하고, 줄마다 더하거나 체크할 스킬과 무기에 맞춰 바뀌는 것을 미리 보여 준다
  */
 export function SearchWithBuildDialog({
@@ -92,17 +94,22 @@ function PresetChoices({
   const [mode, setMode] = usePersistentState<PresetMode>('search-with-build-mode:v1', 'add', isPresetMode)
   const skills = useMemo(() => buildSkills(db, saved.build, customTalismans), [db, saved.build, customTalismans])
   const rows = useMemo(() => {
+    const buildKind = weaponKindOf(db, saved)
     const list = presets.map((preset) => {
       const cond = normalizeConditions(preset.conditions)
+      const kind = presetWeaponKind(preset)
+      const sameWeapon = searchesWithWeapon(db, cond, saved.build.weapon)
       return {
         preset,
-        sameWeapon: searchesWithWeapon(db, cond, saved.build.weapon),
+        kind,
+        sameWeapon,
+        rank: sameWeapon ? 0 : kind !== null && kind === buildKind ? 1 : 2,
         result: presetFromBuild(db, saved.build, customTalismans, cond, mode),
       }
     })
-    // 같은 무기로 찾는 조건을 위로 (그 안에서는 저장한 순서)
-    return [...list.filter((r) => r.sameWeapon), ...list.filter((r) => !r.sameWeapon)]
-  }, [db, presets, saved.build, customTalismans, mode])
+    // 같은 무기로 찾는 조건, 그다음 세팅과 같은 무기 종류의 조건을 위로 (그 안에서는 저장한 순서)
+    return list.sort((a, b) => a.rank - b.rank)
+  }, [db, presets, saved, customTalismans, mode])
 
   return (
     <div className="space-y-3">
@@ -115,7 +122,7 @@ function PresetChoices({
           <Segmented size="sm" value={mode} options={PRESET_MODES} onChange={setMode} ariaLabel="세팅의 스킬 넣는 방법" />
         </div>
         <ul className="space-y-1.5">
-          {rows.map(({ preset, sameWeapon, result }) => (
+          {rows.map(({ preset, kind, sameWeapon, result }) => (
             <li key={preset.id}>
               <button
                 type="button"
@@ -129,7 +136,11 @@ function PresetChoices({
                 )}
               >
                 <span className="flex flex-wrap items-start gap-1.5">
-                  <span className="min-w-0 text-sm font-medium break-keep wrap-anywhere">{preset.name}</span>
+                  {/* 이름이 길어도 무기 종류 옆에서 줄을 바꾼다 (같은 무기·사용 중 표시만 다음 줄로) */}
+                  <span className="flex min-w-0 items-start gap-1.5">
+                    <WeaponKindBadge kind={kind ?? 'none'} />
+                    <span className="min-w-0 text-sm font-medium break-keep wrap-anywhere">{preset.name}</span>
+                  </span>
                   {sameWeapon && <ChoiceBadge className="border-good/50 text-good">같은 무기</ChoiceBadge>}
                   {preset.id === active?.id && <ChoiceBadge className="border-accent/50 text-accent">사용 중</ChoiceBadge>}
                 </span>

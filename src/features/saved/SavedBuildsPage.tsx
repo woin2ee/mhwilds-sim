@@ -2,8 +2,6 @@ import { useMemo, useState, type MouseEvent } from 'react'
 import { Badge, Button, EmptyState, Panel } from '../../components/ui'
 import { collectTags, tagKey, tagsOf } from '../../core/buildTags'
 import { isFavorite, NAME_MAX, newSavedBuild, weaponKindOf, withFavorite, type SavedBuild } from '../../core/savedBuilds'
-import { WEAPON_KIND_LABEL } from '../../data/labels'
-import { WEAPON_KINDS } from '../../data/types'
 import { isCardClick } from '../../lib/cardClick'
 import { cx } from '../../lib/cx'
 import { matchesQuery } from '../../lib/text'
@@ -19,6 +17,7 @@ import { formatDateTime } from './backupFile'
 import { BackupTabLink } from './BackupPage'
 import { BuildPreview } from './BuildPreview'
 import { ImportDialog } from './ImportDialog'
+import { activeKindFilter, kindGroups, kindLabel, type KindFilter } from './kindFilter'
 import { FavoriteButton, StarIcon } from './FavoriteStar'
 import { EditSavedDialog } from './SaveBuildDialog'
 import { SearchWithBuildDialog } from './SearchWithBuildDialog'
@@ -26,11 +25,7 @@ import { ShareDialog } from './ShareDialog'
 import { useConfirmReplaceManual } from './useBuildActions'
 import { useSearchWithBuild } from './useSearchWithBuild'
 import { WeaponKindBadge, type KindKey } from './WeaponKindBadge'
-
-/** 무기 종류 거르기 (all = 전체) */
-type KindFilter = KindKey | 'all'
-
-const kindLabel = (kind: KindKey) => (kind === 'none' ? '무기 미지정' : WEAPON_KIND_LABEL[kind])
+import { WeaponKindFilter } from './WeaponKindFilter'
 
 /** 내 세팅: 브라우저에 저장한 세팅 목록, 공유 코드 가져오기 (백업은 백업 탭) */
 export function SavedBuildsPage() {
@@ -62,17 +57,8 @@ export function SavedBuildsPage() {
   )
   const kindOf = (saved: SavedBuild): KindKey => kinds.get(saved.id) ?? 'none'
   /** 세팅이 있는 무기 종류만 게임 순서로, 미지정은 맨 뒤 */
-  const kindGroups = useMemo(() => {
-    const counts = new Map<KindKey, number>()
-    for (const kind of kinds.values()) counts.set(kind, (counts.get(kind) ?? 0) + 1)
-    return [...WEAPON_KINDS, 'none' as const].flatMap((key) => {
-      const count = counts.get(key)
-      return count ? [{ key, count }] : []
-    })
-  }, [kinds])
-  // 종류가 하나뿐이거나 고른 종류의 세팅이 없어지면(삭제·종류 바꿈) 전체를 보인다
-  const activeFilter: KindFilter =
-    kindGroups.length > 1 && kindGroups.some((g) => g.key === kindFilter) ? kindFilter : 'all'
+  const groups = useMemo(() => kindGroups(kinds.values()), [kinds])
+  const activeFilter = activeKindFilter(groups, kindFilter)
 
   const favoriteCount = useMemo(() => savedBuilds.filter(isFavorite).length, [savedBuilds])
   // 즐겨찾기가 하나도 없으면(다른 기기에서 끈 것이 동기화돼도) 전체를 보인다
@@ -212,25 +198,13 @@ export function SavedBuildsPage() {
             )}
           </div>
         )}
-        {kindGroups.length > 1 && (
-          <div role="radiogroup" aria-label="무기 종류" className="mt-2 flex flex-wrap gap-1 pointer-coarse:gap-1.5">
-            <KindChip
-              label="전체"
-              count={savedBuilds.length}
-              checked={activeFilter === 'all'}
-              onClick={() => setKindFilter('all')}
-            />
-            {kindGroups.map((g) => (
-              <KindChip
-                key={g.key}
-                label={g.key === 'none' ? '미지정' : WEAPON_KIND_LABEL[g.key]}
-                count={g.count}
-                checked={activeFilter === g.key}
-                onClick={() => setKindFilter(g.key)}
-              />
-            ))}
-          </div>
-        )}
+        <WeaponKindFilter
+          className="mt-2"
+          total={savedBuilds.length}
+          groups={groups}
+          value={activeFilter}
+          onChange={setKindFilter}
+        />
         {allTags.length > 0 && (
           <div role="group" aria-label="태그" className="mt-2 flex flex-wrap items-center gap-1 pointer-coarse:gap-1.5">
             {allTags.map(({ tag, count }) => (
@@ -541,34 +515,6 @@ function TagChip({
       )}
     >
       #{tag} <span className="tabular-nums opacity-70">{count}</span>
-    </button>
-  )
-}
-
-/** 무기 종류 거르기 칩 (사전의 무기 종류 칩과 같은 모양) */
-function KindChip({
-  label,
-  count,
-  checked,
-  onClick,
-}: {
-  label: string
-  count: number
-  checked: boolean
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={checked}
-      onClick={onClick}
-      className={cx(
-        'rounded-md border px-2 py-1 text-xs whitespace-nowrap pointer-coarse:px-2.5 pointer-coarse:py-1.5 pointer-coarse:text-sm',
-        checked ? 'border-accent bg-accent/10 font-semibold text-accent' : 'border-line bg-surface-2 text-muted hover:text-fg',
-      )}
-    >
-      {label} <span className="tabular-nums opacity-70">{count}</span>
     </button>
   )
 }

@@ -1,30 +1,47 @@
-import { useState, type FormEvent } from 'react'
+import { useMemo, useState, type FormEvent } from 'react'
 import { Dialog } from '../../components/Dialog'
 import { Button, Panel, type PanelCollapse } from '../../components/ui'
 import { NAME_MAX } from '../../core/savedBuilds'
+import type { WeaponKind } from '../../data/types'
 import { cx } from '../../lib/cx'
-import { requestPersistentStorage } from '../../lib/storage'
+import { requestPersistentStorage, usePersistentState } from '../../lib/storage'
 import { useDb } from '../../state/context'
 import { useToast } from '../../state/toast'
+import { activeKindFilter, isKindFilter, kindGroups, kindLabel, type KindFilter } from '../saved/kindFilter'
+import { WeaponKindBadge, type KindKey } from '../saved/WeaponKindBadge'
+import { WeaponKindField } from '../saved/WeaponKindField'
+import { WeaponKindFilter } from '../saved/WeaponKindFilter'
 import { useSearchConditions, useSearchPresets } from './conditionsContext'
 import { ExportPresets, ImportPresets } from './PresetTransferDialogs'
 import type { PresetImportResult } from './presetTransfer'
-import { newPreset, presetConditions, presetSummary, suggestPresetName, type SearchPreset } from './presets'
+import {
+  conditionsWeaponKind,
+  editPresetInfo,
+  newPreset,
+  presetConditions,
+  presetSummary,
+  presetWeaponKind,
+  suggestPresetName,
+  type SearchPreset,
+} from './presets'
 
 const INPUT =
   'w-full rounded-md border border-line bg-surface-2 px-2.5 py-2 text-sm text-fg placeholder:text-muted focus:border-accent focus:outline-none'
 
 type DialogState =
   | { type: 'save' }
-  | { type: 'rename'; preset: SearchPreset }
+  | { type: 'edit'; preset: SearchPreset }
   | { type: 'export' }
   | { type: 'import' }
   | null
+
+const kindOf = (preset: SearchPreset): KindKey => presetWeaponKind(preset) ?? 'none'
 
 /**
  * 저장한 검색 조건 (조건 열 맨 위). 무기를 바꾸면 크게 바뀌는 조건을 이름을 붙여 두고, 누르면 그 조건으로 바꾼다.
  * 마지막으로 불러오거나 저장한 조건('사용 중')은 고치는 대로 바로 저장되고(SearchConditionsProvider), '해제'하면 지금 조건은
  * 그대로 두고 연결만 끊어 저장한 조건을 바꾸지 않고 고친다. 사용 중인 조건이 없으면 목록 위에 눈에 띄게 알린다.
+ * 줄마다 무기 종류를 붙이고 종류가 둘 이상이면 목록 위 칩으로 거른다 (고른 종류는 기기마다 기억).
  * 아래 '내보내기'·'가져오기'로 다른 기기·친구와 코드나 파일로 주고받는다
  */
 export function SearchPresets({
@@ -38,6 +55,25 @@ export function SearchPresets({
   const { cond, replace } = useSearchConditions()
   const { presets, setPresets, active, setActiveId } = useSearchPresets()
   const [dialog, setDialog] = useState<DialogState>(null)
+  /** 목록을 거르는 무기 종류 (기기마다 기억) */
+  const [kindFilter, setKindFilter] = usePersistentState<KindFilter>('search-preset-kind:v1', 'all', isKindFilter)
+  const groups = useMemo(() => kindGroups(presets.map(kindOf)), [presets])
+  const activeFilter = activeKindFilter(groups, kindFilter)
+  const shown = useMemo(
+    () => (activeFilter === 'all' ? presets : presets.filter((p) => kindOf(p) === activeFilter)),
+    [presets, activeFilter],
+  )
+  /** 이 종류의 조건이 지금 거르기에 걸려 목록에서 안 보이는지 */
+  const isHidden = (kind: KindKey) => activeFilter !== 'all' && kind !== activeFilter
+
+  // 사용 중인 조건이 바뀌거나(저장·불러오기·동기화) 그 조건의 무기 종류가 바뀌었는데(무기를 바꿔 자동 저장, 정보 수정)
+  // 거르는 종류에 없으면 그 종류를 보인다. 칩을 눌러 다른 종류를 보는 것은 그대로 둔다
+  const activeKey = active && `${active.id}\u0000${kindOf(active)}`
+  const [followed, setFollowed] = useState(activeKey)
+  if (followed !== activeKey) {
+    setFollowed(activeKey)
+    if (active && isHidden(kindOf(active))) setKindFilter(kindOf(active))
+  }
 
   /** current: 불러오기 바로 전 조건 (가져오기에서 제외할 방어구를 더한 직후면 더한 조건) */
   const load = (preset: SearchPreset, current = cond) => {
@@ -53,16 +89,23 @@ export function SearchPresets({
       },
     })
   }
-  const saveNew = (name: string) => {
-    const preset = newPreset(name, cond)
+  const saveNew = (name: string, kind: WeaponKind | null) => {
+    const preset = newPreset(name, cond, kind)
     setPresets([preset, ...presets])
     setActiveId(preset.id)
     void requestPersistentStorage()
     toast(`조건을 저장했어요 · 이제 고치면 ‘${preset.name}’에 바로 저장돼요`)
   }
-  const rename = (target: SearchPreset, name: string) => {
-    const trimmed = name.trim().slice(0, NAME_MAX)
-    if (trimmed) setPresets(presets.map((p) => (p.id === target.id ? { ...p, name: trimmed } : p)))
+  const editInfo = (target: SearchPreset, name: string, kind: WeaponKind | null) => {
+    const current = presets.find((p) => p.id === target.id)
+    const next = current && editPresetInfo(current, name, kind)
+    if (!current || !next || next === current) return
+    setPresets(presets.map((p) => (p === current ? next : p)))
+    // 다른 종류로 바꿔 지금 목록에서 사라지면 알린다 (사용 중인 조건이면 목록이 그 종류로 바뀐다)
+    const nextKind = kindOf(next)
+    if (next.id !== active?.id && nextKind !== kindOf(current) && isHidden(nextKind)) {
+      toast(`무기 종류를 바꿨어요 · ${next.name} → ${kindLabel(nextKind)}`)
+    }
   }
   const release = (target: SearchPreset) => {
     setActiveId(null)
@@ -82,6 +125,8 @@ export function SearchPresets({
     if (result.added.length > 0) {
       setPresets(result.presets)
       void requestPersistentStorage()
+      // 가져온 조건이 거르는 종류에 없으면 전체를 보인다
+      if (result.added.some((p) => isHidden(kindOf(p)))) setKindFilter('all')
     }
     setDialog(null)
     const [first] = result.added
@@ -127,58 +172,75 @@ export function SearchPresets({
           불러온 조건은 고치는 대로 바로 저장돼요.
         </p>
       ) : (
-        <ul className="max-h-72 space-y-1.5 overflow-y-auto">
-          {presets.map((preset) => {
-            // 표시는 연결된(사용 중인) 조건에만: 해제한 뒤에는 값이 같아도 '사용 중'으로 보이지 않는다
-            const isActive = preset.id === active?.id
-            return (
-              <li
-                key={preset.id}
-                className={cx(
-                  'flex items-center gap-0.5 rounded-md border pr-0.5',
-                  isActive ? 'border-accent/60' : 'border-line',
-                )}
-              >
-                <button
-                  type="button"
-                  onClick={() => load(preset)}
-                  title="눌러서 이 조건으로 바꾸기"
-                  className="min-w-0 flex-1 rounded-l-md px-2.5 py-1.5 text-left hover:bg-surface-2 pointer-coarse:py-2"
+        <>
+          <WeaponKindFilter
+            className="mb-2"
+            ariaLabel="저장한 조건 무기 종류"
+            total={presets.length}
+            groups={groups}
+            value={activeFilter}
+            onChange={setKindFilter}
+          />
+          <ul className="max-h-72 space-y-1.5 overflow-y-auto">
+            {shown.map((preset) => {
+              // 표시는 연결된(사용 중인) 조건에만: 해제한 뒤에는 값이 같아도 '사용 중'으로 보이지 않는다
+              const isActive = preset.id === active?.id
+              return (
+                <li
+                  key={preset.id}
+                  className={cx(
+                    'flex items-center gap-0.5 rounded-md border pr-0.5',
+                    isActive ? 'border-accent/60' : 'border-line',
+                  )}
                 >
-                  {/* 이름은 길면 줄을 바꿔 다 보여 준다. 띄어쓰기 없이 긴 이름만 아무 데서나 끊는다 */}
-                  <span className="flex items-start gap-1.5">
-                    <span className="min-w-0 text-sm font-medium break-keep wrap-anywhere">{preset.name}</span>
-                    {isActive && <StateBadge className="border-accent/50 text-accent">사용 중</StateBadge>}
-                  </span>
-                  <span className="block truncate text-xs text-muted">{presetSummary(db, preset.conditions)}</span>
-                </button>
-                {isActive && (
+                  <button
+                    type="button"
+                    onClick={() => load(preset)}
+                    title="눌러서 이 조건으로 바꾸기"
+                    className="min-w-0 flex-1 rounded-l-md px-2.5 py-1.5 text-left hover:bg-surface-2 pointer-coarse:py-2"
+                  >
+                    {/* 이름은 길면 줄을 바꿔 다 보여 준다. 띄어쓰기 없이 긴 이름만 아무 데서나 끊는다 */}
+                    <span className="flex items-start gap-1.5">
+                      <WeaponKindBadge kind={kindOf(preset)} />
+                      <span className="min-w-0 text-sm font-medium break-keep wrap-anywhere">{preset.name}</span>
+                      {isActive && <StateBadge className="border-accent/50 text-accent">사용 중</StateBadge>}
+                    </span>
+                    <span className="block truncate text-xs text-muted">{presetSummary(db, preset.conditions)}</span>
+                  </button>
+                  {isActive && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      aria-label={`${preset.name} 해제`}
+                      title="연결을 끊어요. 지금 조건은 그대로 두고, 고쳐도 이 조건에는 저장되지 않아요"
+                      onClick={() => release(preset)}
+                    >
+                      해제
+                    </Button>
+                  )}
                   <Button
                     size="sm"
                     variant="ghost"
-                    aria-label={`${preset.name} 해제`}
-                    title="연결을 끊어요. 지금 조건은 그대로 두고, 고쳐도 이 조건에는 저장되지 않아요"
-                    onClick={() => release(preset)}
+                    aria-label={`${preset.name} 정보 수정`}
+                    title="이름·무기 종류 바꾸기"
+                    onClick={() => setDialog({ type: 'edit', preset })}
                   >
-                    해제
+                    <PencilIcon />
                   </Button>
-                )}
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  aria-label={`${preset.name} 이름 바꾸기`}
-                  title="이름 바꾸기"
-                  onClick={() => setDialog({ type: 'rename', preset })}
-                >
-                  <PencilIcon />
-                </Button>
-                <Button size="sm" variant="ghost" aria-label={`${preset.name} 삭제`} title="삭제" onClick={() => remove(preset)}>
-                  ×
-                </Button>
-              </li>
-            )
-          })}
-        </ul>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    aria-label={`${preset.name} 삭제`}
+                    title="삭제"
+                    onClick={() => remove(preset)}
+                  >
+                    ×
+                  </Button>
+                </li>
+              )
+            })}
+          </ul>
+        </>
       )}
       <div className="mt-3 flex justify-end gap-1.5">
         <Button
@@ -207,16 +269,21 @@ export function SearchPresets({
       >
         <SaveForm
           defaultName={suggestPresetName(db, cond)}
+          fixedKind={conditionsWeaponKind(cond)}
+          // 무기를 고르지 않은 조건의 처음 종류: 사용 중인 조건의 종류(다른 이름으로 저장), 아니면 보고 있는 종류
+          defaultKind={
+            (active && presetWeaponKind(active)) ?? (activeFilter === 'all' || activeFilter === 'none' ? null : activeFilter)
+          }
           active={active}
           onSave={saveNew}
           onClose={() => setDialog(null)}
         />
       </Dialog>
-      <Dialog open={dialog?.type === 'rename'} onClose={() => setDialog(null)} title="조건 이름 바꾸기">
-        {dialog?.type === 'rename' && (
-          <RenameForm
-            name={dialog.preset.name}
-            onSubmit={(name) => rename(dialog.preset, name)}
+      <Dialog open={dialog?.type === 'edit'} onClose={() => setDialog(null)} title="조건 정보 수정">
+        {dialog?.type === 'edit' && (
+          <EditForm
+            preset={dialog.preset}
+            onSubmit={(name, kind) => editInfo(dialog.preset, name, kind)}
             onClose={() => setDialog(null)}
           />
         )}
@@ -293,30 +360,58 @@ function NameField({ name, onName }: { name: string; onName: (name: string) => v
   )
 }
 
+/** 무기 종류 칸. fixedKind 는 조건에서 고른 무기의 종류라 고를 수 없다 */
+function KindField({
+  kind,
+  fixedKind,
+  onKind,
+}: {
+  kind: WeaponKind | null
+  fixedKind: WeaponKind | null
+  onKind: (kind: WeaponKind | null) => void
+}) {
+  return (
+    <WeaponKindField
+      value={fixedKind ?? kind}
+      fixed={fixedKind !== null}
+      hint="무기를 고르지 않은 조건(무기 미지정·슬롯 직접 지정)은 종류를 여기서 골라요. 목록에서 종류별로 볼 수 있어요."
+      onChange={onKind}
+    />
+  )
+}
+
 /**
  * 지금 조건을 새 조건으로 저장하고 사용 중으로 둔다. 사용 중인 조건(active)은 고칠 때마다 이미 저장돼 있어서
  * 덮어쓰기 없이 '다른 이름으로 저장'만 한다
  */
 function SaveForm({
   defaultName,
+  fixedKind,
+  defaultKind,
   active,
   onSave,
   onClose,
 }: {
   defaultName: string
+  /** 조건에서 고른 무기의 종류 */
+  fixedKind: WeaponKind | null
+  /** 무기를 고르지 않았을 때 처음 고를 종류 */
+  defaultKind: WeaponKind | null
   active: SearchPreset | null
-  onSave: (name: string) => void
+  onSave: (name: string, kind: WeaponKind | null) => void
   onClose: () => void
 }) {
   const [name, setName] = useState(defaultName)
+  const [kind, setKind] = useState(defaultKind)
   const submit = (e: FormEvent) => {
     e.preventDefault()
-    onSave(name)
+    onSave(name, kind)
     onClose()
   }
   return (
     <form onSubmit={submit} className="space-y-4">
       <NameField name={name} onName={setName} />
+      <KindField kind={kind} fixedKind={fixedKind} onKind={setKind} />
       <p className="text-xs text-muted">
         {active
           ? `‘${active.name}’에는 고친 내용이 이미 저장돼 있어요. 지금 조건을 새 이름으로 하나 더 저장하고, 이제부터는 새 조건에 저장해요.`
@@ -334,16 +429,27 @@ function SaveForm({
   )
 }
 
-function RenameForm({ name: initial, onSubmit, onClose }: { name: string; onSubmit: (name: string) => void; onClose: () => void }) {
-  const [name, setName] = useState(initial)
+/** 이름·무기 종류 수정. 조건에서 무기를 골랐으면 종류는 그 무기의 종류로 정해져 이름만 고친다 */
+function EditForm({
+  preset,
+  onSubmit,
+  onClose,
+}: {
+  preset: SearchPreset
+  onSubmit: (name: string, kind: WeaponKind | null) => void
+  onClose: () => void
+}) {
+  const [name, setName] = useState(preset.name)
+  const [kind, setKind] = useState(() => presetWeaponKind(preset))
   const submit = (e: FormEvent) => {
     e.preventDefault()
-    onSubmit(name)
+    onSubmit(name, kind)
     onClose()
   }
   return (
     <form onSubmit={submit} className="space-y-4">
       <NameField name={name} onName={setName} />
+      <KindField kind={kind} fixedKind={conditionsWeaponKind(preset.conditions)} onKind={setKind} />
       <div className="flex justify-end gap-2">
         <Button variant="ghost" onClick={onClose}>
           취소

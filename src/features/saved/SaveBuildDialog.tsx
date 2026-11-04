@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { SelectBox } from '../../components/controls'
 import { Dialog } from '../../components/Dialog'
 import { Button, Segmented } from '../../components/ui'
 import { tagsOf } from '../../core/buildTags'
@@ -18,8 +17,7 @@ import {
 import type { BuildState } from '../../core/types'
 import type { GameDb } from '../../data/db'
 import { skillName } from '../../data/format'
-import { WEAPON_KIND_LABEL } from '../../data/labels'
-import { WEAPON_KINDS, type WeaponKind } from '../../data/types'
+import type { WeaponKind } from '../../data/types'
 import { cx } from '../../lib/cx'
 import { useCoarsePointer } from '../../lib/media'
 import { requestPersistentStorage, usePersistentState } from '../../lib/storage'
@@ -30,6 +28,7 @@ import { StarIcon } from './FavoriteStar'
 import { TagField } from './TagField'
 import { useKnownTags, withTypedTag } from './useKnownTags'
 import { WeaponKindBadge, type KindKey } from './WeaponKindBadge'
+import { WeaponKindField } from './WeaponKindField'
 
 const INPUT =
   'w-full rounded-md border border-line bg-surface-2 px-2.5 py-2 text-sm text-fg placeholder:text-muted focus:border-accent focus:outline-none'
@@ -490,6 +489,7 @@ function InfoFields({
       <WeaponKindField
         value={fixedKind ?? value.kind}
         fixed={fixedKind !== null}
+        hint="직접 입력 무기나 무기 없는 세팅은 종류를 여기서 골라요. 내 세팅 목록에 보여요."
         onChange={(kind) => {
           onChange({ ...value, kind })
           onPickKind?.(kind)
@@ -509,45 +509,5 @@ function InfoFields({
         </label>
       )}
     </>
-  )
-}
-
-/** 무기 종류: 내 세팅 목록에 보이고 종류별로 거른다. DB 무기를 고른 세팅은 그 무기의 종류로 정해진다 */
-function WeaponKindField({
-  value,
-  fixed,
-  onChange,
-}: {
-  value: WeaponKind | null
-  fixed: boolean
-  onChange: (kind: WeaponKind | null) => void
-}) {
-  if (fixed && value) {
-    return (
-      <div className="space-y-1 text-xs text-muted">
-        <span>무기 종류</span>
-        <p className="text-sm text-fg">
-          {WEAPON_KIND_LABEL[value]} <span className="text-xs text-muted">· 고른 무기의 종류</span>
-        </p>
-      </div>
-    )
-  }
-  return (
-    <label className="block space-y-1 text-xs text-muted">
-      <span>무기 종류</span>
-      <SelectBox
-        value={value ?? ''}
-        onChange={(e) => onChange(isWeaponKind(e.target.value) ? e.target.value : null)}
-        className="w-full"
-      >
-        <option value="">미지정</option>
-        {WEAPON_KINDS.map((kind) => (
-          <option key={kind} value={kind}>
-            {WEAPON_KIND_LABEL[kind]}
-          </option>
-        ))}
-      </SelectBox>
-      <span className="block">직접 입력 무기나 무기 없는 세팅은 종류를 여기서 골라요. 내 세팅 목록에 보여요.</span>
-    </label>
   )
 }
