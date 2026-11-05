@@ -39,8 +39,9 @@ const kindOf = (preset: SearchPreset): KindKey => presetWeaponKind(preset) ?? 'n
 
 /**
  * 저장한 검색 조건 (조건 열 맨 위). 무기를 바꾸면 크게 바뀌는 조건을 이름을 붙여 두고, 누르면 그 조건으로 바꾼다.
- * 마지막으로 불러오거나 저장한 조건('사용 중')은 고치는 대로 바로 저장되고(SearchConditionsProvider), '해제'하면 지금 조건은
- * 그대로 두고 연결만 끊어 저장한 조건을 바꾸지 않고 고친다. 사용 중인 조건이 없으면 목록 위에 눈에 띄게 알린다.
+ * 마지막으로 불러오거나 저장한 조건('사용 중')은 고치는 대로 바로 저장되고(SearchConditionsProvider), 선택을 해제하면(목록 위
+ * 상태 줄의 '선택 해제', 사용 중인 줄을 다시 누르기) 지금 조건은 그대로 두고 연결만 끊어 저장한 조건을 바꾸지 않고 고친다.
+ * 사용 중인 조건이 없으면 목록 위에 눈에 띄게 알린다.
  * 줄마다 무기 종류를 붙이고 종류가 둘 이상이면 목록 위 칩으로 거른다 (고른 종류는 기기마다 기억).
  * 아래 '내보내기'·'가져오기'로 다른 기기·친구와 코드나 파일로 주고받는다
  */
@@ -109,7 +110,7 @@ export function SearchPresets({
   }
   const release = (target: SearchPreset) => {
     setActiveId(null)
-    toast(`‘${target.name}’ 해제했어요 · 이제 고쳐도 이 조건은 그대로예요`)
+    toast(`‘${target.name}’ 선택을 해제했어요 · 이제 고쳐도 이 조건은 그대로예요`)
   }
   const remove = (target: SearchPreset) => {
     if (!window.confirm(`‘${target.name}’ 조건을 삭제할까요?`)) return
@@ -165,7 +166,7 @@ export function SearchPresets({
         </Button>
       }
     >
-      {presets.length > 0 && <PresetStatus active={active} />}
+      {presets.length > 0 && <PresetStatus active={active} onRelease={release} />}
       {presets.length === 0 ? (
         <p className="text-xs text-muted">
           무기마다 바뀌는 검색 조건(원하는 스킬·비선호·장식주 여유분·무기·호석·옵션)을 이름을 붙여 저장해 두고 불러올 수 있어요.
@@ -183,7 +184,7 @@ export function SearchPresets({
           />
           <ul className="max-h-72 space-y-1.5 overflow-y-auto">
             {shown.map((preset) => {
-              // 표시는 연결된(사용 중인) 조건에만: 해제한 뒤에는 값이 같아도 '사용 중'으로 보이지 않는다
+              // 표시는 연결된(사용 중인) 조건에만: 선택을 해제한 뒤에는 값이 같아도 '사용 중'으로 보이지 않는다
               const isActive = preset.id === active?.id
               return (
                 <li
@@ -193,10 +194,17 @@ export function SearchPresets({
                     isActive ? 'border-accent/60' : 'border-line',
                   )}
                 >
+                  {/* 사용 중인 줄을 다시 누르면 선택 해제. 두 번 눌러(더블클릭) 불러오자마자 풀리지 않게 연달아 누른
+                      두 번째부터는 무시한다 */}
                   <button
                     type="button"
-                    onClick={() => load(preset)}
-                    title="눌러서 이 조건으로 바꾸기"
+                    aria-pressed={isActive}
+                    onClick={(e) => {
+                      if (e.detail > 1) return
+                      if (isActive) release(preset)
+                      else load(preset)
+                    }}
+                    title={isActive ? '사용 중 · 다시 누르면 선택 해제' : '눌러서 이 조건으로 바꾸기'}
                     className="min-w-0 flex-1 rounded-l-md px-2.5 py-1.5 text-left hover:bg-surface-2 pointer-coarse:py-2"
                   >
                     {/* 이름은 길면 줄을 바꿔 다 보여 준다. 띄어쓰기 없이 긴 이름만 아무 데서나 끊는다 */}
@@ -207,17 +215,6 @@ export function SearchPresets({
                     </span>
                     <span className="block truncate text-xs text-muted">{presetSummary(db, preset.conditions)}</span>
                   </button>
-                  {isActive && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      aria-label={`${preset.name} 해제`}
-                      title="연결을 끊어요. 지금 조건은 그대로 두고, 고쳐도 이 조건에는 저장되지 않아요"
-                      onClick={() => release(preset)}
-                    >
-                      해제
-                    </Button>
-                  )}
                   <Button
                     size="sm"
                     variant="ghost"
@@ -301,18 +298,34 @@ export function SearchPresets({
 /**
  * 목록 위 지금 상태 (자동 저장이라 어느 조건에 저장되는지 늘 보여야 한다). 사용 중인 조건이 없으면 고쳐도 저장한 조건에
  * 들어가지 않으니 노란 칸으로 눈에 띄게 알린다. 사용 중일 때는 조용한 한 줄 (밝은 테마의 주황 accent 와 노랑 warn 이
- * 거의 같아서 칸 색만으로는 두 상태가 구분되지 않는다)
+ * 거의 같아서 칸 색만으로는 두 상태가 구분되지 않는다)과 '선택 해제' 버튼: 사용 중인 줄이 칩에 걸리거나 목록을 내려야 보여도
+ * 자동 저장을 알리는 줄에서 바로 끊는다
  */
-function PresetStatus({ active }: { active: SearchPreset | null }) {
+function PresetStatus({
+  active,
+  onRelease,
+}: {
+  active: SearchPreset | null
+  onRelease: (preset: SearchPreset) => void
+}) {
   return active ? (
-    <p className="mb-2.5 flex items-start gap-1.5 text-xs break-keep wrap-anywhere text-muted">
-      <span aria-hidden className="text-good">
-        ✓
-      </span>
-      <span>
-        <span className="font-semibold text-fg">‘{active.name}’ 사용 중</span> · 고치면 바로 저장돼요
-      </span>
-    </p>
+    <div className="mb-2.5 flex items-center gap-2">
+      <p className="flex min-w-0 flex-1 items-start gap-1.5 text-xs break-keep wrap-anywhere text-muted">
+        <span aria-hidden className="text-good">
+          ✓
+        </span>
+        <span>
+          <span className="font-semibold text-fg">‘{active.name}’ 사용 중</span> · 고치면 바로 저장돼요
+        </span>
+      </p>
+      <Button
+        size="sm"
+        title="지금 조건은 그대로 두고 선택만 풀어요. 그 뒤로 고쳐도 이 조건에는 저장되지 않아요"
+        onClick={() => onRelease(active)}
+      >
+        선택 해제
+      </Button>
+    </div>
   ) : (
     <p className="mb-2.5 rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-xs break-keep text-warn">
       <span className="font-semibold">선택한 조건 없음</span> · 고쳐도 저장한 조건에는 반영되지 않아요. 남겨 두려면
