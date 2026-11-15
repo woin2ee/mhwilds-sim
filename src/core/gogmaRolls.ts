@@ -1,10 +1,12 @@
 // 거극 아티어 리롤 루트 (DESIGN.md §7.6). 순수 TS — 화면·저장·동기화·백업이 함께 쓴다.
-// 스킬 재부여와 거극 복원 강화(옵션 초기화)가 같은 방식이라 기록·루트·진행을 함께 다룬다.
-// 복원 강화는 몇 번째에 잘 떴는지만 적는다 (어떤 보너스가 붙었는지는 사용자가 필요 없다고 함, 2026-11-15).
+// 스킬 재부여와 거극 복원 강화가 같은 방식이라 기록·루트·진행을 함께 다룬다.
+// 복원 강화는 몇 번째에 잘 떴는지와 그게 '초기화'인지 '재부여(수치만 변경)'인지만 적는다
+// (어떤 보너스가 붙었는지는 사용자가 필요 없다고 함, 2026-11-15).
 //
 // 게임 규칙 (커뮤니티 실험·사용자 확인, 공식 발표 없음 — 다르면 이 파일만 고친다):
 // - 리롤 결과는 세이브마다 정해져 있다. 리롤 횟수는 무기와 상관없이 하나로 이어지고, n번째에 무엇이 나오는지는
-//   무기 종류 × 속성마다 다르다. 스킬 재부여와 복원 강화는 횟수를 따로 센다. 저장하지 않고 나가면 저장한 위치로 돌아간다.
+//   무기 종류 × 속성마다 다르다. 스킬 재부여와 복원 강화는 횟수를
+//   따로 센다(복원 강화의 초기화와 재부여(수치만 변경)는 하나로 이어진다, 사용자 확인 2026-11-15). 저장하지 않고 나가면 저장한 위치로 돌아간다.
 //   출처: 디시인사이드 몬헌 갤러리 '거극 아티어 테이블 관련 정보 정리'(2025-12), 나무위키 '아티어 무기' 리세마라 문단 (2026-11 확인)
 // - 무기를 처음 거극 아티어로 격화할 때 붙는 스킬도 스킬 재부여 횟수에 들어간다 (한 번으로 센다, 사용자 확인 2026-11-15).
 //   그래서 아직 격화하지 않은 무기는 루트의 제 차례에 격화하면 재부여 없이 그 번째의 스킬을 받는다.
@@ -135,12 +137,30 @@ export function setBeforeGogma<T extends RerollEntry>(list: readonly T[], weapon
   return list.map((r) => (weaponKey(r) === key ? withFlag(r, 'beforeGogma', before) : r))
 }
 
-/** 잘 뜬 복원 강화: 번째만 적는다 */
-export type RestoreRoll = RerollEntry
+/**
+ * 잘 뜬 복원 강화: 번째와 어느 쪽으로 떴는지. valuesOnly 면 '재부여(수치만 변경)', 없으면 '초기화'.
+ * 둘은 리롤 횟수 하나로 이어서 센다 (사용자 확인 2026-11-15) — 그래서 한 표·한 루트에 함께 둔다
+ */
+export interface RestoreRoll extends RerollEntry {
+  valuesOnly?: true
+}
 
-/** 복원 강화 기록 더하기 (키 순서를 늘 같게) */
-export const putRestore = (list: readonly RestoreRoll[], weapon: GogmaWeapon, step: number): RestoreRoll[] =>
-  putEntry<RestoreRoll>(list, { weaponKind: weapon.weaponKind, element: weapon.element, step })
+/** 루트·칸에 보이는 복원 강화 종류 */
+export const restoreAction = (r: Pick<RestoreRoll, 'valuesOnly'>): string => (r.valuesOnly ? '수치 재부여' : '초기화')
+
+/** 복원 강화 기록 더하기 (같은 칸이면 종류를 바꾼다, 키 순서를 늘 같게) */
+export const putRestore = (
+  list: readonly RestoreRoll[],
+  weapon: GogmaWeapon,
+  step: number,
+  valuesOnly = false,
+): RestoreRoll[] =>
+  putEntry<RestoreRoll>(list, {
+    weaponKind: weapon.weaponKind,
+    element: weapon.element,
+    step,
+    ...(valuesOnly ? { valuesOnly: true as const } : {}),
+  })
 
 /**
  * 끝난 기록: 진행하며 띄운 무기의 기록 모두(그 무기는 이미 원하는 결과를 받았다)와 이미 지나간 번째의 기록.
@@ -277,6 +297,40 @@ export interface RerollProgress {
 
 export const NO_PROGRESS: RerollProgress = { skill: 0, restore: 0 }
 
+// ---- 돌려 본 번째 ----
+
+/**
+ * 무기마다 저장한 위치에서 몇 번째까지 돌려 봤는지 (키는 weaponKey). 그 안에서 적지 않은 칸은 안 뜬 칸이라
+ * 다음에 같은 무기를 또 돌려 볼 때 그 뒤부터 보면 된다 (사용자 요청 2026-11-15)
+ */
+export type CheckedSteps = Record<string, number>
+
+/** 스킬 재부여·복원 강화 따로 */
+export interface RerollChecked {
+  skill: CheckedSteps
+  restore: CheckedSteps
+}
+
+export const NO_CHECKED: RerollChecked = { skill: {}, restore: {} }
+
+/** 이 무기를 step 번째까지 돌려 봄 (0 이면 지움) */
+export function setChecked(map: CheckedSteps, weapon: GogmaWeapon, step: number): CheckedSteps {
+  const { [weaponKey(weapon)]: _, ...rest } = map
+  return step > 0 ? { ...rest, [weaponKey(weapon)]: step } : rest
+}
+
+export const hasChecked = (c: RerollChecked): boolean => Object.keys(c.skill).length + Object.keys(c.restore).length > 0
+
+/** 백업에서 가져올 때: 무기마다 더 뒤까지 본 쪽 */
+export function mergeChecked(a: RerollChecked, b: RerollChecked): RerollChecked {
+  const merge = (x: CheckedSteps, y: CheckedSteps) => {
+    const out = { ...x }
+    for (const [key, n] of Object.entries(y)) out[key] = Math.max(out[key] ?? 0, n)
+    return out
+  }
+  return { skill: merge(a.skill, b.skill), restore: merge(a.restore, b.restore) }
+}
+
 // ---- 저장값 검사 ----
 
 export const isRecord = (v: unknown): v is Record<string, unknown> =>
@@ -309,10 +363,25 @@ export const isGogmaRoll = (v: unknown): v is GogmaRoll =>
 
 export const isGogmaRollList = (v: unknown): v is GogmaRoll[] => Array.isArray(v) && v.every(isGogmaRoll)
 
-export const isRestoreRoll = isEntryBase
-export const isRestoreRollList = (v: unknown): v is RestoreRoll[] => Array.isArray(v) && v.every(isEntryBase)
+export const isRestoreRoll = (v: unknown): v is RestoreRoll => isEntryBase(v) && isFlag((v as RestoreRoll).valuesOnly)
+export const isRestoreRollList = (v: unknown): v is RestoreRoll[] => Array.isArray(v) && v.every(isRestoreRoll)
 
 export const isRerollProgress = (v: unknown): v is RerollProgress => isRecord(v) && isCount(v.skill) && isCount(v.restore)
+
+const isWeaponKeyString = (k: string) => {
+  const [kind, element, rest] = k.split(':')
+  return rest === undefined && isWeaponKind(kind) && isGogmaElement(element)
+}
+const isCheckedSteps = (v: unknown): v is CheckedSteps =>
+  isRecord(v) && Object.entries(v).every(([k, n]) => isWeaponKeyString(k) && isCount(n) && n > 0)
+
+export const isRerollChecked = (v: unknown): v is RerollChecked =>
+  isRecord(v) && isCheckedSteps(v.skill) && isCheckedSteps(v.restore)
+
+/** 백업 등에서 읽은 돌려 본 번째 (모양이 틀리면 null) */
+export function readChecked(v: unknown): RerollChecked | null {
+  return isRerollChecked(v) ? { skill: { ...v.skill }, restore: { ...v.restore } } : null
+}
 
 /** 백업 등에서 읽은 진행 (모양이 틀리면 null) */
 export function readProgress(v: unknown): RerollProgress | null {
@@ -333,6 +402,11 @@ export interface BackupEntryBase extends GogmaWeapon {
 export interface BackupGogmaRoll extends BackupEntryBase {
   set: number | null
   group: number | null
+}
+
+/** 백업에 담는 복원 강화 기록 */
+export interface BackupRestoreRoll extends BackupEntryBase {
+  valuesOnly?: true
 }
 
 export interface SkillIdMap {
@@ -364,6 +438,17 @@ export function fromBackupBase(value: unknown): RerollEntry | null {
     ...(value.done === true ? { done: true as const } : {}),
     ...(value.beforeGogma === true ? { beforeGogma: true as const } : {}),
   }
+}
+
+export function toBackupRestore(roll: RestoreRoll): BackupRestoreRoll {
+  return { ...toBackupBase(roll), ...(roll.valuesOnly ? { valuesOnly: true as const } : {}) }
+}
+
+/** 백업의 복원 강화 기록 하나. 모양이 틀리면 null */
+export function fromBackupRestore(value: unknown): RestoreRoll | null {
+  const base = fromBackupBase(value)
+  if (!base || !isRecord(value)) return null
+  return { ...base, ...(value.valuesOnly === true ? { valuesOnly: true as const } : {}) }
 }
 
 export function toBackupRoll(roll: GogmaRoll, ids: SkillIdMap): BackupGogmaRoll {

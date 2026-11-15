@@ -3,9 +3,11 @@ import { detachTalisman, linkTalisman, sameTalisman } from '../../core/buildUpda
 import { isFavorite, withFavorite, type SavedBuild } from '../../core/savedBuilds'
 import {
   isGogmaRoll,
+  isRerollChecked,
   isRerollProgress,
   isRestoreRoll,
   type GogmaRoll,
+  type RerollChecked,
   type RerollProgress,
   type RestoreRoll,
 } from '../../core/gogmaRolls'
@@ -34,6 +36,7 @@ export const SYNC_KEYS = [
   K.gogmaRolls,
   K.gogmaRestores,
   K.gogmaProgress,
+  K.gogmaChecked,
 ] as const
 
 export type SyncKey = (typeof SYNC_KEYS)[number]
@@ -94,6 +97,8 @@ export interface SyncSummary {
   gogmaRestores: ListChange
   /** 리롤 진행 횟수가 바뀜 */
   gogmaProgress: boolean
+  /** 리롤에서 돌려 본 번째가 바뀜 */
+  gogmaChecked: boolean
   /** 지금 검색 조건(불러온 저장한 조건 포함)이 바뀜 */
   conditions: boolean
   /** 수동 세팅이 바뀜 */
@@ -139,6 +144,7 @@ interface Data {
   gogmaRolls?: GogmaRoll[]
   gogmaRestores?: RestoreRoll[]
   gogmaProgress?: RerollProgress
+  gogmaChecked?: RerollChecked
 }
 
 const FIELD_KEYS: Record<keyof Data, SyncKey> = {
@@ -152,6 +158,7 @@ const FIELD_KEYS: Record<keyof Data, SyncKey> = {
   gogmaRolls: K.gogmaRolls,
   gogmaRestores: K.gogmaRestores,
   gogmaProgress: K.gogmaProgress,
+  gogmaChecked: K.gogmaChecked,
 }
 const FIELDS = Object.keys(FIELD_KEYS) as (keyof Data)[]
 
@@ -159,8 +166,9 @@ const FIELDS = Object.keys(FIELD_KEYS) as (keyof Data)[]
 const GROUPS: (keyof Data)[][] = [
   ['conditions', 'activePreset'],
   ['manual', 'manualSource'],
-  // 진행 횟수는 값 하나 (둘 다 바꿨으면 나중에 바꾼 쪽)
+  // 진행 횟수·돌려 본 번째는 값 하나씩 (둘 다 바꿨으면 나중에 바꾼 쪽)
   ['gogmaProgress'],
+  ['gogmaChecked'],
 ]
 
 function toData(values: Partial<Record<string, unknown>>): Data {
@@ -179,6 +187,7 @@ function toData(values: Partial<Record<string, unknown>>): Data {
     gogmaRolls: list(values[K.gogmaRolls], isGogmaRoll),
     gogmaRestores: list(values[K.gogmaRestores], isRestoreRoll),
     gogmaProgress: one(values[K.gogmaProgress], isRerollProgress),
+    gogmaChecked: one(values[K.gogmaChecked], isRerollChecked),
   }
 }
 
@@ -295,6 +304,7 @@ export function mergeSync(input: MergeInput): MergeOutput {
     gogmaRolls: listChange(before.gogmaRolls, merged.gogmaRolls),
     gogmaRestores: listChange(before.gogmaRestores, merged.gogmaRestores),
     gogmaProgress: !sameJson(before.gogmaProgress, merged.gogmaProgress),
+    gogmaChecked: !sameJson(before.gogmaChecked, merged.gogmaChecked),
     conditions: !sameJson([before.conditions, before.activePreset], [merged.conditions, merged.activePreset]),
     manual: !sameJson([before.manual, before.manualSource], [merged.manual, merged.manualSource]),
   }
@@ -424,6 +434,7 @@ function dedupe(local: Data, remote: Data): Data {
     gogmaRolls: local.gogmaRolls,
     gogmaRestores: local.gogmaRestores,
     gogmaProgress: local.gogmaProgress,
+    gogmaChecked: local.gogmaChecked,
   }
 }
 
@@ -472,7 +483,7 @@ export function summaryText(summary: SyncSummary): string {
     removed: summary.gogmaRolls.removed + summary.gogmaRestores.removed,
     changed: summary.gogmaRolls.changed + summary.gogmaRestores.changed,
   })
-  if (summary.gogmaProgress) parts.push('리롤 진행 바뀜')
+  if (summary.gogmaProgress || summary.gogmaChecked) parts.push('리롤 진행 바뀜')
   if (summary.conditions) parts.push('검색 조건 바뀜')
   if (summary.manual) parts.push('수동 세팅 바뀜')
   return parts.join(' · ')

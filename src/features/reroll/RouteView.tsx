@@ -10,15 +10,18 @@ import { cx } from '../../lib/cx'
 export function RouteView<T extends RerollEntry>({
   route,
   progress,
-  verb,
+  actionOf,
+  tagOf,
   onForward,
   onBack,
   tips,
 }: {
   route: RerollRoute<T>
   progress: number
-  /** 예: '재부여', '옵션 초기화' */
-  verb: string
+  /** 다음 할 일에 보이는 동작. 예: '재부여', '격화', '초기화' */
+  actionOf: (stop: T) => string
+  /** 루트 요약의 차례 옆 짧은 표시 (예: '격화', '수치 재부여') */
+  tagOf?: (stop: T) => string | undefined
   onForward: () => void
   onBack: () => void
   tips: ReactNode
@@ -27,7 +30,6 @@ export function RouteView<T extends RerollEntry>({
   const isDone = (stop: T) => stop.done === true || stop.step <= progress
   const nextStop = route.stops.find((s) => !isDone(s))
   const remaining = nextStop ? route.total - progress : 0
-  const action = (stop: T) => (stop.beforeGogma ? '격화' : verb)
 
   return (
     <div className="space-y-3">
@@ -37,6 +39,7 @@ export function RouteView<T extends RerollEntry>({
         <ol className="flex flex-wrap items-center gap-x-1 gap-y-1.5 text-sm" aria-label="루트">
           {route.stops.map((stop, i) => {
             const done = isDone(stop)
+            const tag = tagOf?.(stop)
             return (
               <li key={stop.id} className="flex items-center gap-1">
                 {i > 0 && (
@@ -51,7 +54,7 @@ export function RouteView<T extends RerollEntry>({
                   )}
                 >
                   {weaponLabel(stop)} <b className="tabular-nums">{stop.step}</b>
-                  {stop.beforeGogma && <span className={done || stop === nextStop ? '' : 'text-good'}> 격화</span>}
+                  {tag && <span className={done || stop === nextStop ? '' : 'text-muted'}> {tag}</span>}
                 </span>
               </li>
             )
@@ -79,7 +82,7 @@ export function RouteView<T extends RerollEntry>({
             다음 <b className="text-fg">{next}번째</b>:{' '}
             {nextStop.step === next ? (
               <b className="text-fg">
-                {weaponLabel(nextStop)} {action(nextStop)}
+                {weaponLabel(nextStop)} {actionOf(nextStop)}
               </b>
             ) : (
               <>

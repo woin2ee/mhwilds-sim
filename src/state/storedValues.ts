@@ -19,6 +19,8 @@ export const STORAGE_KEYS = {
   gogmaRolls: 'gogma-rolls:v1',
   gogmaRestores: 'gogma-restores:v1',
   gogmaProgress: 'gogma-progress:v1',
+  /** 리롤에서 무기마다 몇 번째까지 돌려 봤는지 (그 안의 빈칸은 안 뜬 칸) */
+  gogmaChecked: 'gogma-checked:v1',
 } as const
 
 export const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null

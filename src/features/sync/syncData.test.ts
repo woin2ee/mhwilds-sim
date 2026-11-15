@@ -61,6 +61,7 @@ const noChange: SyncSummary = {
   gogmaRolls: { added: 0, removed: 0, changed: 0 },
   gogmaRestores: { added: 0, removed: 0, changed: 0 },
   gogmaProgress: false,
+  gogmaChecked: false,
   conditions: false,
   manual: false,
 }
@@ -268,6 +269,16 @@ describe('동기화 파일', () => {
     })
     expect(result.values[K.gogmaProgress]).toEqual({ skill: 5, restore: 2 })
     expect(result.summary.gogmaProgress).toBe(true)
+  })
+
+  it('리롤에서 돌려 본 번째도 값 하나라 나중에 바꾼 쪽을 쓴다', () => {
+    const result = merge({
+      local: { [K.gogmaChecked]: { skill: { 'long-sword:fire': 10 }, restore: {} } },
+      localChangedAt: { [K.gogmaChecked]: T2 },
+      remote: file({ [K.gogmaChecked]: { skill: { 'long-sword:fire': 5 }, restore: {} } }, { [K.gogmaChecked]: T1 }),
+    })
+    expect(result.values[K.gogmaChecked]).toEqual({ skill: { 'long-sword:fire': 10 }, restore: {} })
+    expect(result.summary.gogmaChecked).toBe(false)
   })
 
   it('알림 문구', () => {

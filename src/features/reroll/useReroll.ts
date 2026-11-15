@@ -1,10 +1,13 @@
 import type { Dispatch, SetStateAction } from 'react'
 import {
   isGogmaRollList,
+  isRerollChecked,
   isRerollProgress,
   isRestoreRollList,
+  NO_CHECKED,
   NO_PROGRESS,
   type GogmaRoll,
+  type RerollChecked,
   type RerollProgress,
   type RestoreRoll,
 } from '../../core/gogmaRolls'
@@ -23,4 +26,8 @@ export function useGogmaRestores(): [RestoreRoll[], Dispatch<SetStateAction<Rest
 
 export function useRerollProgress(): [RerollProgress, Dispatch<SetStateAction<RerollProgress>>] {
   return usePersistentState<RerollProgress>(STORAGE_KEYS.gogmaProgress, NO_PROGRESS, isRerollProgress)
+}
+
+export function useRerollChecked(): [RerollChecked, Dispatch<SetStateAction<RerollChecked>>] {
+  return usePersistentState<RerollChecked>(STORAGE_KEYS.gogmaChecked, NO_CHECKED, isRerollChecked)
 }

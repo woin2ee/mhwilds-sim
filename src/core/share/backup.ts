@@ -6,12 +6,17 @@ import { linkTalisman, sameTalisman } from '../buildUpdates'
 import {
   compareEntries,
   fromBackupRoll,
-  fromBackupBase,
+  fromBackupRestore,
+  hasChecked,
+  mergeChecked,
+  NO_CHECKED,
+  readChecked,
   readProgress,
-  toBackupBase,
+  toBackupRestore,
   toBackupRoll,
   weaponLabel,
   type GogmaRoll,
+  type RerollChecked,
   type RerollProgress,
   type RestoreRoll,
   type SkillIdMap,
@@ -28,11 +33,17 @@ export function createBackup(
   db: GameDb,
   savedBuilds: readonly SavedBuild[],
   customTalismans: readonly CustomTalisman[],
-  reroll: { rolls?: readonly GogmaRoll[]; restores?: readonly RestoreRoll[]; progress?: RerollProgress } = {},
+  reroll: {
+    rolls?: readonly GogmaRoll[]
+    restores?: readonly RestoreRoll[]
+    progress?: RerollProgress
+    checked?: RerollChecked
+  } = {},
 ): BackupFile {
   const rolls = (reroll.rolls ?? []).map((r) => toBackupRoll(r, skillIds(db)))
-  const restores = (reroll.restores ?? []).map(toBackupBase)
+  const restores = (reroll.restores ?? []).map(toBackupRestore)
   const progress = reroll.progress && (reroll.progress.skill > 0 || reroll.progress.restore > 0) ? reroll.progress : null
+  const checked = reroll.checked && hasChecked(reroll.checked) ? readChecked(reroll.checked) : null
   return {
     app: 'mhwilds-sim',
     kind: 'backup',
@@ -59,6 +70,7 @@ export function createBackup(
     ...(rolls.length > 0 ? { gogmaRolls: rolls } : {}),
     ...(restores.length > 0 ? { gogmaRestores: restores } : {}),
     ...(progress ? { gogmaProgress: { ...progress } } : {}),
+    ...(checked ? { gogmaChecked: checked } : {}),
   }
 }
 
@@ -83,6 +95,7 @@ export function importBackup(
     gogmaRolls?: readonly GogmaRoll[]
     gogmaRestores?: readonly RestoreRoll[]
     gogmaProgress?: RerollProgress | null
+    gogmaChecked?: RerollChecked | null
   },
   createId: () => string,
 ): BackupImportResult {
@@ -160,7 +173,7 @@ export function importBackup(
   let addedGogmaRestores = 0
   let skippedGogmaRestores = 0
   for (const entry of file.gogmaRestores) {
-    const roll = fromBackupBase(entry)
+    const roll = fromBackupRestore(entry)
     if (!roll) unreadable++
     else if (gogmaRestores.some((r) => r.id === roll.id)) skippedGogmaRestores++
     else {
@@ -180,6 +193,10 @@ export function importBackup(
     restore: mine.restore === 0 ? theirs.restore : mine.restore,
   }
   const gogmaProgress = progress && (progress.skill !== mine.skill || progress.restore !== mine.restore) ? progress : null
+  // 돌려 본 번째는 무기마다 더 뒤까지 본 쪽
+  const myChecked = current.gogmaChecked ?? NO_CHECKED
+  const checked = file.gogmaChecked && mergeChecked(myChecked, file.gogmaChecked)
+  const gogmaChecked = checked && JSON.stringify(checked) !== JSON.stringify(mergeChecked(NO_CHECKED, myChecked)) ? checked : null
 
   const { exportedAt } = file
   return {
@@ -195,6 +212,7 @@ export function importBackup(
     addedGogmaRestores,
     skippedGogmaRestores,
     gogmaProgress,
+    gogmaChecked,
     missing,
     exportedAt,
   }
@@ -234,6 +252,7 @@ function parseBackup(input: unknown): {
   gogmaRolls: unknown[]
   gogmaRestores: unknown[]
   gogmaProgress: RerollProgress | null
+  gogmaChecked: RerollChecked | null
   exportedAt: string | null
 } {
   if (!isRecord(input) || input.app !== 'mhwilds-sim' || input.kind !== 'backup') {
@@ -248,6 +267,7 @@ function parseBackup(input: unknown): {
     gogmaRolls: Array.isArray(input.gogmaRolls) ? input.gogmaRolls : [],
     gogmaRestores: Array.isArray(input.gogmaRestores) ? input.gogmaRestores : [],
     gogmaProgress: readProgress(input.gogmaProgress),
+    gogmaChecked: readChecked(input.gogmaChecked),
     exportedAt: typeof input.exportedAt === 'string' ? input.exportedAt : null,
   }
 }

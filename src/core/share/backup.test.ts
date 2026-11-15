@@ -232,6 +232,25 @@ describe('백업', () => {
     expect(createBackup(db, [], [unused])).not.toHaveProperty('gogmaRolls')
   })
 
+  it('돌려 본 번째는 무기마다 더 뒤까지 본 쪽으로 합친다', () => {
+    const checked = { skill: { 'long-sword:fire': 15, 'bow:water': 8 }, restore: {} }
+    const file = createBackup(db, [], [], { checked })
+    const fresh = importBackup(db, roundTripJson(file), { savedBuilds: [], customTalismans: [] }, counter('id'))
+    expect(fresh.gogmaChecked).toEqual(checked)
+    const mine = { skill: { 'long-sword:fire': 20 }, restore: { 'bow:fire': 3 } }
+    const merged = importBackup(
+      db,
+      roundTripJson(file),
+      { savedBuilds: [], customTalismans: [], gogmaChecked: mine },
+      counter('id'),
+    )
+    expect(merged.gogmaChecked).toEqual({ skill: { 'long-sword:fire': 20, 'bow:water': 8 }, restore: { 'bow:fire': 3 } })
+    // 바뀌는 게 없으면 null, 비어 있으면 키도 없다
+    const same = importBackup(db, roundTripJson(file), { savedBuilds: [], customTalismans: [], gogmaChecked: checked }, counter('id'))
+    expect(same.gogmaChecked).toBeNull()
+    expect(createBackup(db, [], [], { checked: { skill: {}, restore: {} } })).not.toHaveProperty('gogmaChecked')
+  })
+
   it('읽을 수 없는 세팅 코드는 건너뛰고 알려 준다', () => {
     const file = createBackup(db, savedBuilds.slice(0, 1), talismans)
     file.builds.push({ ...file.builds[0], name: '망가진 세팅', code: '!!!' })

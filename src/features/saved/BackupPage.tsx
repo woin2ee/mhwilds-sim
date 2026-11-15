@@ -5,7 +5,7 @@ import { copyText } from '../../lib/clipboard'
 import { isStoragePersisted } from '../../lib/storage'
 import { useAppState } from '../../state/context'
 import { useToast } from '../../state/toast'
-import { useGogmaRestores, useGogmaRolls, useRerollProgress } from '../reroll/useReroll'
+import { useGogmaRestores, useGogmaRolls, useRerollChecked, useRerollProgress } from '../reroll/useReroll'
 import { SyncPanel } from '../sync/SyncPanel'
 import { backupFileName, downloadJson } from './backupFile'
 import { ImportForm } from './ImportDialog'
@@ -76,6 +76,7 @@ function BackupExport({ active }: { active: boolean }) {
   const [gogmaRolls] = useGogmaRolls()
   const [gogmaRestores] = useGogmaRestores()
   const [gogmaProgress] = useRerollProgress()
+  const [gogmaChecked] = useRerollChecked()
   const rerollCount = gogmaRolls.length + gogmaRestores.length
   const toast = useToast()
   const empty = savedBuilds.length === 0 && customTalismans.length === 0 && rerollCount === 0
@@ -85,8 +86,9 @@ function BackupExport({ active }: { active: boolean }) {
             rolls: gogmaRolls,
             restores: gogmaRestores,
             progress: gogmaProgress,
+            checked: gogmaChecked,
           }) : null),
-    [active, empty, db, savedBuilds, customTalismans, gogmaRolls, gogmaRestores, gogmaProgress],
+    [active, empty, db, savedBuilds, customTalismans, gogmaRolls, gogmaRestores, gogmaProgress, gogmaChecked],
   )
   const code = useBackupCode(backup)
   /** true 복사함, false 복사 실패 */

@@ -1,6 +1,14 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Button } from '../../components/ui'
-import { GOGMA_ELEMENT_LABEL, rollId, weaponKey, weaponLabel, type GogmaWeapon, type RerollEntry } from '../../core/gogmaRolls'
+import {
+  GOGMA_ELEMENT_LABEL,
+  rollId,
+  weaponKey,
+  weaponLabel,
+  type CheckedSteps,
+  type GogmaWeapon,
+  type RerollEntry,
+} from '../../core/gogmaRolls'
 import { WEAPON_KIND_LABEL } from '../../data/labels'
 import { cx } from '../../lib/cx'
 
@@ -11,6 +19,7 @@ const ROW_STEP = 10
 /**
  * 엑셀 시트 같은 리롤 표: 줄은 번째(아래로 계속 늘어남), 열은 무기·속성. 칸을 누르면 그 무기의 그 번째를 적는다.
  * 진행한 번째까지는 흐리게, 지금 할 번째는 강조하고, 루트로 쓰는 칸은 진하게 테를 두른다.
+ * 무기마다 돌려 본 번째까지의 빈칸은 안 뜬 칸(✕)으로 보인다.
  * 표는 정해진 높이 안에서 위아래·옆으로 넘기고, 머리 줄(무기)과 첫 열(번째)은 붙어 있다
  */
 export function RerollSheet<T extends RerollEntry>({
@@ -18,6 +27,7 @@ export function RerollSheet<T extends RerollEntry>({
   entries,
   routeIds,
   progress,
+  checked,
   renderCell,
   cellLabel,
   onCellClick,
@@ -28,6 +38,8 @@ export function RerollSheet<T extends RerollEntry>({
   entries: readonly T[]
   routeIds: ReadonlySet<string>
   progress: number
+  /** 무기마다 돌려 본 번째 (weaponKey → 번째) */
+  checked: CheckedSteps
   /** 적은 칸의 내용 */
   renderCell: (entry: T) => ReactNode
   /** 스크린리더용 칸 설명 */
@@ -41,7 +53,7 @@ export function RerollSheet<T extends RerollEntry>({
   const byId = useMemo(() => new Map(entries.map((r) => [r.id, r])), [entries])
   const beforeGogma = useMemo(() => new Set(entries.filter((r) => r.beforeGogma).map(weaponKey)), [entries])
 
-  const furthest = Math.max(progress, ...entries.map((r) => r.step))
+  const furthest = Math.max(progress, ...entries.map((r) => r.step), ...Object.values(checked))
   const rowCount = Math.max(MIN_ROWS, Math.ceil((furthest + 5) / ROW_STEP) * ROW_STEP) + extra * ROW_STEP
   const next = progress + 1
 
@@ -81,12 +93,15 @@ export function RerollSheet<T extends RerollEntry>({
                   <button
                     type="button"
                     onClick={() => onHeaderClick(weapon)}
-                    title={`${weaponLabel(weapon)} — 격화 전 표시·열 지우기`}
+                    title={`${weaponLabel(weapon)} — 돌려 본 번째·열 지우기`}
                     className="flex h-full w-full min-w-28 flex-col items-center px-1.5 py-1.5 leading-tight hover:bg-surface-2"
                   >
                     <span className="font-semibold">{GOGMA_ELEMENT_LABEL[weapon.element]}</span>
                     <span className="font-normal text-muted">{WEAPON_KIND_LABEL[weapon.weaponKind]}</span>
                     {beforeGogma.has(weaponKey(weapon)) && <span className="font-normal text-good">격화 전</span>}
+                    {checked[weaponKey(weapon)] && (
+                      <span className="font-normal text-muted">~{checked[weaponKey(weapon)]}번째 봄</span>
+                    )}
                   </button>
                 </th>
               ))}
@@ -121,6 +136,7 @@ export function RerollSheet<T extends RerollEntry>({
                   {columns.map((weapon) => {
                     const entry = byId.get(rollId(weapon, step))
                     const inRoute = entry !== undefined && routeIds.has(entry.id)
+                    const miss = !entry && step <= (checked[weaponKey(weapon)] ?? 0)
                     return (
                       <td
                         key={weaponKey(weapon)}
@@ -129,18 +145,20 @@ export function RerollSheet<T extends RerollEntry>({
                         <button
                           type="button"
                           onClick={() => onCellClick(weapon, step, entry)}
-                          aria-label={cellLabel(weapon, step, entry)}
+                          aria-label={miss ? `${weaponLabel(weapon)} ${step}번째 (안 뜸)` : cellLabel(weapon, step, entry)}
                           className={cx(
-                            'flex h-10 w-full min-w-28 flex-col items-stretch justify-center px-1.5 text-left leading-tight',
+                            'flex h-10 w-full min-w-28 flex-col justify-center px-1.5 text-left leading-tight',
+                            miss ? 'items-center' : 'items-stretch',
                             'transition-colors pointer-coarse:h-12',
-                            !entry && 'hover:bg-surface-2',
+                            !entry && !miss && 'hover:bg-surface-2',
+                            miss && 'bg-surface-2 text-muted hover:bg-line/60',
                             entry && !inRoute && 'bg-good/10 hover:bg-good/20',
                             inRoute && 'bg-good/30 font-medium ring-2 ring-good ring-inset hover:bg-good/40',
                             entry?.excluded && 'text-muted line-through',
                             past && 'opacity-50',
                           )}
                         >
-                          {entry && renderCell(entry)}
+                          {miss ? <span aria-hidden>✕</span> : entry && renderCell(entry)}
                         </button>
                       </td>
                     )
@@ -153,7 +171,7 @@ export function RerollSheet<T extends RerollEntry>({
         </table>
       </div>
       <div className="flex items-center justify-between gap-2">
-        <span className="text-xs text-muted">진하게 테를 두른 칸이 루트예요.</span>
+        <span className="text-xs text-muted">진하게 테를 두른 칸이 루트, ✕ 는 돌려 봤는데 안 뜬 칸이에요.</span>
         <Button
           size="sm"
           onClick={() => {

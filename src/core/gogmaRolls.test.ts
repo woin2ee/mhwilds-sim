@@ -7,10 +7,16 @@ import {
   fromBackupBase,
   fromBackupRoll,
   isGogmaRoll,
+  isRerollChecked,
   isRestoreRoll,
+  mergeChecked,
+  fromBackupRestore,
+  restoreAction,
+  toBackupRestore,
   putRestore,
   putRoll,
   setBeforeGogma,
+  setChecked,
   setExcluded,
   stepBack,
   stepForward,
@@ -157,5 +163,37 @@ describe('복원 강화 기록', () => {
     expect(list.every(isRestoreRoll)).toBe(true)
     const backup = JSON.parse(JSON.stringify(toBackupBase(list[0])))
     expect(fromBackupBase(backup)).toEqual(list[0])
+  })
+
+  it('초기화·수치 재부여: 같은 칸을 다시 적으면 종류만 바뀌고, 백업에도 담긴다', () => {
+    const bow = { weaponKind: 'bow' as const, element: 'fire' as const }
+    let list = putRestore([], bow, 6, true)
+    expect(list[0]).toMatchObject({ id: 'bow:fire:6', valuesOnly: true })
+    expect(restoreAction(list[0])).toBe('수치 재부여')
+    list = putRestore(list, bow, 6)
+    expect(list).toHaveLength(1)
+    expect(list[0]).not.toHaveProperty('valuesOnly')
+    expect(restoreAction(list[0])).toBe('초기화')
+    const values = putRestore([], bow, 3, true)[0]
+    expect(isRestoreRoll(values)).toBe(true)
+    expect(isRestoreRoll({ ...values, valuesOnly: 'yes' })).toBe(false)
+    expect(fromBackupRestore(JSON.parse(JSON.stringify(toBackupRestore(values))))).toEqual(values)
+  })
+
+  it('돌려 본 번째: 무기마다 하나, 0 이면 지우고 합칠 때는 더 뒤까지 본 쪽', () => {
+    const fire = { weaponKind: 'long-sword' as const, element: 'fire' as const }
+    const water = { weaponKind: 'long-sword' as const, element: 'water' as const }
+    let map = setChecked({}, fire, 15)
+    map = setChecked(map, water, 8)
+    expect(map).toEqual({ 'long-sword:fire': 15, 'long-sword:water': 8 })
+    expect(setChecked(map, fire, 0)).toEqual({ 'long-sword:water': 8 })
+    expect(mergeChecked({ skill: map, restore: {} }, { skill: { 'long-sword:fire': 10, 'bow:ice': 3 }, restore: {} })).toEqual({
+      skill: { 'long-sword:fire': 15, 'long-sword:water': 8, 'bow:ice': 3 },
+      restore: {},
+    })
+    expect(isRerollChecked({ skill: map, restore: {} })).toBe(true)
+    expect(isRerollChecked({ skill: { 'long-sword:fire': 0 }, restore: {} })).toBe(false)
+    expect(isRerollChecked({ skill: { 'nope:fire': 3 }, restore: {} })).toBe(false)
+    expect(isRerollChecked({ skill: {} })).toBe(false)
   })
 })

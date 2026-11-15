@@ -6,8 +6,10 @@ import {
   finishedEntries,
   isGogmaElement,
   putRestore,
+  restoreAction,
   putRoll,
   setBeforeGogma,
+  setChecked,
   setExcluded,
   stepBack,
   stepForward,
@@ -17,6 +19,7 @@ import {
   type GogmaWeapon,
   type RerollEntry,
   type RerollProgress,
+  type RestoreRoll,
 } from '../../core/gogmaRolls'
 import { isWeaponKind } from '../../core/savedBuilds'
 import { skillName } from '../../data/format'
@@ -25,10 +28,10 @@ import { useDb } from '../../state/context'
 import { useToast } from '../../state/toast'
 import { isObject } from '../../state/storedValues'
 import { BackupTabLink } from '../saved/BackupPage'
-import { AddWeaponDialog, ColumnDialog, SkillCellDialog, type CellTarget } from './RerollDialogs'
+import { AddWeaponDialog, ColumnDialog, RestoreCellDialog, SkillCellDialog, type CellTarget } from './RerollDialogs'
 import { RerollSheet } from './RerollSheet'
 import { RouteView } from './RouteView'
-import { useGogmaRestores, useGogmaRolls, useRerollProgress } from './useReroll'
+import { useGogmaRestores, useGogmaRolls, useRerollChecked, useRerollProgress } from './useReroll'
 
 /** 하위 탭과 기록 없이 더해 둔 무기 열 (기기마다 따로, 동기화하지 않는다 — 기록이 있는 무기는 늘 열로 보인다) */
 const MODE_KEY = 'reroll-mode:v1'
@@ -75,13 +78,16 @@ function SkillReroll() {
   const db = useDb()
   const toast = useToast()
   const [rolls, setRolls] = useGogmaRolls()
+  const [checked, setAllChecked] = useRerollChecked()
   const [target, setTarget] = useState<(CellTarget & { entry?: GogmaRoll }) | null>(null)
   const name = (id: number | null) => (id === null ? '—' : skillName(db, id))
   const close = () => setTarget(null)
   return (
     <RerollLayout
       mode="skill"
-      verb="재부여"
+      label="스킬 재부여"
+      actionOf={(r) => (r.beforeGogma ? '격화' : '재부여')}
+      tagOf={(r) => (r.beforeGogma ? '격화' : undefined)}
       entries={rolls}
       setEntries={setRolls}
       renderCell={(r: GogmaRoll) => (
@@ -95,12 +101,18 @@ function SkillReroll() {
       }
       onCellClick={(weapon, step, entry) => setTarget({ weapon, step, entry })}
       beforeGogma
-      hint="칸을 누르면 그 무기의 그 번째에 뜬 시리즈·그룹 스킬을 적어요. 번째는 저장한 곳부터 세요 (다른 무기의 재부여·처음 격화도 한 번씩)."
+      hint="칸을 누르면 그 무기의 그 번째에 뜬 시리즈·그룹 스킬을 적거나, 그 번째까지 돌려 봤다고 표시해요(그 안의 빈칸은 안 뜬 칸 ✕). 번째는 저장한 곳부터 세요 (다른 무기의 재부여·처음 격화도 한 번씩)."
       tips="넘기기는 루트에 없는 무기나 아직 차례가 오지 않은 무기의 재부여로 하세요. 이미 스킬을 띄운 무기를 다시 돌리면 스킬이 바뀌어요. 다른 무기를 처음 격화해도 한 번 넘어가니, 격화할 무기가 있으면 넘기기 칸에 격화해도 돼요."
     >
       <SkillCellDialog
         target={target}
         rolls={rolls}
+        checked={target ? (checked.skill[weaponKey(target.weapon)] ?? 0) : 0}
+        onChecked={(t) => {
+          setAllChecked((c) => ({ ...c, skill: setChecked(c.skill, t.weapon, t.step) }))
+          toast(`${weaponLabel(t.weapon)} ${t.step}번째까지 돌려 본 것으로 표시했어요`)
+          close()
+        }}
         onSave={(t, setSkillId, groupSkillId) => {
           setRolls(putRoll(rolls, { ...t.weapon, step: t.step, setSkillId, groupSkillId }))
           toast(`${weaponLabel(t.weapon)} ${t.step}번째를 ${target?.entry ? '바꿨어요' : '적었어요'}`)
@@ -124,31 +136,58 @@ function SkillReroll() {
 function RestoreReroll() {
   const toast = useToast()
   const [rolls, setRolls] = useGogmaRestores()
+  const [checked, setAllChecked] = useRerollChecked()
+  const [target, setTarget] = useState<(CellTarget & { entry?: RestoreRoll }) | null>(null)
+  const close = () => setTarget(null)
   return (
     <RerollLayout
       mode="restore"
-      verb="옵션 초기화"
+      label="복원 강화"
+      actionOf={restoreAction}
+      tagOf={restoreAction}
       entries={rolls}
       setEntries={setRolls}
-      renderCell={(r) => <span className="text-center text-sm">{r.done ? '✓' : '●'}</span>}
-      cellLabel={(w, step, r) => `${weaponLabel(w)} ${step}번째${r ? ' (잘 뜸)' : ''}`}
-      onCellClick={(weapon, step, entry) => {
-        if (entry?.done) {
-          toast("이미 띄운 칸이에요. '끝난 기록 지우기'로 정리하세요")
-          return
-        }
-        setRolls(entry ? rolls.filter((r) => r.id !== entry.id) : putRestore(rolls, weapon, step))
-      }}
-      hint="칸을 누르면 잘 뜬 표시를 켜고, 다시 누르면 꺼요. 번째는 저장한 곳부터 세요 (다른 무기의 옵션 초기화도 한 번씩)."
-      tips="넘기기는 루트에 없는 무기나 아직 차례가 오지 않은 무기의 옵션 초기화로 하세요. 이미 보너스를 띄운 무기를 다시 돌리면 보너스가 바뀌어요. '수치만 리롤'이 횟수에 들어가는지는 확인되지 않았으니 섞지 않는 편이 안전해요."
-    />
+      renderCell={(r) => (
+        <span className="text-center">
+          {r.done && '✓ '}
+          {restoreAction(r)}
+        </span>
+      )}
+      cellLabel={(w, step, r) => `${weaponLabel(w)} ${step}번째${r ? ` (${restoreAction(r)}로 잘 뜸)` : ' (비어 있음)'}`}
+      onCellClick={(weapon, step, entry) => setTarget({ weapon, step, entry })}
+      hint="칸을 누르면 그 무기의 그 번째에 초기화와 재부여(수치만 변경) 중 어느 쪽으로 잘 떴는지 적거나, 그 번째까지 돌려 봤다고 표시해요(그 안의 빈칸은 안 뜬 칸 ✕). 번째는 저장한 곳부터 세요 (다른 무기의 초기화·수치 재부여도 한 번씩)."
+      tips="초기화와 수치 재부여는 횟수 하나로 이어서 세요. 넘기기는 루트에 없는 무기나 아직 차례가 오지 않은 무기의 초기화·수치 재부여로 하세요. 이미 보너스를 띄운 무기를 다시 돌리면 보너스가 바뀌어요."
+    >
+      <RestoreCellDialog
+        target={target}
+        checked={target ? (checked.restore[weaponKey(target.weapon)] ?? 0) : 0}
+        onPick={(t, valuesOnly) => {
+          setRolls(putRestore(rolls, t.weapon, t.step, valuesOnly))
+          toast(`${weaponLabel(t.weapon)} ${t.step}번째: ${restoreAction({ valuesOnly: valuesOnly || undefined })}`)
+          close()
+        }}
+        onDelete={(entry) => {
+          setRolls(rolls.filter((r) => r.id !== entry.id))
+          toast(`${weaponLabel(entry)} ${entry.step}번째를 지웠어요`)
+          close()
+        }}
+        onChecked={(t) => {
+          setAllChecked((c) => ({ ...c, restore: setChecked(c.restore, t.weapon, t.step) }))
+          toast(`${weaponLabel(t.weapon)} ${t.step}번째까지 돌려 본 것으로 표시했어요`)
+          close()
+        }}
+        onClose={close}
+      />
+    </RerollLayout>
   )
 }
 
 /** 하위 탭 공통: 데스크톱은 왼쪽에 표, 오른쪽에 루트(화면에 붙음). 휴대폰은 표 → 루트 순 */
 function RerollLayout<T extends RerollEntry>({
   mode,
-  verb,
+  label,
+  actionOf,
+  tagOf,
   entries,
   setEntries,
   renderCell,
@@ -160,7 +199,10 @@ function RerollLayout<T extends RerollEntry>({
   children,
 }: {
   mode: Mode
-  verb: string
+  /** 확인 문구용 하위 탭 이름 */
+  label: string
+  actionOf: (entry: T) => string
+  tagOf?: (entry: T) => string | undefined
   entries: T[]
   setEntries: (entries: T[]) => void
   renderCell: (entry: T) => ReactNode
@@ -174,10 +216,14 @@ function RerollLayout<T extends RerollEntry>({
   children?: ReactNode
 }) {
   const [allProgress, setAllProgress] = useRerollProgress()
+  const [allChecked, setAllChecked] = useRerollChecked()
   const [allColumns, setAllColumns] = usePersistentState<Columns>(COLUMNS_KEY, { skill: [], restore: [] }, isColumns)
   const [adding, setAdding] = useState(false)
   const [menu, setMenu] = useState<GogmaWeapon | null>(null)
   const progress = allProgress[mode]
+  const checked = allChecked[mode]
+  const setCheck = (weapon: GogmaWeapon, step: number) =>
+    setAllChecked((c) => ({ ...c, [mode]: setChecked(c[mode], weapon, step) }))
   const route = useMemo(() => bestRoute(entries, progress), [entries, progress])
   const routeIds = useMemo(() => new Set(route.stops.map((r) => r.id)), [route])
   const finished = useMemo(() => finishedEntries(entries, progress), [entries, progress])
@@ -202,10 +248,11 @@ function RerollLayout<T extends RerollEntry>({
     setEntries(entries.filter((r) => !ids.has(r.id)))
   }
   const clearAll = () => {
-    if (!window.confirm(`${verb} 기록 ${entries.length}개와 진행을 모두 지울까요? 루트대로 돌리고 저장한 뒤 새로 적을 때 써요.`)) {
+    if (!window.confirm(`${label} 기록 ${entries.length}개와 진행, 돌려 본 번째를 모두 지울까요? 루트대로 돌리고 저장한 뒤 새로 적을 때 써요.`)) {
       return
     }
     move({ list: [], progress: 0 })
+    setAllChecked((c) => ({ ...c, [mode]: {} }))
   }
 
   const menuEntries = menu ? entries.filter((r) => weaponKey(r) === weaponKey(menu)) : []
@@ -214,6 +261,7 @@ function RerollLayout<T extends RerollEntry>({
     if (menuEntries.length > 0 && !window.confirm(`${weaponLabel(menu)} 열과 기록 ${menuEntries.length}개를 지울까요?`)) return
     setEntries(entries.filter((r) => weaponKey(r) !== weaponKey(menu)))
     setColumns(allColumns[mode].filter((w) => weaponKey(w) !== weaponKey(menu)))
+    setCheck(menu, 0)
     setMenu(null)
   }
 
@@ -222,7 +270,7 @@ function RerollLayout<T extends RerollEntry>({
       <Panel
         title={`표 · 기록 ${entries.length}개`}
         actions={
-          (entries.length > 0 || progress > 0) && (
+          (entries.length > 0 || progress > 0 || Object.keys(checked).length > 0) && (
             <>
               {finished.length > 0 && (
                 <Button size="sm" onClick={clearFinished}>
@@ -251,6 +299,7 @@ function RerollLayout<T extends RerollEntry>({
               entries={entries}
               routeIds={routeIds}
               progress={progress}
+              checked={checked}
               renderCell={renderCell}
               cellLabel={cellLabel}
               onCellClick={onCellClick}
@@ -264,7 +313,8 @@ function RerollLayout<T extends RerollEntry>({
         <RouteView
           route={route}
           progress={progress}
-          verb={verb}
+          actionOf={actionOf}
+          tagOf={tagOf}
           onForward={() => move(stepForward(entries, progress))}
           onBack={() => move(stepBack(entries, progress))}
           tips={tips}
@@ -284,6 +334,8 @@ function RerollLayout<T extends RerollEntry>({
       <ColumnDialog
         weapon={menu}
         count={menuEntries.length}
+        checked={menu ? (checked[weaponKey(menu)] ?? 0) : 0}
+        onChecked={(step) => menu && setCheck(menu, step)}
         beforeGogma={menuEntries[0]?.beforeGogma === true}
         onBeforeGogma={beforeGogma && menu ? (on) => setEntries(setBeforeGogma(entries, menu, on)) : undefined}
         onRemove={removeColumn}

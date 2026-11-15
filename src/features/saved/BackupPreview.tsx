@@ -4,7 +4,7 @@ import { importBackup, ShareCodeError, type BackupImportResult } from '../../cor
 import { requestPersistentStorage } from '../../lib/storage'
 import { useAppState } from '../../state/context'
 import { useToast } from '../../state/toast'
-import { useGogmaRestores, useGogmaRolls, useRerollProgress } from '../reroll/useReroll'
+import { useGogmaRestores, useGogmaRolls, useRerollChecked, useRerollProgress } from '../reroll/useReroll'
 import { formatDateTime } from './backupFile'
 
 /** 백업(파일의 JSON 이나 풀어낸 백업 코드)을 합치면 무엇이 추가되는지 보여 주고, 누르면 내 세팅·내 호석에 반영한다 */
@@ -13,15 +13,21 @@ export function BackupPreview({ backup, onDone }: { backup: unknown; onDone: () 
   const [gogmaRolls, setGogmaRolls] = useGogmaRolls()
   const [gogmaRestores, setGogmaRestores] = useGogmaRestores()
   const [gogmaProgress, setGogmaProgress] = useRerollProgress()
+  const [gogmaChecked, setGogmaChecked] = useRerollChecked()
   const toast = useToast()
   // importBackup 은 순수 함수라 미리 계산한 결과를 그대로 반영한다 (목록이 바뀌면 다시 계산)
   const result = useMemo(() => {
     try {
-      return importBackup(db, backup, { savedBuilds, customTalismans, gogmaRolls, gogmaRestores, gogmaProgress }, () => crypto.randomUUID())
+      return importBackup(
+        db,
+        backup,
+        { savedBuilds, customTalismans, gogmaRolls, gogmaRestores, gogmaProgress, gogmaChecked },
+        () => crypto.randomUUID(),
+      )
     } catch (err) {
       return { error: err instanceof ShareCodeError ? err.message : '백업을 읽지 못했어요.' }
     }
-  }, [db, backup, savedBuilds, customTalismans, gogmaRolls, gogmaRestores, gogmaProgress])
+  }, [db, backup, savedBuilds, customTalismans, gogmaRolls, gogmaRestores, gogmaProgress, gogmaChecked])
 
   if ('error' in result) return <p className="text-sm text-bad">{result.error}</p>
 
@@ -32,6 +38,7 @@ export function BackupPreview({ backup, onDone }: { backup: unknown; onDone: () 
     if (result.addedGogmaRolls > 0) setGogmaRolls(result.gogmaRolls)
     if (result.addedGogmaRestores > 0) setGogmaRestores(result.gogmaRestores)
     if (result.gogmaProgress) setGogmaProgress(result.gogmaProgress)
+    if (result.gogmaChecked) setGogmaChecked(result.gogmaChecked)
     if (result.addedBuilds > 0) void requestPersistentStorage()
     onDone()
     toast(`${counts.map(([label, n]) => `${label} ${n}개`).join(', ')}를 가져왔어요`)
