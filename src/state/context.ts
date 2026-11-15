@@ -3,7 +3,15 @@ import type { SavedBuild } from '../core/savedBuilds'
 import type { BuildState, CustomTalisman } from '../core/types'
 import type { GameDb } from '../data/db'
 
-export type TabId = 'manual' | 'search' | 'dictionary' | 'saved' | 'talismans' | 'calculator' | 'backup'
+export type TabId =
+  | 'manual'
+  | 'search'
+  | 'dictionary'
+  | 'saved'
+  | 'talismans'
+  | 'reroll'
+  | 'calculator'
+  | 'backup'
 
 export interface AppStateValue {
   db: GameDb

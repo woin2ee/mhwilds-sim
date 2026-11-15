@@ -1,6 +1,14 @@
 // 기기끼리 맞추는 저장값과 병합 규칙 (DESIGN.md §8.5). 순수 함수라 화면 없이 테스트한다.
 import { detachTalisman, linkTalisman, sameTalisman } from '../../core/buildUpdates'
 import { isFavorite, withFavorite, type SavedBuild } from '../../core/savedBuilds'
+import {
+  isGogmaRoll,
+  isRerollProgress,
+  isRestoreRoll,
+  type GogmaRoll,
+  type RerollProgress,
+  type RestoreRoll,
+} from '../../core/gogmaRolls'
 import { canonicalJson, merge3, mergeList, sameJson, type Side } from '../../core/sync/merge'
 import type { BuildState, CustomTalisman, TalismanRef } from '../../core/types'
 import {
@@ -23,6 +31,9 @@ export const SYNC_KEYS = [
   K.searchPresetActive,
   K.manualBuild,
   K.manualSource,
+  K.gogmaRolls,
+  K.gogmaRestores,
+  K.gogmaProgress,
 ] as const
 
 export type SyncKey = (typeof SYNC_KEYS)[number]
@@ -79,6 +90,10 @@ export interface SyncSummary {
   builds: ListChange
   talismans: ListChange
   presets: ListChange
+  gogmaRolls: ListChange
+  gogmaRestores: ListChange
+  /** 리롤 진행 횟수가 바뀜 */
+  gogmaProgress: boolean
   /** 지금 검색 조건(불러온 저장한 조건 포함)이 바뀜 */
   conditions: boolean
   /** 수동 세팅이 바뀜 */
@@ -121,6 +136,9 @@ interface Data {
   activePreset?: string | null
   manual?: BuildState
   manualSource?: string | null
+  gogmaRolls?: GogmaRoll[]
+  gogmaRestores?: RestoreRoll[]
+  gogmaProgress?: RerollProgress
 }
 
 const FIELD_KEYS: Record<keyof Data, SyncKey> = {
@@ -131,6 +149,9 @@ const FIELD_KEYS: Record<keyof Data, SyncKey> = {
   activePreset: K.searchPresetActive,
   manual: K.manualBuild,
   manualSource: K.manualSource,
+  gogmaRolls: K.gogmaRolls,
+  gogmaRestores: K.gogmaRestores,
+  gogmaProgress: K.gogmaProgress,
 }
 const FIELDS = Object.keys(FIELD_KEYS) as (keyof Data)[]
 
@@ -138,6 +159,8 @@ const FIELDS = Object.keys(FIELD_KEYS) as (keyof Data)[]
 const GROUPS: (keyof Data)[][] = [
   ['conditions', 'activePreset'],
   ['manual', 'manualSource'],
+  // 진행 횟수는 값 하나 (둘 다 바꿨으면 나중에 바꾼 쪽)
+  ['gogmaProgress'],
 ]
 
 function toData(values: Partial<Record<string, unknown>>): Data {
@@ -153,6 +176,9 @@ function toData(values: Partial<Record<string, unknown>>): Data {
     activePreset: one(values[K.searchPresetActive], isNullableString),
     manual: one(values[K.manualBuild], isBuildState),
     manualSource: one(values[K.manualSource], isNullableString),
+    gogmaRolls: list(values[K.gogmaRolls], isGogmaRoll),
+    gogmaRestores: list(values[K.gogmaRestores], isRestoreRoll),
+    gogmaProgress: one(values[K.gogmaProgress], isRerollProgress),
   }
 }
 
@@ -203,7 +229,7 @@ export function mergeSync(input: MergeInput): MergeOutput {
     (l: { updatedAt: string }, r: { updatedAt: string }): Side =>
       l.updatedAt > r.updatedAt ? 'local' : l.updatedAt < r.updatedAt ? 'remote' : newer(field)()
 
-  const list = <T extends { id: string }>(field: 'talismans' | 'builds' | 'presets', pick: (l: T, r: T) => Side) => {
+  const list = <T extends { id: string }>(field: 'talismans' | 'builds' | 'presets' | 'gogmaRolls' | 'gogmaRestores', pick: (l: T, r: T) => Side) => {
     const b = base?.[field] as T[] | undefined
     const l = local[field] as T[] | undefined
     const r = remote?.[field] as T[] | undefined
@@ -215,8 +241,11 @@ export function mergeSync(input: MergeInput): MergeOutput {
   let builds = list<SavedBuild>('builds', byUpdatedAt('builds'))
   if (builds) builds = mergeFavorites(builds, base?.builds, local.builds, remote?.builds)
   const presets = list<SearchPreset>('presets', byUpdatedAt('presets'))
+  // 리롤 기록은 무기·속성·번째로 id 가 정해져 있어 두 기기에서 따로 적은 같은 칸도 하나로 합친다
+  const gogmaRolls = list<GogmaRoll>('gogmaRolls', newer('gogmaRolls'))
+  const gogmaRestores = list<RestoreRoll>('gogmaRestores', newer('gogmaRestores'))
 
-  const merged: Data = { talismans, builds, presets }
+  const merged: Data = { talismans, builds, presets, gogmaRolls, gogmaRestores }
   for (const group of GROUPS) {
     const values = mergeGroup(
       base && group.map((f) => base[f]),
@@ -263,6 +292,9 @@ export function mergeSync(input: MergeInput): MergeOutput {
     builds: listChange(before.builds, merged.builds),
     talismans: listChange(before.talismans, merged.talismans),
     presets: listChange(before.presets, merged.presets),
+    gogmaRolls: listChange(before.gogmaRolls, merged.gogmaRolls),
+    gogmaRestores: listChange(before.gogmaRestores, merged.gogmaRestores),
+    gogmaProgress: !sameJson(before.gogmaProgress, merged.gogmaProgress),
     conditions: !sameJson([before.conditions, before.activePreset], [merged.conditions, merged.activePreset]),
     manual: !sameJson([before.manual, before.manualSource], [merged.manual, merged.manualSource]),
   }
@@ -389,6 +421,9 @@ function dedupe(local: Data, remote: Data): Data {
     activePreset: moved(local.activePreset, samePresets.pairs),
     manual: local.manual && relink(local.manual),
     manualSource: moved(local.manualSource, sameBuilds.pairs),
+    gogmaRolls: local.gogmaRolls,
+    gogmaRestores: local.gogmaRestores,
+    gogmaProgress: local.gogmaProgress,
   }
 }
 
@@ -432,6 +467,12 @@ export function summaryText(summary: SyncSummary): string {
   list('내 세팅', summary.builds)
   list('내 호석', summary.talismans)
   list('저장한 조건', summary.presets)
+  list('리롤 기록', {
+    added: summary.gogmaRolls.added + summary.gogmaRestores.added,
+    removed: summary.gogmaRolls.removed + summary.gogmaRestores.removed,
+    changed: summary.gogmaRolls.changed + summary.gogmaRestores.changed,
+  })
+  if (summary.gogmaProgress) parts.push('리롤 진행 바뀜')
   if (summary.conditions) parts.push('검색 조건 바뀜')
   if (summary.manual) parts.push('수동 세팅 바뀜')
   return parts.join(' · ')

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { fillDecorations, seededRandom } from '../../test/builds'
 import { armorByName, loadTestDb, skillIdByName } from '../../test/testDb'
 import { computeBuild } from '../calc'
+import { putRestore, putRoll } from '../gogmaRolls'
 import type { SavedBuild } from '../savedBuilds'
 import { emptyBuild, type BuildState, type CustomTalisman } from '../types'
 import { toBase64Url } from './binary'
@@ -200,6 +201,35 @@ describe('백업', () => {
     unknown.talismans[0].skillGameIds = [123_456_789]
     const dropped = importBackup(db, roundTripJson(unknown), { savedBuilds: [], customTalismans: [] }, counter('id'))
     expect(dropped.missing).toEqual(["호석 '안 쓰는 호석': 스킬 1개"])
+  })
+
+  it('리롤 기록을 담아 가져오고, 같은 무기·속성·번째의 기록이 있으면 덮어쓰지 않는다', () => {
+    const set = db.data.skills.find((s) => s.kind === 'set')!.id
+    const group = db.data.skills.find((s) => s.kind === 'group')!.id
+    const rolls = putRoll(
+      putRoll([], { weaponKind: 'long-sword', element: 'fire', step: 10, setSkillId: set, groupSkillId: group }),
+      { weaponKind: 'hunting-horn', element: 'dragon', step: 7, setSkillId: null, groupSkillId: group },
+    )
+    const restores = putRestore([], { weaponKind: 'bow', element: 'fire' }, 4)
+    const file = createBackup(db, [], [], { rolls, restores, progress: { skill: 3, restore: 0 } })
+    expect(file.gogmaRolls).toHaveLength(2)
+    const result = importBackup(db, roundTripJson(file), { savedBuilds: [], customTalismans: [] }, counter('id'))
+    expect(result.gogmaRolls).toEqual(rolls)
+    expect(result.addedGogmaRolls).toBe(2)
+    expect(result).toMatchObject({ gogmaRestores: restores, addedGogmaRestores: 1, gogmaProgress: { skill: 3, restore: 0 } })
+
+    const mine = putRoll([], { weaponKind: 'long-sword', element: 'fire', step: 10, setSkillId: null, groupSkillId: null })
+    const again = importBackup(
+      db,
+      roundTripJson(file),
+      { savedBuilds: [], customTalismans: [], gogmaRolls: mine, gogmaProgress: { skill: 1, restore: 0 } },
+      counter('id'),
+    )
+    // 진행 중인 횟수는 덮지 않는다
+    expect(again).toMatchObject({ addedGogmaRolls: 1, skippedGogmaRolls: 1, gogmaProgress: null })
+    expect(again.gogmaRolls.find((r) => r.weaponKind === 'long-sword')).toEqual(mine[0])
+    // 기록이 없으면 키도 없다 (예전 백업과 같은 모양)
+    expect(createBackup(db, [], [unused])).not.toHaveProperty('gogmaRolls')
   })
 
   it('읽을 수 없는 세팅 코드는 건너뛰고 알려 준다', () => {

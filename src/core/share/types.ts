@@ -1,5 +1,6 @@
 // 세팅 저장·공유 계약. 형식 명세는 docs/DESIGN.md §8.
 import type { WeaponKind } from '../../data/types'
+import type { BackupEntryBase, BackupGogmaRoll, GogmaRoll, RerollProgress, RestoreRoll } from '../gogmaRolls'
 import type { SavedBuild } from '../savedBuilds'
 import type { BuildState, CustomTalisman, TalismanDraft } from '../types'
 
@@ -53,6 +54,10 @@ export interface BackupFile {
     updatedAt: string
     code: string
   }[]
+  /** 거극 아티어 리롤에서 잘 뜬 칸(스킬 재부여·복원 강화)과 진행한 횟수 (없으면 키 없음) */
+  gogmaRolls?: BackupGogmaRoll[]
+  gogmaRestores?: BackupEntryBase[]
+  gogmaProgress?: RerollProgress
 }
 
 export interface BackupImportResult {
@@ -64,6 +69,16 @@ export interface BackupImportResult {
   addedTalismans: number
   /** 이름과 내용이 같은 세팅이 이미 있어 건너뛴 수 */
   skippedBuilds: number
+  /** 기존 리롤 기록 + 가져온 기록 */
+  gogmaRolls: GogmaRoll[]
+  addedGogmaRolls: number
+  /** 같은 무기·속성·번째의 기록이 이미 있어 건너뛴 수 (있는 기록은 덮어쓰지 않는다) */
+  skippedGogmaRolls: number
+  gogmaRestores: RestoreRoll[]
+  addedGogmaRestores: number
+  skippedGogmaRestores: number
+  /** 이 기기에서 아직 진행하지 않은(0) 쪽만 백업의 진행으로. 바뀌는 것이 없으면 null */
+  gogmaProgress: RerollProgress | null
   /** 현재 데이터에서 찾지 못한 항목 요약 */
   missing: string[]
   /** 백업을 만든 시각 (ISO, 없으면 null) */

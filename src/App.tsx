@@ -10,6 +10,7 @@ import { DictionaryPage } from './features/dictionary/DictionaryPage'
 import { GameOverlayProvider } from './features/manual/GameOverlayProvider'
 import { ManualBuilder } from './features/manual/ManualBuilder'
 import { BackupPage } from './features/saved/BackupPage'
+import { RerollPage } from './features/reroll/RerollPage'
 import { SavedBuildsPage } from './features/saved/SavedBuildsPage'
 import { SharedLinkHandler } from './features/saved/SharedLinkHandler'
 import { SearchConditionsProvider } from './features/search/SearchConditionsProvider'
@@ -60,6 +61,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'search', label: '세팅 검색' },
   { id: 'saved', label: '내 세팅' },
   { id: 'talismans', label: '내 호석' },
+  { id: 'reroll', label: '리롤 표' },
   { id: 'dictionary', label: '사전' },
   { id: 'calculator', label: '계산기' },
   { id: 'backup', label: '백업' },
@@ -68,13 +70,14 @@ const TABS: { id: TabId; label: string }[] = [
 /**
  * 탭 메뉴. bar 는 휴대폰용(폭을 똑같이 나눈 밑줄 탭), pills 는 데스크톱 헤더용.
  * 아이콘은 pills 는 이름 옆, bar 는 이름 위 (휴대폰 폭에서 옆에 두면 '수동 세팅'이 넘친다).
- * 태블릿 폭(md~lg) 헤더에서는 탭 7개 옆에 제목이 다 보이도록 아이콘을 빼고 좌우 여백을 줄인다.
- * 360px 보다 좁은 휴대폰(아이폰 SE 확대 보기 320px 등)은 탭 하나가 46px 라 글자를 조금 줄여 이웃 탭 이름과 띄운다
+ * 태블릿 폭(md~lg) 헤더에서는 탭 8개 옆에 제목이 다 보이도록 아이콘을 빼고 좌우 여백을 줄인다.
+ * 휴대폰은 탭 8개라 430px 보다 좁으면 탭 하나가 53px 이 안 되어 글자를 조금 줄여 이웃 탭 이름과 띄우고,
+ * 그래도 넘치는 아주 좁은 폭(아이폰 SE 확대 보기 320px 등)은 이름을 두 줄로 나눈다
  */
 function TabNav({ variant, className }: { variant: 'bar' | 'pills'; className?: string }) {
   const { tab, setTab } = useAppState()
   return (
-    <nav className={cx('flex', variant === 'pills' && 'shrink-0 gap-1', className)} aria-label="메뉴">
+    <nav className={cx('flex', variant === 'pills' && 'shrink-0 gap-0.5 lg:gap-1', className)} aria-label="메뉴">
       {TABS.map((t) => (
         <button
           key={t.id}
@@ -83,9 +86,10 @@ function TabNav({ variant, className }: { variant: 'bar' | 'pills'; className?: 
           onClick={() => setTab(t.id)}
           className={cx(
             'flex items-center justify-center font-medium transition-colors',
-            variant === 'pills' && 'gap-1.5 rounded-md px-1.5 py-1.5 text-sm lg:px-3',
+            variant === 'pills' && 'gap-1.5 rounded-md px-1 py-1.5 text-sm lg:px-2 xl:px-3',
             variant === 'pills' && (tab === t.id ? 'bg-accent text-accent-fg' : 'text-muted hover:bg-surface-2 hover:text-fg'),
-            variant === 'bar' && 'relative h-12 min-w-0 flex-1 flex-col gap-0.5 text-xs max-[359px]:text-[11px]',
+            variant === 'bar' &&
+              'relative min-h-12 min-w-0 flex-1 flex-col gap-0.5 px-0.5 py-1 text-xs leading-tight break-keep max-[429px]:text-[11px] max-[429px]:tracking-tight',
             variant === 'bar' &&
               (tab === t.id
                 ? 'font-semibold text-fg after:absolute after:inset-x-3 after:bottom-0 after:h-0.5 after:rounded-full after:bg-accent'
@@ -133,6 +137,9 @@ function Shell() {
         </div>
         <div hidden={tab !== 'talismans'}>
           <TalismanManager />
+        </div>
+        <div hidden={tab !== 'reroll'}>
+          <RerollPage />
         </div>
         <div hidden={tab !== 'dictionary'}>
           <DictionaryPage />

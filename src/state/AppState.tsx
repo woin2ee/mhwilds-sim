@@ -13,6 +13,7 @@ const isTab = (v: unknown): v is TabId =>
   v === 'dictionary' ||
   v === 'saved' ||
   v === 'talismans' ||
+  v === 'reroll' ||
   v === 'calculator' ||
   v === 'backup'
 

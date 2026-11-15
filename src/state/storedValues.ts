@@ -15,6 +15,10 @@ export const STORAGE_KEYS = {
   searchConditions: 'search-conditions:v1',
   searchPresets: 'search-presets:v1',
   searchPresetActive: 'search-preset-active:v1',
+  /** 거극 아티어 리롤에서 잘 뜬 칸 (스킬 재부여·복원 강화)과 진행한 횟수 */
+  gogmaRolls: 'gogma-rolls:v1',
+  gogmaRestores: 'gogma-restores:v1',
+  gogmaProgress: 'gogma-progress:v1',
 } as const
 
 export const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null

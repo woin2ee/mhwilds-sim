@@ -1,0 +1,106 @@
+import type { ReactNode } from 'react'
+import { Button } from '../../components/ui'
+import { weaponLabel, type RerollEntry, type RerollRoute } from '../../core/gogmaRolls'
+import { cx } from '../../lib/cx'
+
+/**
+ * 루트 요약과 진행: 차례를 '물 태도 5 → 용 수렵피리 7' 처럼 한 줄로, 그 아래 몇 번째까지 했는지와 다음 할 일.
+ * 칸의 내용(스킬)은 표에서 보므로 여기선 무기와 번째만 보인다
+ */
+export function RouteView<T extends RerollEntry>({
+  route,
+  progress,
+  verb,
+  onForward,
+  onBack,
+  tips,
+}: {
+  route: RerollRoute<T>
+  progress: number
+  /** 예: '재부여', '옵션 초기화' */
+  verb: string
+  onForward: () => void
+  onBack: () => void
+  tips: ReactNode
+}) {
+  const next = progress + 1
+  const isDone = (stop: T) => stop.done === true || stop.step <= progress
+  const nextStop = route.stops.find((s) => !isDone(s))
+  const remaining = nextStop ? route.total - progress : 0
+  const action = (stop: T) => (stop.beforeGogma ? '격화' : verb)
+
+  return (
+    <div className="space-y-3">
+      {route.stops.length === 0 ? (
+        <p className="text-sm text-muted">표에 잘 뜬 칸을 적으면 재료를 가장 아끼는 순서를 짜 줘요.</p>
+      ) : (
+        <ol className="flex flex-wrap items-center gap-x-1 gap-y-1.5 text-sm" aria-label="루트">
+          {route.stops.map((stop, i) => {
+            const done = isDone(stop)
+            return (
+              <li key={stop.id} className="flex items-center gap-1">
+                {i > 0 && (
+                  <span className="text-muted" aria-hidden>
+                    →
+                  </span>
+                )}
+                <span
+                  className={cx(
+                    'rounded-md px-1.5 py-0.5 whitespace-nowrap',
+                    done ? 'text-muted line-through' : stop === nextStop ? 'bg-accent text-accent-fg' : 'bg-good/15',
+                  )}
+                >
+                  {weaponLabel(stop)} <b className="tabular-nums">{stop.step}</b>
+                  {stop.beforeGogma && <span className={done || stop === nextStop ? '' : 'text-good'}> 격화</span>}
+                </span>
+              </li>
+            )
+          })}
+        </ol>
+      )}
+
+      {/* 진행 */}
+      <div className="space-y-2 rounded-md border border-line bg-surface-2/50 p-3">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-sm">
+            <b className="tabular-nums">{progress}</b>번째까지 했어요
+          </span>
+          <span className="flex gap-1.5">
+            <Button size="sm" variant="ghost" disabled={progress === 0} onClick={onBack}>
+              되돌리기
+            </Button>
+            <Button size="sm" variant="primary" onClick={onForward}>
+              한 번 했어요
+            </Button>
+          </span>
+        </div>
+        {nextStop && (
+          <p className="text-xs text-muted">
+            다음 <b className="text-fg">{next}번째</b>:{' '}
+            {nextStop.step === next ? (
+              <b className="text-fg">
+                {weaponLabel(nextStop)} {action(nextStop)}
+              </b>
+            ) : (
+              <>
+                넘기기 — {nextStop.step}번째 {weaponLabel(nextStop)}까지 {nextStop.step - next}번
+              </>
+            )}
+            <span className="block">루트 끝까지 {remaining}번 남았어요.</span>
+          </p>
+        )}
+      </div>
+
+      {route.left.length > 0 && (
+        <p className="rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-warn">
+          루트에 못 넣은 무기: {route.left.map(weaponLabel).join(', ')} — 다른 무기와 같은 번째에만 잘 떴거나 남은 번째에 기록이
+          없어요.
+        </p>
+      )}
+      <details className="text-xs text-muted">
+        <summary className="cursor-pointer select-none hover:text-fg">넘기기 요령</summary>
+        <p className="mt-1.5 leading-relaxed">{tips}</p>
+      </details>
+    </div>
+  )
+}

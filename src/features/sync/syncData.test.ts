@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { putRoll } from '../../core/gogmaRolls'
 import type { SavedBuild } from '../../core/savedBuilds'
 import { emptyBuild, type CustomTalisman, type Slot, type TalismanChoice, type TalismanRef } from '../../core/types'
 import { STORAGE_KEYS as K } from '../../state/storedValues'
@@ -57,6 +58,9 @@ const noChange: SyncSummary = {
   builds: { added: 0, removed: 0, changed: 0 },
   talismans: { added: 0, removed: 0, changed: 0 },
   presets: { added: 0, removed: 0, changed: 0 },
+  gogmaRolls: { added: 0, removed: 0, changed: 0 },
+  gogmaRestores: { added: 0, removed: 0, changed: 0 },
+  gogmaProgress: false,
   conditions: false,
   manual: false,
 }
@@ -241,6 +245,29 @@ describe('동기화 파일', () => {
     expect(parseSyncFile({ ...file({ a: 1 }), changedAt: { a: T1, b: 3 } })).toEqual({
       file: { ...file({ a: 1 }), changedAt: { a: T1 } },
     })
+  })
+
+  it('리롤 기록은 무기·속성·번째가 같으면 두 기기에서 따로 적었어도 하나로 합친다', () => {
+    const roll = (setSkillId: number) =>
+      putRoll([], { weaponKind: 'long-sword', element: 'fire', step: 5, setSkillId, groupSkillId: null })[0]
+    const other = putRoll([], { weaponKind: 'bow', element: 'water', step: 3, setSkillId: 1, groupSkillId: 2 })[0]
+    const result = merge({
+      local: { [K.gogmaRolls]: [roll(1)] },
+      localChangedAt: { [K.gogmaRolls]: T1 },
+      remote: file({ [K.gogmaRolls]: [roll(2), other] }, { [K.gogmaRolls]: T2 }),
+    })
+    expect(result.values[K.gogmaRolls]).toEqual([roll(2), other])
+    expect(result.summary.gogmaRolls).toEqual({ added: 1, removed: 0, changed: 1 })
+  })
+
+  it('리롤 진행은 값 하나라 나중에 바꾼 쪽을 쓴다', () => {
+    const result = merge({
+      local: { [K.gogmaProgress]: { skill: 3, restore: 0 } },
+      localChangedAt: { [K.gogmaProgress]: T1 },
+      remote: file({ [K.gogmaProgress]: { skill: 5, restore: 2 } }, { [K.gogmaProgress]: T2 }),
+    })
+    expect(result.values[K.gogmaProgress]).toEqual({ skill: 5, restore: 2 })
+    expect(result.summary.gogmaProgress).toBe(true)
   })
 
   it('알림 문구', () => {

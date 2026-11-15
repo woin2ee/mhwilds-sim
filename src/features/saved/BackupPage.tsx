@@ -5,6 +5,7 @@ import { copyText } from '../../lib/clipboard'
 import { isStoragePersisted } from '../../lib/storage'
 import { useAppState } from '../../state/context'
 import { useToast } from '../../state/toast'
+import { useGogmaRestores, useGogmaRolls, useRerollProgress } from '../reroll/useReroll'
 import { SyncPanel } from '../sync/SyncPanel'
 import { backupFileName, downloadJson } from './backupFile'
 import { ImportForm } from './ImportDialog'
@@ -33,7 +34,7 @@ export function BackupPage() {
       <SyncPanel active={active} />
       <Panel title="백업">
         <p className="text-sm leading-relaxed text-muted">
-          내 세팅과 내 호석은 이 브라우저에 저장돼요. 위의 드라이브 동기화를 쓰지 않으면 브라우저 데이터를 지우거나
+          내 세팅·내 호석·리롤 기록은 이 브라우저에 저장돼요. 위의 드라이브 동기화를 쓰지 않으면 브라우저 데이터를 지우거나
           기기를 바꿀 때 사라지니, 가끔 백업 코드나 파일로 내보내 두세요. 로그인 없이 다른 기기로 옮기거나 친구에게 넘길
           때도 여기서 내보내고 가져와요.
           {persisted === true && ' (저장소 보존 허용됨)'}
@@ -45,7 +46,7 @@ export function BackupPage() {
         </Panel>
         <Panel title="가져오기">
           <p className="mb-3 text-xs leading-relaxed text-muted">
-            백업 코드를 붙여 넣거나 백업 파일을 고르면 더해질 세팅·호석을 먼저 보여 줘요. 지금 있는 것은 그대로 두고 없는
+            백업 코드를 붙여 넣거나 백업 파일을 고르면 더해질 세팅·호석·리롤 기록을 먼저 보여 줘요. 지금 있는 것은 그대로 두고 없는
             것만 더해요.
           </p>
           <ImportForm key={importKey} mode="backup" onDone={() => setImportKey((key) => key + 1)} />
@@ -72,18 +73,26 @@ export function BackupTabLink() {
 /** 백업 코드와 파일. 모든 탭이 마운트돼 있으므로 백업은 이 탭을 볼 때만 만든다 */
 function BackupExport({ active }: { active: boolean }) {
   const { db, savedBuilds, customTalismans } = useAppState()
+  const [gogmaRolls] = useGogmaRolls()
+  const [gogmaRestores] = useGogmaRestores()
+  const [gogmaProgress] = useRerollProgress()
+  const rerollCount = gogmaRolls.length + gogmaRestores.length
   const toast = useToast()
-  const empty = savedBuilds.length === 0 && customTalismans.length === 0
+  const empty = savedBuilds.length === 0 && customTalismans.length === 0 && rerollCount === 0
   // 탭에 들어올 때마다, 보는 동안 목록이 바뀌면(가져오기 등) 다시 만든다
   const backup = useMemo(
-    () => (active && !empty ? createBackup(db, savedBuilds, customTalismans) : null),
-    [active, empty, db, savedBuilds, customTalismans],
+    () => (active && !empty ? createBackup(db, savedBuilds, customTalismans, {
+            rolls: gogmaRolls,
+            restores: gogmaRestores,
+            progress: gogmaProgress,
+          }) : null),
+    [active, empty, db, savedBuilds, customTalismans, gogmaRolls, gogmaRestores, gogmaProgress],
   )
   const code = useBackupCode(backup)
   /** true 복사함, false 복사 실패 */
   const [copied, setCopied] = useState<boolean | null>(null)
 
-  if (empty) return <p className="text-sm text-muted">아직 백업할 세팅이나 호석이 없어요.</p>
+  if (empty) return <p className="text-sm text-muted">아직 백업할 세팅·호석·리롤 기록이 없어요.</p>
 
   const copy = async (text: string) => {
     const ok = await copyText(text)
@@ -99,7 +108,13 @@ function BackupExport({ active }: { active: boolean }) {
   return (
     <div className="space-y-5">
       <p className="text-sm">
-        내 세팅 <b>{savedBuilds.length}</b>개와 내 호석 <b>{customTalismans.length}</b>개를 담아요.
+        내 세팅 <b>{savedBuilds.length}</b>개, 내 호석 <b>{customTalismans.length}</b>개
+        {rerollCount > 0 && (
+          <>
+            , 리롤 기록 <b>{rerollCount}</b>개
+          </>
+        )}
+        를 담아요.
       </p>
       <section className="space-y-1.5">
         <p className="text-xs leading-relaxed text-muted">

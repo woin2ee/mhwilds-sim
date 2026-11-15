@@ -3,6 +3,19 @@ import type { GameDb } from '../../data/db'
 import type { SkillPoint, SlotLevel, WeaponKind } from '../../data/types'
 import { readTags, tagsField, tagsOf } from '../buildTags'
 import { linkTalisman, sameTalisman } from '../buildUpdates'
+import {
+  compareEntries,
+  fromBackupRoll,
+  fromBackupBase,
+  readProgress,
+  toBackupBase,
+  toBackupRoll,
+  weaponLabel,
+  type GogmaRoll,
+  type RerollProgress,
+  type RestoreRoll,
+  type SkillIdMap,
+} from '../gogmaRolls'
 import { favoriteField, isFavorite, isWeaponKind, weaponKindField, type SavedBuild } from '../savedBuilds'
 import type { BuildState, CustomTalisman, Slot, TalismanDraft } from '../types'
 import { decodeBuild, encodeBuild } from './codec'
@@ -15,7 +28,11 @@ export function createBackup(
   db: GameDb,
   savedBuilds: readonly SavedBuild[],
   customTalismans: readonly CustomTalisman[],
+  reroll: { rolls?: readonly GogmaRoll[]; restores?: readonly RestoreRoll[]; progress?: RerollProgress } = {},
 ): BackupFile {
+  const rolls = (reroll.rolls ?? []).map((r) => toBackupRoll(r, skillIds(db)))
+  const restores = (reroll.restores ?? []).map(toBackupBase)
+  const progress = reroll.progress && (reroll.progress.skill > 0 || reroll.progress.restore > 0) ? reroll.progress : null
   return {
     app: 'mhwilds-sim',
     kind: 'backup',
@@ -39,6 +56,17 @@ export function createBackup(
       updatedAt: s.updatedAt,
       code: encodeBuild(db, s.build, customTalismans, null),
     })),
+    ...(rolls.length > 0 ? { gogmaRolls: rolls } : {}),
+    ...(restores.length > 0 ? { gogmaRestores: restores } : {}),
+    ...(progress ? { gogmaProgress: { ...progress } } : {}),
+  }
+}
+
+/** 리롤 기록의 스킬은 게임 내부 id 로 담는다 */
+function skillIds(db: GameDb): SkillIdMap {
+  return {
+    toGameId: (id) => db.skills.get(id)?.gameId,
+    fromGameId: (gameId) => db.skillByGameId(gameId)?.id,
   }
 }
 
@@ -49,7 +77,13 @@ export function createBackup(
 export function importBackup(
   db: GameDb,
   input: unknown,
-  current: { savedBuilds: readonly SavedBuild[]; customTalismans: readonly CustomTalisman[] },
+  current: {
+    savedBuilds: readonly SavedBuild[]
+    customTalismans: readonly CustomTalisman[]
+    gogmaRolls?: readonly GogmaRoll[]
+    gogmaRestores?: readonly RestoreRoll[]
+    gogmaProgress?: RerollProgress | null
+  },
   createId: () => string,
 ): BackupImportResult {
   const file = parseBackup(input)
@@ -102,8 +136,68 @@ export function importBackup(
     addedBuilds++
   }
 
+  // 3) 리롤 기록: 같은 무기·속성·번째의 기록이 있으면 건너뜀 (지금 있는 것은 그대로)
+  const gogmaRolls = [...(current.gogmaRolls ?? [])]
+  let addedGogmaRolls = 0
+  let skippedGogmaRolls = 0
+  let unreadable = 0
+  for (const entry of file.gogmaRolls) {
+    const restored = fromBackupRoll(entry, skillIds(db))
+    if (!restored) {
+      unreadable++
+      continue
+    }
+    const { roll, dropped } = restored
+    if (gogmaRolls.some((r) => r.id === roll.id)) {
+      skippedGogmaRolls++
+      continue
+    }
+    if (dropped > 0) missing.push(`리롤 기록 '${weaponLabel(roll)} ${roll.step}번째': 스킬 ${dropped}개`)
+    gogmaRolls.push(roll)
+    addedGogmaRolls++
+  }
+  const gogmaRestores = [...(current.gogmaRestores ?? [])]
+  let addedGogmaRestores = 0
+  let skippedGogmaRestores = 0
+  for (const entry of file.gogmaRestores) {
+    const roll = fromBackupBase(entry)
+    if (!roll) unreadable++
+    else if (gogmaRestores.some((r) => r.id === roll.id)) skippedGogmaRestores++
+    else {
+      gogmaRestores.push(roll)
+      addedGogmaRestores++
+    }
+  }
+  if (unreadable > 0) missing.push(`리롤 기록 ${unreadable}개: 읽을 수 없음`)
+  gogmaRolls.sort(compareEntries)
+  gogmaRestores.sort(compareEntries)
+
+  // 진행 횟수는 이 기기에서 아직 진행하지 않은 쪽만 가져온다 (진행 중인 것을 덮지 않게)
+  const mine = current.gogmaProgress ?? { skill: 0, restore: 0 }
+  const theirs = file.gogmaProgress
+  const progress = theirs && {
+    skill: mine.skill === 0 ? theirs.skill : mine.skill,
+    restore: mine.restore === 0 ? theirs.restore : mine.restore,
+  }
+  const gogmaProgress = progress && (progress.skill !== mine.skill || progress.restore !== mine.restore) ? progress : null
+
   const { exportedAt } = file
-  return { savedBuilds, customTalismans, addedBuilds, addedTalismans, skippedBuilds, missing, exportedAt }
+  return {
+    savedBuilds,
+    customTalismans,
+    addedBuilds,
+    addedTalismans,
+    skippedBuilds,
+    gogmaRolls,
+    addedGogmaRolls,
+    skippedGogmaRolls,
+    gogmaRestores,
+    addedGogmaRestores,
+    skippedGogmaRestores,
+    gogmaProgress,
+    missing,
+    exportedAt,
+  }
 }
 
 function buildKey(db: GameDb, name: string, build: BuildState, talismans: readonly CustomTalisman[]): string {
@@ -134,7 +228,14 @@ interface ParsedBuild {
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 const isInt = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v)
 
-function parseBackup(input: unknown): { talismans: ParsedTalisman[]; builds: ParsedBuild[]; exportedAt: string | null } {
+function parseBackup(input: unknown): {
+  talismans: ParsedTalisman[]
+  builds: ParsedBuild[]
+  gogmaRolls: unknown[]
+  gogmaRestores: unknown[]
+  gogmaProgress: RerollProgress | null
+  exportedAt: string | null
+} {
   if (!isRecord(input) || input.app !== 'mhwilds-sim' || input.kind !== 'backup') {
     throw new ShareCodeError(INVALID_BACKUP)
   }
@@ -143,6 +244,10 @@ function parseBackup(input: unknown): { talismans: ParsedTalisman[]; builds: Par
   return {
     talismans: input.talismans.map(parseTalisman),
     builds: input.builds.map(parseBuild),
+    // 리롤 기록은 나중에 더한 값이라 없을 수 있다 (기록마다 fromBackupRoll 이 검사)
+    gogmaRolls: Array.isArray(input.gogmaRolls) ? input.gogmaRolls : [],
+    gogmaRestores: Array.isArray(input.gogmaRestores) ? input.gogmaRestores : [],
+    gogmaProgress: readProgress(input.gogmaProgress),
     exportedAt: typeof input.exportedAt === 'string' ? input.exportedAt : null,
   }
 }

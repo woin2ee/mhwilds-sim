@@ -29,6 +29,13 @@ const SHAPES: Record<Exclude<TabId, 'manual' | 'talismans'>, ReactNode> = {
       <path d="M8.5 12h.01M12 12h.01M15.5 12h.01M8.5 16.5h.01M12 16.5h.01M15.5 16.5h.01" />
     </>
   ),
+  // 주사위 (리롤)
+  reroll: (
+    <>
+      <rect x="3.5" y="3.5" width="17" height="17" rx="3" />
+      <path d="M8.5 8.5h.01M15.5 8.5h.01M12 12h.01M8.5 15.5h.01M15.5 15.5h.01" strokeWidth={2.75} />
+    </>
+  ),
   // 보관 상자
   backup: (
     <>

@@ -4,20 +4,24 @@ import { importBackup, ShareCodeError, type BackupImportResult } from '../../cor
 import { requestPersistentStorage } from '../../lib/storage'
 import { useAppState } from '../../state/context'
 import { useToast } from '../../state/toast'
+import { useGogmaRestores, useGogmaRolls, useRerollProgress } from '../reroll/useReroll'
 import { formatDateTime } from './backupFile'
 
 /** 백업(파일의 JSON 이나 풀어낸 백업 코드)을 합치면 무엇이 추가되는지 보여 주고, 누르면 내 세팅·내 호석에 반영한다 */
 export function BackupPreview({ backup, onDone }: { backup: unknown; onDone: () => void }) {
   const { db, savedBuilds, setSavedBuilds, customTalismans, setCustomTalismans } = useAppState()
+  const [gogmaRolls, setGogmaRolls] = useGogmaRolls()
+  const [gogmaRestores, setGogmaRestores] = useGogmaRestores()
+  const [gogmaProgress, setGogmaProgress] = useRerollProgress()
   const toast = useToast()
   // importBackup 은 순수 함수라 미리 계산한 결과를 그대로 반영한다 (목록이 바뀌면 다시 계산)
   const result = useMemo(() => {
     try {
-      return importBackup(db, backup, { savedBuilds, customTalismans }, () => crypto.randomUUID())
+      return importBackup(db, backup, { savedBuilds, customTalismans, gogmaRolls, gogmaRestores, gogmaProgress }, () => crypto.randomUUID())
     } catch (err) {
       return { error: err instanceof ShareCodeError ? err.message : '백업을 읽지 못했어요.' }
     }
-  }, [db, backup, savedBuilds, customTalismans])
+  }, [db, backup, savedBuilds, customTalismans, gogmaRolls, gogmaRestores, gogmaProgress])
 
   if ('error' in result) return <p className="text-sm text-bad">{result.error}</p>
 
@@ -25,6 +29,9 @@ export function BackupPreview({ backup, onDone }: { backup: unknown; onDone: () 
   const apply = () => {
     setSavedBuilds(result.savedBuilds)
     setCustomTalismans(result.customTalismans)
+    if (result.addedGogmaRolls > 0) setGogmaRolls(result.gogmaRolls)
+    if (result.addedGogmaRestores > 0) setGogmaRestores(result.gogmaRestores)
+    if (result.gogmaProgress) setGogmaProgress(result.gogmaProgress)
     if (result.addedBuilds > 0) void requestPersistentStorage()
     onDone()
     toast(`${counts.map(([label, n]) => `${label} ${n}개`).join(', ')}를 가져왔어요`)
@@ -43,11 +50,15 @@ export function BackupPreview({ backup, onDone }: { backup: unknown; onDone: () 
             ))}
             를 추가해요.
             {result.skippedBuilds > 0 && ` 이미 있는 세팅 ${result.skippedBuilds}개는 건너뛰어요.`}
+            {result.skippedGogmaRolls + result.skippedGogmaRestores > 0 &&
+              ` 이미 있는 리롤 기록 ${result.skippedGogmaRolls + result.skippedGogmaRestores}개는 건너뛰어요.`}
           </>
         ) : (
           <>
-            새로 가져올 세팅·호석이 없어요.
+            새로 가져올 세팅·호석·리롤 기록이 없어요.
             {result.skippedBuilds > 0 && ` 세팅 ${result.skippedBuilds}개는 이미 있어요.`}
+            {result.skippedGogmaRolls + result.skippedGogmaRestores > 0 &&
+              ` 리롤 기록 ${result.skippedGogmaRolls + result.skippedGogmaRestores}개는 이미 있어요.`}
           </>
         )}
       </p>
@@ -69,6 +80,7 @@ function addedCounts(result: BackupImportResult): [label: string, count: number]
   const counts: [string, number][] = [
     ['세팅', result.addedBuilds],
     ['호석', result.addedTalismans],
+    ['리롤 기록', result.addedGogmaRolls + result.addedGogmaRestores],
   ]
   return counts.filter(([, n]) => n > 0)
 }
