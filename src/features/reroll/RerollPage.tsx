@@ -4,7 +4,9 @@ import {
   bestRoute,
   compareWeapons,
   finishedEntries,
-  isGogmaElement,
+  isGogmaWeapon,
+  moveChecked,
+  moveWeapon,
   putRestore,
   restoreAction,
   putRoll,
@@ -15,13 +17,13 @@ import {
   stepForward,
   weaponKey,
   weaponLabel,
+  weaponOf,
   type GogmaRoll,
   type GogmaWeapon,
   type RerollEntry,
   type RerollProgress,
   type RestoreRoll,
 } from '../../core/gogmaRolls'
-import { isWeaponKind } from '../../core/savedBuilds'
 import { skillName } from '../../data/format'
 import { usePersistentState } from '../../lib/storage'
 import { useDb } from '../../state/context'
@@ -40,8 +42,7 @@ const COLUMNS_KEY = 'reroll-columns:v1'
 type Mode = keyof RerollProgress
 type Columns = Record<Mode, GogmaWeapon[]>
 
-const isWeapon = (v: unknown): v is GogmaWeapon => isObject(v) && isWeaponKind(v.weaponKind) && isGogmaElement(v.element)
-const isWeaponList = (v: unknown): v is GogmaWeapon[] => Array.isArray(v) && v.every(isWeapon)
+const isWeaponList = (v: unknown): v is GogmaWeapon[] => Array.isArray(v) && v.every(isGogmaWeapon)
 const isColumns = (v: unknown): v is Columns => isObject(v) && isWeaponList(v.skill) && isWeaponList(v.restore)
 const isMode = (v: unknown): v is Mode => v === 'skill' || v === 'restore'
 
@@ -231,7 +232,7 @@ function RerollLayout<T extends RerollEntry>({
   // 열: 더해 둔 무기 + 기록이 있는 무기 (무기 종류·속성 순)
   const columns = useMemo(() => {
     const map = new Map<string, GogmaWeapon>()
-    for (const w of [...allColumns[mode], ...entries]) map.set(weaponKey(w), { weaponKind: w.weaponKind, element: w.element })
+    for (const w of [...allColumns[mode], ...entries]) map.set(weaponKey(w), weaponOf(w))
     return [...map.values()].sort(compareWeapons)
   }, [allColumns, mode, entries])
   const setColumns = (list: GogmaWeapon[]) => setAllColumns((c) => ({ ...c, [mode]: list }))
@@ -263,6 +264,15 @@ function RerollLayout<T extends RerollEntry>({
     setColumns(allColumns[mode].filter((w) => weaponKey(w) !== weaponKey(menu)))
     setCheck(menu, 0)
     setMenu(null)
+  }
+  // 복원 보너스 표기 바꾸기: 기록·더해 둔 열·돌려 본 번째를 새 무기로 옮긴다
+  const renameColumn = (to: GogmaWeapon) => {
+    if (!menu) return
+    const fromKey = weaponKey(menu)
+    setEntries(moveWeapon(entries, menu, to))
+    setColumns([...allColumns[mode].filter((w) => weaponKey(w) !== fromKey), to])
+    setAllChecked((c) => ({ ...c, [mode]: moveChecked(c[mode], menu, to) }))
+    setMenu(to)
   }
 
   return (
@@ -333,11 +343,13 @@ function RerollLayout<T extends RerollEntry>({
       />
       <ColumnDialog
         weapon={menu}
+        columns={columns}
         count={menuEntries.length}
         checked={menu ? (checked[weaponKey(menu)] ?? 0) : 0}
         onChecked={(step) => menu && setCheck(menu, step)}
         beforeGogma={menuEntries[0]?.beforeGogma === true}
         onBeforeGogma={beforeGogma && menu ? (on) => setEntries(setBeforeGogma(entries, menu, on)) : undefined}
+        onRename={renameColumn}
         onRemove={removeColumn}
         onClose={() => setMenu(null)}
       />

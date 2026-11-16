@@ -7,6 +7,12 @@ import {
   fromBackupBase,
   fromBackupRoll,
   isGogmaRoll,
+  isGogmaWeapon,
+  moveChecked,
+  moveWeapon,
+  normalizeBonus,
+  weaponKey,
+  weaponLabel,
   isRerollChecked,
   isRestoreRoll,
   mergeChecked,
@@ -195,5 +201,61 @@ describe('복원 강화 기록', () => {
     expect(isRerollChecked({ skill: { 'long-sword:fire': 0 }, restore: {} })).toBe(false)
     expect(isRerollChecked({ skill: { 'nope:fire': 3 }, restore: {} })).toBe(false)
     expect(isRerollChecked({ skill: {} })).toBe(false)
+  })
+})
+
+describe('같은 무기 여러 자루 (복원 보너스 표기)', () => {
+  const lanceA = { weaponKind: 'lance' as const, element: 'dragon' as const, bonus: '기기기기예' }
+  const lanceB = { weaponKind: 'lance' as const, element: 'dragon' as const, bonus: '속속속속예' }
+
+  it('표기를 다듬고, 키·이름·id 로 자루를 나눈다', () => {
+    expect(normalizeBonus('  기기 기기예 ')).toBe('기기 기기예')
+    expect(normalizeBonus('기:기')).toBe('기기')
+    expect(normalizeBonus('   ')).toBeUndefined()
+    expect(normalizeBonus('가'.repeat(20))).toHaveLength(12)
+    expect(weaponKey(lanceA)).toBe('lance:dragon:기기기기예')
+    expect(weaponKey({ weaponKind: 'lance', element: 'dragon' })).toBe('lance:dragon')
+    expect(weaponLabel(lanceA)).toBe('용 랜스(기기기기예)')
+    expect(weaponLabel({ weaponKind: 'lance', element: 'dragon' })).toBe('용 랜스')
+  })
+
+  it('같은 종류·속성이라도 자루마다 따로 루트에 넣는다', () => {
+    let list = putRoll([], { ...lanceA, step: 5, setSkillId: 1, groupSkillId: null })
+    list = putRoll(list, { ...lanceB, step: 5, setSkillId: 2, groupSkillId: null })
+    list = putRoll(list, { ...lanceB, step: 8, setSkillId: 2, groupSkillId: null })
+    expect(list).toHaveLength(3)
+    expect(route(list).stops).toEqual(['lance:dragon:기기기기예:5', 'lance:dragon:속속속속예:8'])
+    expect(list.every(isGogmaRoll)).toBe(true)
+    const restores = putRestore([], lanceA, 3, true)
+    expect(restores[0]).toMatchObject({ id: 'lance:dragon:기기기기예:3', bonus: '기기기기예', valuesOnly: true })
+    expect(isRestoreRoll(restores[0])).toBe(true)
+  })
+
+  it('표기를 바꾸면 그 자루의 기록과 돌려 본 번째를 옮긴다', () => {
+    const plain = { weaponKind: 'lance' as const, element: 'dragon' as const }
+    let list = putRoll([], { ...plain, step: 4, setSkillId: 1, groupSkillId: null })
+    list = setExcluded(list, list[0].id, true)
+    list = putRoll(list, { weaponKind: 'long-sword', element: 'fire', step: 2, setSkillId: 1, groupSkillId: null })
+    const moved = moveWeapon(list, plain, lanceA)
+    expect(moved.map((r) => r.id)).toEqual(['long-sword:fire:2', 'lance:dragon:기기기기예:4'])
+    expect(moved[1]).toMatchObject({ bonus: '기기기기예', excluded: true, setSkillId: 1 })
+    expect(moved.every(isGogmaRoll)).toBe(true)
+    // 표기를 지우면 다시 한 자루로
+    expect(moveWeapon(moved, lanceA, plain)[1]).not.toHaveProperty('bonus')
+    expect(moveChecked({ 'lance:dragon': 9 }, plain, lanceA)).toEqual({ 'lance:dragon:기기기기예': 9 })
+    expect(moveChecked({}, plain, lanceA)).toEqual({})
+  })
+
+  it('저장값 검사와 백업', () => {
+    const [roll] = putRoll([], { ...lanceA, step: 5, setSkillId: 1, groupSkillId: null })
+    expect(isGogmaRoll({ ...roll, bonus: ' 기기기기예' })).toBe(false)
+    expect(isGogmaRoll({ ...roll, bonus: '속속속속예' })).toBe(false)
+    expect(isGogmaWeapon(lanceA)).toBe(true)
+    expect(isGogmaWeapon({ ...lanceA, bonus: '' })).toBe(false)
+    expect(isRerollChecked({ skill: { 'lance:dragon:기기기기예': 3 }, restore: {} })).toBe(true)
+    expect(fromBackupBase(toBackupBase(roll))).toEqual({ id: roll.id, ...lanceA, step: 5 })
+    expect(fromBackupBase({ ...toBackupBase(roll), bonus: 3 })).toBeNull()
+    const ids: SkillIdMap = { toGameId: (id) => id + 100, fromGameId: (id) => id - 100 }
+    expect(fromBackupRoll(toBackupRoll(roll, ids), ids)?.roll).toEqual(roll)
   })
 })

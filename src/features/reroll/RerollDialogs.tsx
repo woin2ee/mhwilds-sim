@@ -7,7 +7,9 @@ import {
   frequentSkills,
   GOGMA_ELEMENT_LABEL,
   GOGMA_ELEMENTS,
+  MAX_BONUS_LENGTH,
   MAX_STEP,
+  normalizeBonus,
   weaponKey,
   weaponLabel,
   type GogmaRoll,
@@ -194,7 +196,7 @@ function SkillField({
   )
 }
 
-/** 표에 무기 열 더하기: 무기 종류(선택 상자)·속성(단추, 이미 있는 열은 표시) */
+/** 표에 무기 열 더하기: 무기 종류(선택 상자)·속성(단추, 이미 있는 열은 표시)·복원 보너스(선택, 같은 무기를 여러 자루 돌릴 때) */
 export function AddWeaponDialog({
   open,
   columns,
@@ -206,9 +208,16 @@ export function AddWeaponDialog({
   onAdd: (weapon: GogmaWeapon) => void
   onClose: () => void
 }) {
-  const [weapon, setWeapon] = useState<GogmaWeapon>({ weaponKind: 'long-sword', element: 'fire' })
+  const [base, setWeapon] = useState<GogmaWeapon>({ weaponKind: 'long-sword', element: 'fire' })
+  const [bonusText, setBonusText] = useState('')
+  const bonus = normalizeBonus(bonusText)
+  const weapon: GogmaWeapon = { weaponKind: base.weaponKind, element: base.element, ...(bonus ? { bonus } : {}) }
   const has = (w: GogmaWeapon) => columns.some((c) => weaponKey(c) === weaponKey(w))
   const exists = has(weapon)
+  const add = () => {
+    onAdd(weapon)
+    setBonusText('')
+  }
   return (
     <Dialog
       open={open}
@@ -219,7 +228,7 @@ export function AddWeaponDialog({
           <Button variant="ghost" onClick={onClose}>
             닫기
           </Button>
-          <Button variant="primary" disabled={exists} onClick={() => onAdd(weapon)}>
+          <Button variant="primary" disabled={exists} onClick={add}>
             {exists ? '이미 있는 열' : `${weaponLabel(weapon)} 더하기`}
           </Button>
         </>
@@ -229,7 +238,7 @@ export function AddWeaponDialog({
         <SelectBox
           aria-label="무기 종류"
           value={weapon.weaponKind}
-          onChange={(e) => setWeapon({ ...weapon, weaponKind: e.target.value as WeaponKind })}
+          onChange={(e) => setWeapon({ ...base, weaponKind: e.target.value as WeaponKind })}
           data-autofocus
         >
           {WEAPON_KINDS.map((kind) => (
@@ -248,7 +257,7 @@ export function AddWeaponDialog({
                 type="button"
                 role="radio"
                 aria-checked={on}
-                onClick={() => setWeapon({ ...weapon, element })}
+                onClick={() => setWeapon({ ...base, element })}
                 className={cx(
                   'h-8 rounded-md border px-2.5 text-sm transition-colors pointer-coarse:h-10',
                   on ? 'border-accent bg-accent text-accent-fg' : 'border-line bg-surface-2 text-muted hover:text-fg',
@@ -260,24 +269,62 @@ export function AddWeaponDialog({
             )
           })}
         </div>
-        <p className="text-xs text-muted">줄 그은 속성은 이미 표에 있어요. 무기 종류·속성이 같으면 리롤 결과도 같아서 열 하나로 써요.</p>
+        <BonusInput value={bonusText} onChange={setBonusText} onEnter={() => !exists && add()} />
+        <p className="text-xs text-muted">
+          줄 그은 속성은 이미 표에 있어요. 같은 무기 종류·속성을 두 자루 이상 돌리면 복원 보너스를 적어 열을 나눠요 (몇 번째에 무엇이
+          나오는지는 같고, 자루마다 원하는 결과만 달라요).
+        </p>
       </div>
     </Dialog>
   )
 }
 
-/** 무기 열 머리를 눌렀을 때: 돌려 본 번째·격화 전 표시(스킬 재부여만)·열 지우기 */
+/** 복원 보너스 표기 입력 칸 (선택) */
+function BonusInput({
+  value,
+  onChange,
+  onEnter,
+}: {
+  value: string
+  onChange: (text: string) => void
+  onEnter: () => void
+}) {
+  return (
+    <label className="block space-y-1">
+      <span className="block text-sm">
+        복원 보너스 <span className="text-xs text-muted">(선택)</span>
+      </span>
+      <input
+        type="text"
+        value={value}
+        maxLength={MAX_BONUS_LENGTH + 4}
+        placeholder="예: 기기기기예, 속속속속예"
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !e.nativeEvent.isComposing) onEnter()
+        }}
+        className="h-8 w-full rounded-md border border-line bg-surface px-2 text-sm pointer-coarse:h-10"
+      />
+    </label>
+  )
+}
+
+/** 무기 열 머리를 눌렀을 때: 복원 보너스 표기·돌려 본 번째·격화 전 표시(스킬 재부여만)·열 지우기 */
 export function ColumnDialog({
   weapon,
+  columns,
   count,
   checked,
   onChecked,
   beforeGogma,
   onBeforeGogma,
+  onRename,
   onRemove,
   onClose,
 }: {
   weapon: GogmaWeapon | null
+  /** 표의 모든 열 (복원 보너스를 바꿀 때 겹치는지 보려고) */
+  columns: readonly GogmaWeapon[]
   /** 이 열의 기록 수 */
   count: number
   /** 돌려 본 번째 (0 이면 없음) */
@@ -286,6 +333,8 @@ export function ColumnDialog({
   beforeGogma: boolean
   /** 없으면 격화 전 표시를 보이지 않는다 (복원 강화) */
   onBeforeGogma?: (before: boolean) => void
+  /** 복원 보너스 표기를 바꾼 무기로 */
+  onRename: (to: GogmaWeapon) => void
   onRemove: () => void
   onClose: () => void
 }) {
@@ -306,7 +355,8 @@ export function ColumnDialog({
     >
       <div className="space-y-3 text-sm">
         <p className="text-muted">기록 {count}개</p>
-        {weapon && <CheckedField key={weaponKey(weapon)} value={checked} onChange={onChecked} />}
+        {weapon && <BonusField key={`bonus:${weaponKey(weapon)}`} weapon={weapon} columns={columns} onRename={onRename} />}
+        {weapon && <CheckedField key={`checked:${weaponKey(weapon)}`} value={checked} onChange={onChecked} />}
         {onBeforeGogma && (
           <Toggle
             checked={beforeGogma}
@@ -322,6 +372,45 @@ export function ColumnDialog({
         )}
       </div>
     </Dialog>
+  )
+}
+
+/** 열의 복원 보너스 표기 바꾸기 (기록·돌려 본 번째도 함께 옮김). 같은 무기 종류·속성의 다른 열과 겹치면 막는다 */
+function BonusField({
+  weapon,
+  columns,
+  onRename,
+}: {
+  weapon: GogmaWeapon
+  columns: readonly GogmaWeapon[]
+  onRename: (to: GogmaWeapon) => void
+}) {
+  const [text, setText] = useState(weapon.bonus ?? '')
+  const bonus = normalizeBonus(text)
+  const to: GogmaWeapon = { weaponKind: weapon.weaponKind, element: weapon.element, ...(bonus ? { bonus } : {}) }
+  const same = weaponKey(to) === weaponKey(weapon)
+  const taken = !same && columns.some((c) => weaponKey(c) === weaponKey(to))
+  const save = () => {
+    if (same || taken) return
+    onRename(to)
+    setText(bonus ?? '')
+  }
+  return (
+    <section className="space-y-1.5">
+      <div className="flex items-end gap-1.5">
+        <div className="min-w-0 flex-1">
+          <BonusInput value={text} onChange={setText} onEnter={save} />
+        </div>
+        <Button size="sm" disabled={same || taken} onClick={save} className="pointer-coarse:h-10">
+          바꾸기
+        </Button>
+      </div>
+      <p className={cx('text-xs', taken ? 'text-bad' : 'text-muted')}>
+        {taken
+          ? `${weaponLabel(to)} 열이 이미 있어요.`
+          : '같은 무기 종류·속성을 여러 자루 돌릴 때 열을 나눠요. 이 열의 기록과 돌려 본 번째는 그대로 옮겨요.'}
+      </p>
+    </section>
   )
 }
 

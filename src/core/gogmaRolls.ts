@@ -10,6 +10,8 @@
 //   출처: 디시인사이드 몬헌 갤러리 '거극 아티어 테이블 관련 정보 정리'(2025-12), 나무위키 '아티어 무기' 리세마라 문단 (2026-11 확인)
 // - 무기를 처음 거극 아티어로 격화할 때 붙는 스킬도 스킬 재부여 횟수에 들어간다 (한 번으로 센다, 사용자 확인 2026-11-15).
 //   그래서 아직 격화하지 않은 무기는 루트의 제 차례에 격화하면 재부여 없이 그 번째의 스킬을 받는다.
+// - 같은 무기 종류·속성을 여러 자루 돌리면 n번째 결과는 같지만 자루마다 원하는 결과가 달라(공격형·속성형 등) 따로 적는다.
+//   자루는 사용자가 적는 복원 보너스 표기(예: 기기기기예)로 구분한다 (사용자 요청 2026-11-16).
 // - 그래서 저장한 위치에서 무기·속성마다 여러 번 돌려 보고 잘 뜬 번째만 적어 두면, 번째 순서대로 그 무기를 리롤하고
 //   사이 번째는 다른 무기로 넘겨 원하는 결과를 모두 띄울 수 있다. 리롤 한 번마다 재료가 들므로 마지막 번째가 곧 총 횟수다.
 import { WEAPON_KIND_LABEL } from '../data/labels'
@@ -46,15 +48,35 @@ export const GOGMA_ELEMENT_LABEL: Record<GogmaElement, string> = {
 /** 저장한 위치에서 셀 수 있는 가장 큰 번째 */
 export const MAX_STEP = 999
 
-/** 리롤 결과를 함께 쓰는 무기 (무기 종류 × 속성) */
+/** 리롤 결과를 함께 쓰는 무기 (무기 종류 × 속성). 같은 종류·속성을 여러 자루 돌리면 복원 보너스 표기로 나눈다 */
 export interface GogmaWeapon {
   weaponKind: WeaponKind
   element: GogmaElement
+  /** 같은 무기 종류·속성의 자루를 구분하는 복원 보너스 표기 (예: 기기기기예, 없으면 한 자루) */
+  bonus?: string
 }
+
+/** 복원 보너스 표기의 최대 글자 수 */
+export const MAX_BONUS_LENGTH = 12
+
+/** 입력한 복원 보너스 표기 다듬기: 앞뒤 공백·':'(키 구분자)를 빼고 공백은 하나로, 최대 글자 수까지. 비면 undefined */
+export function normalizeBonus(text: string | undefined): string | undefined {
+  const bonus = (text ?? '').replace(/:/g, '').replace(/\s+/g, ' ').trim().slice(0, MAX_BONUS_LENGTH).trim()
+  return bonus === '' ? undefined : bonus
+}
+
+const isBonus = (v: unknown): v is string | undefined => v === undefined || (typeof v === 'string' && normalizeBonus(v) === v)
+
+/** 무기 부분만 (기록 등에서 뽑을 때, 키 순서를 늘 같게) */
+export const weaponOf = (w: GogmaWeapon): GogmaWeapon => ({
+  weaponKind: w.weaponKind,
+  element: w.element,
+  ...(w.bonus ? { bonus: w.bonus } : {}),
+})
 
 /**
  * 잘 뜬 리롤 하나의 공통 부분: 저장한 위치에서 step 번째로 이 무기를 리롤하면 나오는 결과.
- * 같은 무기의 같은 번째는 결과가 하나뿐이라 id 를 `${weaponKind}:${element}:${step}` 으로 정해 두어
+ * 같은 무기의 같은 번째는 결과가 하나뿐이라 id 를 `${weaponKey}:${step}` 으로 정해 두어
  * 다시 적으면 바꾸고, 두 기기·백업에서 따로 적은 같은 칸이 하나로 합쳐진다
  */
 export interface RerollEntry extends GogmaWeapon {
@@ -74,19 +96,22 @@ export interface GogmaRoll extends RerollEntry {
   groupSkillId: number | null
 }
 
-export const weaponKey = (w: GogmaWeapon): string => `${w.weaponKind}:${w.element}`
+/** 예: 'lance:dragon', 복원 보너스가 있으면 'lance:dragon:기기기기예' */
+export const weaponKey = (w: GogmaWeapon): string => `${w.weaponKind}:${w.element}${w.bonus ? `:${w.bonus}` : ''}`
 export const rollId = (w: GogmaWeapon, step: number): string => `${weaponKey(w)}:${step}`
 
-/** 예: 불 태도 */
-export const weaponLabel = (w: GogmaWeapon): string => `${GOGMA_ELEMENT_LABEL[w.element]} ${WEAPON_KIND_LABEL[w.weaponKind]}`
+/** 예: 불 태도, 용 랜스(기기기기예) */
+export const weaponLabel = (w: GogmaWeapon): string =>
+  `${GOGMA_ELEMENT_LABEL[w.element]} ${WEAPON_KIND_LABEL[w.weaponKind]}${w.bonus ? `(${w.bonus})` : ''}`
 
 export const isValidStep = (step: number): boolean => Number.isInteger(step) && step >= 1 && step <= MAX_STEP
 
-/** 무기 종류 순, 같은 무기 종류는 속성 순 */
+/** 무기 종류 순, 같은 무기 종류는 속성 순, 같은 속성은 복원 보너스 없는 것부터 표기 순 */
 export function compareWeapons(a: GogmaWeapon, b: GogmaWeapon): number {
   return (
     WEAPON_KINDS.indexOf(a.weaponKind) - WEAPON_KINDS.indexOf(b.weaponKind) ||
-    GOGMA_ELEMENTS.indexOf(a.element) - GOGMA_ELEMENTS.indexOf(b.element)
+    GOGMA_ELEMENTS.indexOf(a.element) - GOGMA_ELEMENTS.indexOf(b.element) ||
+    (a.bonus ?? '').localeCompare(b.bonus ?? '', 'ko')
   )
 }
 
@@ -114,8 +139,7 @@ export function putEntry<T extends RerollEntry>(list: readonly T[], entry: Omit<
 /** 스킬 재부여 기록 더하기 (키 순서를 늘 같게) */
 export function putRoll(list: readonly GogmaRoll[], roll: Omit<GogmaRoll, 'id' | 'excluded' | 'done' | 'beforeGogma'>): GogmaRoll[] {
   return putEntry<GogmaRoll>(list, {
-    weaponKind: roll.weaponKind,
-    element: roll.element,
+    ...weaponOf(roll),
     step: roll.step,
     setSkillId: roll.setSkillId,
     groupSkillId: roll.groupSkillId,
@@ -129,6 +153,24 @@ function withFlag<T extends RerollEntry>(entry: T, flag: 'excluded' | 'done' | '
 
 export function setExcluded<T extends RerollEntry>(list: readonly T[], id: string, excluded: boolean): T[] {
   return list.map((r) => (r.id === id ? withFlag(r, 'excluded', excluded) : r))
+}
+
+/**
+ * 무기의 복원 보너스 표기를 바꾼다: 그 무기의 기록을 새 무기로 옮기고 id 도 새로 (to 와 같은 무기의 기록이 이미 있으면
+ * 화면에서 막는다 — 여기선 같은 번째면 옮기는 쪽이 남는다)
+ */
+export function moveWeapon<T extends RerollEntry>(list: readonly T[], from: GogmaWeapon, to: GogmaWeapon): T[] {
+  const fromKey = weaponKey(from)
+  const toKey = weaponKey(to)
+  if (fromKey === toKey) return [...list]
+  const moved = list
+    .filter((r) => weaponKey(r) === fromKey)
+    .map((r) => {
+      const { weaponKind: _k, element: _e, bonus: _b, id: _id, ...rest } = r
+      return { ...weaponOf(to), ...rest, id: rollId(to, r.step) } as unknown as T
+    })
+  const ids = new Set(moved.map((r) => r.id))
+  return [...list.filter((r) => weaponKey(r) !== fromKey && !ids.has(r.id)), ...moved].sort(compareEntries)
 }
 
 /** 무기를 격화 전으로 표시하거나 지운다 (그 무기의 기록 모두) */
@@ -156,8 +198,7 @@ export const putRestore = (
   valuesOnly = false,
 ): RestoreRoll[] =>
   putEntry<RestoreRoll>(list, {
-    weaponKind: weapon.weaponKind,
-    element: weapon.element,
+    ...weaponOf(weapon),
     step,
     ...(valuesOnly ? { valuesOnly: true as const } : {}),
   })
@@ -178,10 +219,7 @@ export function groupByWeapon<T extends RerollEntry>(list: readonly T[]): { weap
     const key = weaponKey(r)
     groups.set(key, [...(groups.get(key) ?? []), r])
   }
-  return [...groups.values()].map((entries) => ({
-    weapon: { weaponKind: entries[0].weaponKind, element: entries[0].element },
-    entries,
-  }))
+  return [...groups.values()].map((entries) => ({ weapon: weaponOf(entries[0]), entries }))
 }
 
 /** 기록에 많이 나온 스킬 (많은 순, 같으면 먼저 나온 순). 입력할 때 한 번에 고르는 단추에 쓴다 */
@@ -319,6 +357,12 @@ export function setChecked(map: CheckedSteps, weapon: GogmaWeapon, step: number)
   return step > 0 ? { ...rest, [weaponKey(weapon)]: step } : rest
 }
 
+/** 무기의 돌려 본 번째를 새 무기 키로 옮긴다 (복원 보너스 표기를 바꿀 때) */
+export function moveChecked(map: CheckedSteps, from: GogmaWeapon, to: GogmaWeapon): CheckedSteps {
+  const step = map[weaponKey(from)] ?? 0
+  return setChecked(setChecked(map, from, 0), to, step)
+}
+
 export const hasChecked = (c: RerollChecked): boolean => Object.keys(c.skill).length + Object.keys(c.restore).length > 0
 
 /** 백업에서 가져올 때: 무기마다 더 뒤까지 본 쪽 */
@@ -343,15 +387,20 @@ const isCount = (v: unknown): v is number => typeof v === 'number' && Number.isI
 export const isGogmaElement = (v: unknown): v is GogmaElement =>
   typeof v === 'string' && (GOGMA_ELEMENTS as readonly string[]).includes(v)
 
+/** 무기 하나 검사 (기기마다 더해 둔 열 등) */
+export const isGogmaWeapon = (v: unknown): v is GogmaWeapon =>
+  isRecord(v) && isWeaponKind(v.weaponKind) && isGogmaElement(v.element) && isBonus(v.bonus)
+
 /** 기록의 공통 부분 검사 */
 export function isEntryBase(v: unknown): v is RerollEntry {
   return (
     isRecord(v) &&
     isWeaponKind(v.weaponKind) &&
     isGogmaElement(v.element) &&
+    isBonus(v.bonus) &&
     typeof v.step === 'number' &&
     isValidStep(v.step) &&
-    v.id === rollId({ weaponKind: v.weaponKind, element: v.element }, v.step) &&
+    v.id === rollId({ weaponKind: v.weaponKind, element: v.element, bonus: v.bonus }, v.step) &&
     isFlag(v.excluded) &&
     isFlag(v.done) &&
     isFlag(v.beforeGogma)
@@ -369,8 +418,8 @@ export const isRestoreRollList = (v: unknown): v is RestoreRoll[] => Array.isArr
 export const isRerollProgress = (v: unknown): v is RerollProgress => isRecord(v) && isCount(v.skill) && isCount(v.restore)
 
 const isWeaponKeyString = (k: string) => {
-  const [kind, element, rest] = k.split(':')
-  return rest === undefined && isWeaponKind(kind) && isGogmaElement(element)
+  const [kind, element, bonus, rest] = k.split(':')
+  return rest === undefined && isWeaponKind(kind) && isGogmaElement(element) && (bonus === undefined || isBonus(bonus))
 }
 const isCheckedSteps = (v: unknown): v is CheckedSteps =>
   isRecord(v) && Object.entries(v).every(([k, n]) => isWeaponKeyString(k) && isCount(n) && n > 0)
@@ -416,8 +465,7 @@ export interface SkillIdMap {
 
 export function toBackupBase(entry: RerollEntry): BackupEntryBase {
   return {
-    weaponKind: entry.weaponKind,
-    element: entry.element,
+    ...weaponOf(entry),
     step: entry.step,
     ...(entry.excluded ? { excluded: true as const } : {}),
     ...(entry.done ? { done: true as const } : {}),
@@ -429,7 +477,8 @@ export function toBackupBase(entry: RerollEntry): BackupEntryBase {
 export function fromBackupBase(value: unknown): RerollEntry | null {
   if (!isRecord(value) || !isWeaponKind(value.weaponKind) || !isGogmaElement(value.element)) return null
   if (typeof value.step !== 'number' || !isValidStep(value.step)) return null
-  const weapon = { weaponKind: value.weaponKind, element: value.element }
+  if (value.bonus !== undefined && typeof value.bonus !== 'string') return null
+  const weapon = weaponOf({ weaponKind: value.weaponKind, element: value.element, bonus: normalizeBonus(value.bonus) })
   return {
     id: rollId(weapon, value.step),
     ...weapon,
@@ -453,8 +502,16 @@ export function fromBackupRestore(value: unknown): RestoreRoll | null {
 
 export function toBackupRoll(roll: GogmaRoll, ids: SkillIdMap): BackupGogmaRoll {
   const gameId = (id: number | null) => (id === null ? null : (ids.toGameId(id) ?? null))
-  const { weaponKind, element, step, ...flags } = toBackupBase(roll)
-  return { weaponKind, element, step, set: gameId(roll.setSkillId), group: gameId(roll.groupSkillId), ...flags }
+  const { weaponKind, element, bonus, step, ...flags } = toBackupBase(roll)
+  return {
+    weaponKind,
+    element,
+    ...(bonus ? { bonus } : {}),
+    step,
+    set: gameId(roll.setSkillId),
+    group: gameId(roll.groupSkillId),
+    ...flags,
+  }
 }
 
 /** 백업의 스킬 재부여 기록 하나. 모양이 틀리면 null, 지금 데이터에 없는 스킬은 비우고 그 수를 dropped 로 */
@@ -468,9 +525,18 @@ export function fromBackupRoll(value: unknown, ids: SkillIdMap): { roll: GogmaRo
     if (id === undefined) dropped++
     return id ?? null
   }
-  const { id, weaponKind, element, step, ...flags } = base
+  const { id, weaponKind, element, bonus, step, ...flags } = base
   return {
-    roll: { id, weaponKind, element, step, setSkillId: skillId(value.set), groupSkillId: skillId(value.group), ...flags },
+    roll: {
+      id,
+      weaponKind,
+      element,
+      ...(bonus ? { bonus } : {}),
+      step,
+      setSkillId: skillId(value.set),
+      groupSkillId: skillId(value.group),
+      ...flags,
+    },
     dropped,
   }
 }

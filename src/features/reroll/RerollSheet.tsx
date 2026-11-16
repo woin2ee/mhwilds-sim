@@ -93,11 +93,12 @@ export function RerollSheet<T extends RerollEntry>({
                   <button
                     type="button"
                     onClick={() => onHeaderClick(weapon)}
-                    title={`${weaponLabel(weapon)} — 돌려 본 번째·열 지우기`}
+                    title={`${weaponLabel(weapon)} — 복원 보너스·돌려 본 번째·열 지우기`}
                     className="flex h-full w-full min-w-28 flex-col items-center px-1.5 py-1.5 leading-tight hover:bg-surface-2"
                   >
                     <span className="font-semibold">{GOGMA_ELEMENT_LABEL[weapon.element]}</span>
                     <span className="font-normal text-muted">{WEAPON_KIND_LABEL[weapon.weaponKind]}</span>
+                    {weapon.bonus && <span className="font-medium">{weapon.bonus}</span>}
                     {beforeGogma.has(weaponKey(weapon)) && <span className="font-normal text-good">격화 전</span>}
                     {checked[weaponKey(weapon)] && (
                       <span className="font-normal text-muted">~{checked[weaponKey(weapon)]}번째 봄</span>
