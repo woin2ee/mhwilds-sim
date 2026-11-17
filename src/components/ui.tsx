@@ -158,6 +158,10 @@ type SegmentedOption<T extends string> =
   | { value: T; label: ReactNode; icon?: undefined }
   | { value: T; label: string; icon: ReactNode }
 
+/**
+ * 고른 칸은 흰 바탕만으로는 회색 바탕과 대비가 1.16:1 이라 잘 안 보여서 테두리(muted, 3:1 이상)를 두른다.
+ * offValue('끔' 같은 값)를 주면 그 밖의 값을 골랐을 때 고른 칸을 강조색으로 칠해, 같은 줄이 여럿 이어져도 켠 줄이 한눈에 보인다.
+ */
 export function Segmented<T extends string>({
   value,
   options,
@@ -165,6 +169,7 @@ export function Segmented<T extends string>({
   size = 'md',
   ariaLabel,
   className,
+  offValue,
 }: {
   value: T
   options: readonly SegmentedOption<T>[]
@@ -172,7 +177,9 @@ export function Segmented<T extends string>({
   size?: 'sm' | 'md'
   ariaLabel?: string
   className?: string
+  offValue?: T
 }) {
+  const lit = offValue !== undefined && value !== offValue
   return (
     <div
       className={cx('inline-flex rounded-md border border-line bg-surface-2 p-0.5', className)}
@@ -195,7 +202,11 @@ export function Segmented<T extends string>({
               size === 'sm' ? 'h-6 text-xs pointer-coarse:h-8 pointer-coarse:text-sm' : 'h-8 text-sm pointer-coarse:h-10',
               iconOnly ? 'inline-flex items-center justify-center' : 'px-2.5',
               iconOnly && (size === 'sm' ? 'w-6 pointer-coarse:w-8' : 'w-8 pointer-coarse:w-10'),
-              option.value === value ? 'bg-surface text-fg shadow-sm' : 'text-muted hover:text-fg',
+              option.value !== value
+                ? 'text-muted hover:text-fg'
+                : lit
+                  ? 'bg-accent text-accent-fg shadow-sm ring-1 ring-accent'
+                  : 'bg-surface text-fg shadow-sm ring-1 ring-muted',
             )}
           >
             {iconOnly ? option.icon : option.label}

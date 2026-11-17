@@ -90,6 +90,7 @@ export function ElementBuffList({
                         size="sm"
                         value={String(level)}
                         options={options}
+                        offValue="0"
                         onChange={(v) => onLevel(buff.id, Number(v))}
                         ariaLabel={`${name} 레벨`}
                       />
