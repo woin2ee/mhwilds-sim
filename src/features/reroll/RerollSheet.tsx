@@ -100,9 +100,6 @@ export function RerollSheet<T extends RerollEntry>({
                     <span className="font-normal text-muted">{WEAPON_KIND_LABEL[weapon.weaponKind]}</span>
                     {weapon.bonus && <span className="font-medium">{weapon.bonus}</span>}
                     {beforeGogma.has(weaponKey(weapon)) && <span className="font-normal text-good">격화 전</span>}
-                    {checked[weaponKey(weapon)] && (
-                      <span className="font-normal text-muted">~{checked[weaponKey(weapon)]}번째 봄</span>
-                    )}
                   </button>
                 </th>
               ))}
@@ -127,12 +124,18 @@ export function RerollSheet<T extends RerollEntry>({
                   <th
                     scope="row"
                     className={cx(
-                      'sticky left-0 z-[5] border-b border-line px-1 text-right font-semibold tabular-nums',
+                      'sticky left-0 z-[5] border-b border-line px-1 text-right leading-tight font-semibold tabular-nums',
                       current ? 'bg-accent text-accent-fg' : 'bg-surface',
                       past && 'text-muted',
                     )}
                   >
-                    {step}
+                    <span className="block">{step}</span>
+                    {/* 지금부터 몇 번 돌리면 이 칸인지: 저장한 곳에서 한 무기를 n번 돌려 잘 뜨면 +n 줄에 적는다 */}
+                    {!past && (
+                      <span className={cx('block text-[10px] font-normal', current ? 'opacity-80' : 'text-muted')}>
+                        +{step - progress}
+                      </span>
+                    )}
                   </th>
                   {columns.map((weapon) => {
                     const entry = byId.get(rollId(weapon, step))
@@ -172,7 +175,9 @@ export function RerollSheet<T extends RerollEntry>({
         </table>
       </div>
       <div className="flex items-center justify-between gap-2">
-        <span className="text-xs text-muted">진하게 테를 두른 칸이 루트, ✕ 는 돌려 봤는데 안 뜬 칸이에요.</span>
+        <span className="text-xs text-muted">
+          진하게 테를 두른 칸이 루트, ✕ 는 돌려 봤는데 안 뜬 칸이에요. 번째 아래 +n 은 지금부터 n번 돌리면 오는 칸이에요.
+        </span>
         <Button
           size="sm"
           onClick={() => {
