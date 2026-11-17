@@ -1,4 +1,5 @@
 import { useMemo, useState, type MouseEvent } from 'react'
+import { MenuButton } from '../../components/MenuButton'
 import { Badge, Button, EmptyState, Panel } from '../../components/ui'
 import { collectTags, tagKey, tagsOf } from '../../core/buildTags'
 import { isFavorite, NAME_MAX, newSavedBuild, weaponKindOf, withFavorite, type SavedBuild } from '../../core/savedBuilds'
@@ -459,15 +460,17 @@ function SavedBuildCard({
         <Button size="sm" onClick={onShare}>
           공유
         </Button>
-        <Button size="sm" variant="ghost" onClick={onEdit}>
-          정보 수정
-        </Button>
-        <Button size="sm" variant="ghost" onClick={onDuplicate}>
-          복제
-        </Button>
-        <Button size="sm" variant="danger" className="ml-auto" onClick={onDelete}>
-          삭제
-        </Button>
+        {/* 가끔 쓰는 동작은 메뉴로: 카드마다 버튼이 9개라 카드가 여럿이면 '불러오기'·빨간 '삭제'가 줄줄이 반복돼 눈이 흩어졌다 */}
+        <MenuButton
+          label="더보기"
+          title="정보 수정·복제·삭제"
+          className="ml-auto"
+          items={[
+            { label: '정보 수정', onSelect: onEdit },
+            { label: '복제', onSelect: onDuplicate },
+            { label: '삭제', onSelect: onDelete, danger: true },
+          ]}
+        />
       </div>
     </article>
   )

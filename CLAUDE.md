@@ -26,7 +26,7 @@
 
 - UI 문구·주석은 한국어.
 - 색상은 `src/index.css` 의 의미 기반 토큰만 (`bg-surface`, `text-muted`, `border-line`, `text-good/bad/warn`, `slot-1/2/3` …). 팔레트 색이나 `dark:` 변형을 직접 쓰지 않는다.
-- 공통 컴포넌트(`src/components`) 재사용: `Combobox`(초성 검색), `SkillSelect`, `SlotBadge/SlotList`, `SkillChip`, `ui.tsx`.
+- 공통 컴포넌트(`src/components`) 재사용: `Combobox`(초성 검색), `SkillSelect`, `SlotBadge/SlotList`, `SkillChip`, `MenuButton`(⋯ 메뉴), `ui.tsx`.
 - 이름 표시는 `nameOf()` / `src/data/format.ts` 경유 (다국어 대비).
 - 모바일: 레이아웃은 화면 폭(`lg:` 2단), 터치 크기는 `pointer-coarse:` 로 나눈다. 화면 아래 조작 바는 `MobileBar`,
   대화상자 안 자동 포커스는 `autoFocus` 대신 `data-autofocus` (docs/DESIGN.md §7).
