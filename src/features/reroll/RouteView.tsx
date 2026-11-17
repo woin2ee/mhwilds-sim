@@ -72,7 +72,8 @@ export function RouteView<T extends RerollEntry>({
             <Button size="sm" variant="ghost" disabled={progress === 0} onClick={onBack}>
               되돌리기
             </Button>
-            <Button size="sm" variant="primary" onClick={onForward}>
+            {/* 따라갈 루트가 있을 때만 강조한다. 표가 비었을 때도 주황이면 '+ 무기 열 더하기'와 눈길을 다퉜다 */}
+            <Button size="sm" variant={nextStop ? 'primary' : 'secondary'} onClick={onForward}>
               한 번 했어요
             </Button>
           </span>
@@ -101,7 +102,8 @@ export function RouteView<T extends RerollEntry>({
         </p>
       )}
       <details className="text-xs text-muted">
-        <summary className="cursor-pointer select-none hover:text-fg">넘기기 요령</summary>
+        {/* 글자 한 줄(16px)이라 누르기 어려워서 위아래 여백으로 누르는 곳을 넓힌다 (터치 기기 36px) */}
+        <summary className="cursor-pointer py-1 select-none hover:text-fg pointer-coarse:py-2.5">넘기기 요령</summary>
         <p className="mt-1.5 leading-relaxed">{tips}</p>
       </details>
     </div>

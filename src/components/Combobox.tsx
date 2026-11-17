@@ -29,7 +29,7 @@ export interface ComboboxProps<T> {
   ariaLabel?: string
 }
 
-const FIELD = 'h-9 w-full rounded-md border border-line bg-surface-2 pr-7 pl-2.5 text-sm text-fg disabled:opacity-50'
+const FIELD = 'h-9 w-full rounded-md border border-field bg-surface-2 pr-7 pl-2.5 text-sm text-fg disabled:opacity-50'
 
 /**
  * 검색 가능한 선택 상자. 한글 초성 검색 지원.

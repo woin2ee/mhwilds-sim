@@ -303,7 +303,7 @@ function BonusInput({
         onKeyDown={(e) => {
           if (e.key === 'Enter' && !e.nativeEvent.isComposing) onEnter()
         }}
-        className="h-8 w-full rounded-md border border-line bg-surface px-2 text-sm pointer-coarse:h-10"
+        className="h-8 w-full rounded-md border border-field bg-surface px-2 text-sm pointer-coarse:h-10"
       />
     </label>
   )
@@ -443,7 +443,7 @@ function CheckedField({ value, onChange }: { value: number; onChange: (step: num
             const n = Number(raw)
             if (raw === '' || (Number.isInteger(n) && n >= 0 && n <= MAX_STEP)) onChange(raw === '' ? 0 : n)
           }}
-          className="h-8 w-20 rounded-md border border-line bg-surface px-2 text-center tabular-nums pointer-coarse:h-10"
+          className="h-8 w-20 rounded-md border border-field bg-surface px-2 text-center tabular-nums pointer-coarse:h-10"
         />
         <Button size="sm" aria-label="하나 늘리기" onClick={() => set(value + 1)}>
           +

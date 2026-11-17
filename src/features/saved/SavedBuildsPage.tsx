@@ -188,7 +188,7 @@ export function SavedBuildsPage() {
               onChange={(e) => setQuery(e.target.value)}
               placeholder="이름·태그 검색"
               aria-label="내 세팅 검색"
-              className="h-9 min-w-0 flex-1 rounded-md border border-line bg-surface-2 px-2.5 text-sm text-fg placeholder:text-muted focus:border-accent focus:outline-none sm:w-72 sm:flex-none pointer-coarse:h-10"
+              className="h-9 min-w-0 flex-1 rounded-md border border-field bg-surface-2 px-2.5 text-sm text-fg placeholder:text-muted focus:border-accent focus:outline-none sm:w-72 sm:flex-none pointer-coarse:h-10"
             />
             {favoriteCount > 0 && (
               <FavoriteFilter
@@ -399,7 +399,7 @@ function SavedBuildCard({
           </h3>
           {saved.memo && <p className="mt-0.5 text-xs whitespace-pre-line text-muted">{saved.memo}</p>}
           {tags.length > 0 && (
-            <div className="mt-1 flex flex-wrap gap-1">
+            <div className="mt-1 flex flex-wrap gap-1 pointer-coarse:gap-1.5">
               {tags.map((tag) => {
                 const on = isActiveTag(tag)
                 return (
@@ -409,8 +409,9 @@ function SavedBuildCard({
                     aria-pressed={on}
                     title={on ? '이 태그로 거르기 풀기' : '이 태그가 붙은 세팅만 보기'}
                     onClick={() => onToggleTag(tag)}
+                    // 터치 기기에서는 목록 위 태그 칩(30px)만큼 키운다 (전엔 22px 라 손가락으로 누르기 어려웠다)
                     className={cx(
-                      'rounded border px-1.5 py-px text-[11px] pointer-coarse:px-2 pointer-coarse:py-0.5 pointer-coarse:text-xs',
+                      'rounded border px-1.5 py-px text-[11px] pointer-coarse:px-2 pointer-coarse:py-1.5 pointer-coarse:text-xs',
                       on ? 'border-accent/60 bg-accent/10 text-accent' : 'border-line bg-surface-2 text-muted hover:text-fg',
                     )}
                   >

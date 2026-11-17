@@ -261,7 +261,7 @@ export function LevelSelect({
       title={title}
       value={value}
       onChange={(e) => onChange(Number(e.target.value))}
-      className={cx('h-8 rounded-md border border-line bg-surface-2 px-1.5 text-sm pointer-coarse:h-10', className)}
+      className={cx('h-8 rounded-md border border-field bg-surface-2 px-1.5 text-sm pointer-coarse:h-10', className)}
     >
       {levels.map((level) => (
         <option key={level} value={level} disabled={level > enabledMax}>

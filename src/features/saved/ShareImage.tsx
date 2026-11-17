@@ -93,7 +93,7 @@ export function ShareImage({
           onChange={(e) => onTitleChange(e.target.value)}
           maxLength={NAME_MAX}
           placeholder="제목 없음"
-          className="h-9 w-full rounded-md border border-line bg-surface-2 px-2.5 text-sm text-fg placeholder:text-muted focus:border-accent focus:outline-none pointer-coarse:h-10"
+          className="h-9 w-full rounded-md border border-field bg-surface-2 px-2.5 text-sm text-fg placeholder:text-muted focus:border-accent focus:outline-none pointer-coarse:h-10"
         />
       </label>
       <div className="overflow-hidden rounded-md border border-line bg-bg">

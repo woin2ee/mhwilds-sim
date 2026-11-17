@@ -34,7 +34,7 @@ export function SpareSlotsCondition({ value, onChange }: { value: SpareSlots; on
                 aria-label={`${SLOT_KIND_LABEL[kind]} 장식주【${level}】 자리 수`}
                 value={value[kind][level - 1]}
                 onChange={(e) => set(kind, level, Number(e.target.value))}
-                className="h-8 rounded-md border border-line bg-surface-2 px-1.5 text-sm pointer-coarse:h-10"
+                className="h-8 rounded-md border border-field bg-surface-2 px-1.5 text-sm pointer-coarse:h-10"
               >
                 {COUNTS.map((n) => (
                   <option key={n} value={n}>

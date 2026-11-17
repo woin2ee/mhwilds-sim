@@ -152,7 +152,7 @@ function BaseInput({ value, onChange }: { value: number; onChange: (value: numbe
           if (e.target.value.trim() !== '' && Number.isFinite(next)) onChange(Math.min(BASE_MAX, Math.max(BASE_MIN, next)))
         }}
         onBlur={() => setDraft(null)}
-        className="h-9 w-24 rounded-md border border-line bg-surface-2 px-2.5 text-sm text-fg tabular-nums focus:border-accent focus:outline-none pointer-coarse:h-10"
+        className="h-9 w-24 rounded-md border border-field bg-surface-2 px-2.5 text-sm text-fg tabular-nums focus:border-accent focus:outline-none pointer-coarse:h-10"
       />
     </label>
   )

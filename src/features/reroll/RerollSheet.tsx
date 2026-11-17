@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { ScrollEdges } from '../../components/ScrollEdges'
 import { Button } from '../../components/ui'
 import {
   GOGMA_ELEMENT_LABEL,
@@ -11,6 +12,7 @@ import {
 } from '../../core/gogmaRolls'
 import { WEAPON_KIND_LABEL } from '../../data/labels'
 import { cx } from '../../lib/cx'
+import { useFillViewportHeight } from '../../lib/fillHeight'
 
 /** 처음 보이는 줄 수 (기록·진행이 더 뒤면 거기까지 + 여유) */
 const MIN_ROWS = 20
@@ -50,6 +52,8 @@ export function RerollSheet<T extends RerollEntry>({
 }) {
   const [extra, setExtra] = useState(0)
   const scrollRef = useRef<HTMLDivElement>(null)
+  // 2단 화면은 표 높이를 화면에 맞춰 페이지는 스크롤되지 않고 표 안에서만 넘긴다 (지금 할 번째를 가운데로 옮기기 전에 맞춘다)
+  useFillViewportHeight(scrollRef)
   const byId = useMemo(() => new Map(entries.map((r) => [r.id, r])), [entries])
   const beforeGogma = useMemo(() => new Set(entries.filter((r) => r.beforeGogma).map(weaponKey)), [entries])
 
@@ -80,8 +84,8 @@ export function RerollSheet<T extends RerollEntry>({
 
   const stickyHead = 'sticky top-0 z-10 border-b border-line bg-surface'
   return (
-    <div className="space-y-2">
-      <div ref={scrollRef} className="max-h-[70vh] overflow-auto rounded-md border border-line lg:max-h-[calc(100vh-12rem)]">
+    <div className="relative space-y-2">
+      <div ref={scrollRef} className="max-h-[70vh] overflow-auto rounded-md border border-line lg:max-h-(--fill-h,calc(100vh-12rem))">
         <table className="min-w-full border-separate border-spacing-0 text-xs">
           <thead>
             <tr>
@@ -174,6 +178,8 @@ export function RerollSheet<T extends RerollEntry>({
           </tbody>
         </table>
       </div>
+      {/* 옆으로 더 있으면 가장자리에 그림자 (번째 열은 왼쪽에 붙어 있어 그 오른쪽부터) */}
+      <ScrollEdges target={scrollRef} startInset={48} />
       <div className="flex items-center justify-between gap-2">
         <span className="text-xs text-muted">
           진하게 테를 두른 칸이 루트, ✕ 는 돌려 봤는데 안 뜬 칸이에요. 번째 아래 +n 은 지금부터 n번 돌리면 오는 칸이에요.

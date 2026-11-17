@@ -76,7 +76,7 @@ export function TagField({
         onClick={(e) => {
           if (e.target === e.currentTarget) inputRef.current?.focus()
         }}
-        className="flex min-h-9 w-full cursor-text flex-wrap items-center gap-1 rounded-md border border-line bg-surface-2 px-1.5 py-1 focus-within:border-accent pointer-coarse:min-h-10"
+        className="flex min-h-9 w-full cursor-text flex-wrap items-center gap-1 rounded-md border border-field bg-surface-2 px-1.5 py-1 focus-within:border-accent pointer-coarse:min-h-10"
       >
         {tags.map((tag) => (
           <span key={tag} className={cx(CHIP, 'border-accent/40 bg-accent/10 pl-1.5 font-medium text-accent')}>

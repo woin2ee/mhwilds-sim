@@ -11,7 +11,7 @@ import { backupFileName, downloadJson } from './backupFile'
 import { ImportForm } from './ImportDialog'
 
 const FIELD =
-  'w-full rounded-md border border-line bg-surface-2 px-2.5 py-2 font-mono text-xs text-fg focus:border-accent focus:outline-none'
+  'w-full rounded-md border border-field bg-surface-2 px-2.5 py-2 font-mono text-xs text-fg focus:border-accent focus:outline-none'
 
 /**
  * 백업 탭: 맨 위는 Google 드라이브 동기화, 그 아래는 내 세팅·내 호석 전체를 백업 코드(복사해서 옮기는 글)나 파일로

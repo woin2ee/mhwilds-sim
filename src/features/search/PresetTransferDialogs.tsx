@@ -24,7 +24,7 @@ import {
 // 검색 조건 내보내기·가져오기 대화상자 내용 (DESIGN.md §8.4). 대화상자 안이라 알림 대신 버튼 글자로 알린다
 
 const FIELD =
-  'w-full rounded-md border border-line bg-surface-2 px-2.5 py-2 font-mono text-xs text-fg placeholder:font-sans placeholder:text-muted focus:border-accent focus:outline-none'
+  'w-full rounded-md border border-field bg-surface-2 px-2.5 py-2 font-mono text-xs text-fg placeholder:font-sans placeholder:text-muted focus:border-accent focus:outline-none'
 
 /**
  * 저장한 조건을 골라(처음엔 모두) 검색 조건 코드·파일로 내보낸다. 지금 조건이 저장한 조건 중에 없으면 '저장 안 한 지금 조건'으로

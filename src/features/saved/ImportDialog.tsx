@@ -71,7 +71,7 @@ export function ImportForm({ mode, onDone }: { mode: ImportMode; onDone: () => v
         }}
         placeholder={TEXT[mode].placeholder}
         aria-label={TEXT[mode].placeholder}
-        className="w-full rounded-md border border-line bg-surface-2 px-2.5 py-2 font-mono text-xs text-fg placeholder:font-sans placeholder:text-muted focus:border-accent focus:outline-none"
+        className="w-full rounded-md border border-field bg-surface-2 px-2.5 py-2 font-mono text-xs text-fg placeholder:font-sans placeholder:text-muted focus:border-accent focus:outline-none"
       />
       {mode === 'backup' && (
         <div className="flex items-center gap-2">

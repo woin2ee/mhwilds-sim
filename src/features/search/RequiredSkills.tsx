@@ -49,7 +49,7 @@ function BonusLevelSelect({ skill, value, onChange }: { skill: Skill; value: num
       aria-label={`${nameOf(skill.name)} 단계`}
       value={value}
       onChange={(e) => onChange(Number(e.target.value))}
-      className="h-8 rounded-md border border-line bg-surface-2 px-1.5 text-sm pointer-coarse:h-10"
+      className="h-8 rounded-md border border-field bg-surface-2 px-1.5 text-sm pointer-coarse:h-10"
     >
       {skill.ranks.map((rank) => (
         <option key={rank.level} value={rank.level} title={rank.name ? nameOf(rank.name) : undefined}>

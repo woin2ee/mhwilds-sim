@@ -12,7 +12,7 @@ import { useAppState } from '../../state/context'
 import { ShareImage } from './ShareImage'
 
 const FIELD =
-  'w-full min-w-0 rounded-md border border-line bg-surface-2 px-2.5 py-2 font-mono text-xs text-fg focus:border-accent focus:outline-none'
+  'w-full min-w-0 rounded-md border border-field bg-surface-2 px-2.5 py-2 font-mono text-xs text-fg focus:border-accent focus:outline-none'
 
 /** 이미지: 보여 주기만 (메신저·커뮤니티), 링크·코드: 받는 사람이 세팅을 불러온다 */
 type ShareTab = 'image' | 'link'

@@ -146,7 +146,7 @@ function ResistanceInput({ label, value, onChange }: { label: string; value: num
           if (e.target.value.trim() !== '' && Number.isFinite(next)) onChange(Math.min(100, Math.max(-50, next)))
         }}
         onBlur={() => setDraft(null)}
-        className="h-8 w-20 rounded-md border border-line bg-surface-2 px-2 text-sm text-fg tabular-nums focus:border-accent focus:outline-none pointer-coarse:h-10"
+        className="h-8 w-20 rounded-md border border-field bg-surface-2 px-2 text-sm text-fg tabular-nums focus:border-accent focus:outline-none pointer-coarse:h-10"
       />
       <span className="text-xs text-muted">장비 화면의 값 (스킬·식사 효과 포함, 0 보다 낮으면 0)</span>
     </label>

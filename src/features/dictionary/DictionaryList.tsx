@@ -142,7 +142,7 @@ export function DictionaryList({
             onKeyDown={onKeyDown}
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
-            className="h-9 w-full rounded-md border border-line bg-surface-2 pr-8 pl-2.5 text-sm text-fg placeholder:text-muted focus:border-accent focus:outline-none pointer-coarse:h-10"
+            className="h-9 w-full rounded-md border border-field bg-surface-2 pr-8 pl-2.5 text-sm text-fg placeholder:text-muted focus:border-accent focus:outline-none pointer-coarse:h-10"
           />
           {query && (
             <button

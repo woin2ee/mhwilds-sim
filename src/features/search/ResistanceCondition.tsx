@@ -53,7 +53,7 @@ export function ResistanceCondition({
                 aria-label={`${ELEMENT_LABEL[element]} 내성 최솟값`}
                 value={min ?? ''}
                 onChange={(e) => set(element, e.target.value === '' ? null : Number(e.target.value))}
-                className="h-8 rounded-md border border-line bg-surface-2 px-1.5 text-sm pointer-coarse:h-10"
+                className="h-8 rounded-md border border-field bg-surface-2 px-1.5 text-sm pointer-coarse:h-10"
               >
                 <option value="">없음</option>
                 {/* 지금 값이 목록 밖이면(가져온 조건 등) 그 값도 보인다 */}

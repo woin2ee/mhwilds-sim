@@ -26,7 +26,7 @@ import {
 } from './presets'
 
 const INPUT =
-  'w-full rounded-md border border-line bg-surface-2 px-2.5 py-2 text-sm text-fg placeholder:text-muted focus:border-accent focus:outline-none'
+  'w-full rounded-md border border-field bg-surface-2 px-2.5 py-2 text-sm text-fg placeholder:text-muted focus:border-accent focus:outline-none'
 
 type DialogState =
   | { type: 'save' }
