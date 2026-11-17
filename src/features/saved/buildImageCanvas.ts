@@ -20,6 +20,7 @@ const PALETTE_TOKENS: readonly (keyof Palette)[] = [
   'fg',
   'muted',
   'accent',
+  'bonus',
   'good',
   'bad',
   'slot-1',

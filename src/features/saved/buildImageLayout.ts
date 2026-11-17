@@ -5,7 +5,7 @@ import { signed } from '../../data/format'
 import type { BuildImageModel, ImageBonus, ImageEquip, ImageSkill } from './buildImageModel'
 
 /** index.css 의 색 토큰 이름 (그릴 때 지금 테마의 값을 읽는다) */
-export type ColorToken = 'bg' | 'surface' | 'surface-2' | 'line' | 'fg' | 'muted' | 'accent' | 'good' | 'bad'
+export type ColorToken = 'bg' | 'surface' | 'surface-2' | 'line' | 'fg' | 'muted' | 'accent' | 'bonus' | 'good' | 'bad'
 export interface Paint {
   token: ColorToken
   alpha?: number
@@ -69,6 +69,8 @@ const FONT = {
 const FG: Paint = { token: 'fg' }
 const MUTED: Paint = { token: 'muted' }
 const ACCENT: Paint = { token: 'accent' }
+/** 시리즈·그룹 스킬 (화면의 SkillChip bonus 와 같은 파랑) */
+const BONUS: Paint = { token: 'bonus' }
 
 /** 장비 줄: 아이콘 · 부위 · 이름. 아래 줄(스킬·장식주)은 이름 자리부터 */
 const ICON = 16
@@ -197,11 +199,11 @@ export function layoutBuildImage(model: BuildImageModel, measure: Measure): Imag
               w: width,
               h: 20,
               radius: 4,
-              fill: { token: 'accent', alpha: 0.1 },
-              stroke: { token: 'accent', alpha: 0.5 },
+              fill: { token: 'bonus', alpha: 0.1 },
+              stroke: { token: 'bonus', alpha: 0.5 },
             })
-            text(cx + 7, cy, kind, FONT.tag, { token: 'accent', alpha: 0.75 })
-            text(cx + 7 + kindW + 6, cy, name, FONT.small, ACCENT)
+            text(cx + 7, cy, kind, FONT.tag, { token: 'bonus', alpha: 0.75 })
+            text(cx + 7 + kindW + 6, cy, name, FONT.small, BONUS)
           },
         }
       })
@@ -236,7 +238,7 @@ export function layoutBuildImage(model: BuildImageModel, measure: Measure): Imag
   const bonusRow = (x: number, y: number, bonus: ImageBonus) => {
     const lineY = y + 11
     const name = fit(bonus.name, FONT.bold, bonusNameMax)
-    text(x, lineY, name, FONT.bold, ACCENT)
+    text(x, lineY, name, FONT.bold, BONUS)
     tag(x + measure(name, FONT.bold) + 6, lineY, bonusKind(bonus))
     const piecesRight = x + bonusNameCol + COL_GAP + bonusPiecesCol
     text(piecesRight, lineY, bonusPieces(bonus), FONT.small, FG, { align: 'right' })

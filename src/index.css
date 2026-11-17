@@ -13,6 +13,7 @@
   --color-accent-fg: var(--accent-fg);
   --color-good: var(--good);
   --color-good-bonus: var(--good-bonus);
+  --color-bonus: var(--bonus);
   --color-bad: var(--bad);
   --color-warn: var(--warn);
   --color-slot-1: var(--slot-1);
@@ -38,6 +39,9 @@
   --good: #15803d;
   /* 채운 원하는 스킬 중 시리즈·그룹 스킬. good 과 같은 초록 계열이되 일반 스킬과 구분되게 청록 쪽으로 */
   --good-bonus: #0f766e;
+  /* 시리즈·그룹 스킬 칩. 예전 주황(accent)은 모자란 스킬 칩의 warn 과 거의 같고 적·녹색맹 시뮬레이션에서는 사실상 같은 색이라
+     파랑으로 옮겼다. 다른 칩 색(good·good-bonus·warn·bad·muted)과는 색각 이상에서도 구분된다 */
+  --bonus: #1d4ed8;
   --bad: #c2271d;
   --warn: #a15c07;
   /* 장식주 슬롯 레벨 1·2·3. 세 색이 서로 붙어 나오므로 색각 이상 시뮬레이션에서도 모든 쌍이 구분되게 골랐다 */
@@ -58,6 +62,7 @@
   --accent-fg: #1a1206;
   --good: #4ade80;
   --good-bonus: #2dd4bf;
+  --bonus: #60a5fa;
   --bad: #f87171;
   --warn: #facc15;
   --slot-1: #22d3ee;
