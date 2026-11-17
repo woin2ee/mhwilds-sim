@@ -4,7 +4,7 @@ import { weaponLabel, type RerollEntry, type RerollRoute } from '../../core/gogm
 import { cx } from '../../lib/cx'
 
 /**
- * 루트 요약과 진행: 차례를 '물 태도 5 → 용 수렵피리 7' 처럼 한 줄로, 그 아래 몇 번째까지 했는지와 다음 할 일.
+ * 루트 요약과 진행: 차례를 '태도 물 5 → 수렵피리 용 7' 처럼 한 줄로, 그 아래 몇 번째까지 했는지와 다음 할 일.
  * 칸의 내용(스킬)은 표에서 보므로 여기선 무기와 번째만 보인다
  */
 export function RouteView<T extends RerollEntry>({

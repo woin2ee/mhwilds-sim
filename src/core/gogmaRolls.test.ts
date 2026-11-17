@@ -215,8 +215,8 @@ describe('같은 무기 여러 자루 (복원 보너스 표기)', () => {
     expect(normalizeBonus('가'.repeat(20))).toHaveLength(12)
     expect(weaponKey(lanceA)).toBe('lance:dragon:기기기기예')
     expect(weaponKey({ weaponKind: 'lance', element: 'dragon' })).toBe('lance:dragon')
-    expect(weaponLabel(lanceA)).toBe('용 랜스(기기기기예)')
-    expect(weaponLabel({ weaponKind: 'lance', element: 'dragon' })).toBe('용 랜스')
+    expect(weaponLabel(lanceA)).toBe('랜스 용(기기기기예)')
+    expect(weaponLabel({ weaponKind: 'lance', element: 'dragon' })).toBe('랜스 용')
   })
 
   it('같은 종류·속성이라도 자루마다 따로 루트에 넣는다', () => {

@@ -100,8 +100,9 @@ export function RerollSheet<T extends RerollEntry>({
                     title={`${weaponLabel(weapon)} — 복원 보너스·돌려 본 번째·열 지우기`}
                     className="flex h-full w-full min-w-28 flex-col items-center px-1.5 py-1.5 leading-tight hover:bg-surface-2"
                   >
-                    <span className="font-semibold">{GOGMA_ELEMENT_LABEL[weapon.element]}</span>
-                    <span className="font-normal text-muted">{WEAPON_KIND_LABEL[weapon.weaponKind]}</span>
+                    {/* 열이 무기 종류 → 속성 순이라 종류를 첫 줄에 */}
+                    <span className="font-semibold">{WEAPON_KIND_LABEL[weapon.weaponKind]}</span>
+                    <span className="font-normal text-muted">{GOGMA_ELEMENT_LABEL[weapon.element]}</span>
                     {weapon.bonus && <span className="font-medium">{weapon.bonus}</span>}
                     {beforeGogma.has(weaponKey(weapon)) && <span className="font-normal text-good">격화 전</span>}
                   </button>

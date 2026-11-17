@@ -100,9 +100,12 @@ export interface GogmaRoll extends RerollEntry {
 export const weaponKey = (w: GogmaWeapon): string => `${w.weaponKind}:${w.element}${w.bonus ? `:${w.bonus}` : ''}`
 export const rollId = (w: GogmaWeapon, step: number): string => `${weaponKey(w)}:${step}`
 
-/** 예: 불 태도, 용 랜스(기기기기예) */
+/**
+ * 예: 태도 불, 랜스 용(기기기기예). 무기 종류가 먼저다: 표의 열이 무기 종류 → 속성 순이고, 다른 화면도 '대검 · 무기 이름'처럼
+ * 종류를 앞에 둔다 (예전 '불 태도' 는 열 머리가 '불·물·용…'으로 보여 종류별로 놓인 게 드러나지 않았다)
+ */
 export const weaponLabel = (w: GogmaWeapon): string =>
-  `${GOGMA_ELEMENT_LABEL[w.element]} ${WEAPON_KIND_LABEL[w.weaponKind]}${w.bonus ? `(${w.bonus})` : ''}`
+  `${WEAPON_KIND_LABEL[w.weaponKind]} ${GOGMA_ELEMENT_LABEL[w.element]}${w.bonus ? `(${w.bonus})` : ''}`
 
 export const isValidStep = (step: number): boolean => Number.isInteger(step) && step >= 1 && step <= MAX_STEP
 
