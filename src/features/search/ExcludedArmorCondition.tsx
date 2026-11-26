@@ -103,7 +103,7 @@ function OptionRow({ option }: { option: ExcludeOption }) {
       <span className="truncate text-xs text-muted">
         {option.detail && `${option.detail} · `}
         {skillPointsText(db, piece.skills) || '스킬 없음'}
-        {bonuses.length > 0 && <span className="text-accent"> · {bonuses.join(' · ')}</span>}
+        {bonuses.length > 0 && <span className="text-bonus"> · {bonuses.join(' · ')}</span>}
       </span>
     </span>
   )

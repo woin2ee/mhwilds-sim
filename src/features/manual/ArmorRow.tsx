@@ -105,7 +105,7 @@ function ArmorOption({ piece }: { piece: ArmorPiece }) {
       </span>
       <span className="truncate text-xs text-muted">
         {skillPointsText(db, piece.skills) || '스킬 없음'}
-        {bonuses.length > 0 && <span className="text-accent"> · {bonuses.join(' · ')}</span>}
+        {bonuses.length > 0 && <span className="text-bonus"> · {bonuses.join(' · ')}</span>}
       </span>
     </span>
   )

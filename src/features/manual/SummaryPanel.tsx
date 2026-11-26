@@ -220,7 +220,7 @@ function BonusRow({ bonus, fromWeapon }: { bonus: BonusTotal; fromWeapon: boolea
     <li className="flex items-start justify-between gap-2 py-1.5">
       <div className="min-w-0">
         <div className="flex items-center gap-1.5 text-sm">
-          <span className={cx('truncate', active ? 'text-accent' : 'text-muted')}>
+          <span className={cx('truncate', active ? 'text-bonus' : 'text-muted')}>
             {skillName(db, bonus.skillId)}
           </span>
           <Badge>{bonus.kind === 'set' ? '시리즈' : '그룹'}</Badge>

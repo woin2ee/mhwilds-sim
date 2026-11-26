@@ -435,7 +435,7 @@ function EquipCell({
         </p>
       )}
       {bonusSkills.length > 0 && (
-        <p className="text-xs text-accent">{bonusSkills.map((id) => skillName(db, id)).join(' · ')}</p>
+        <p className="text-xs text-bonus">{bonusSkills.map((id) => skillName(db, id)).join(' · ')}</p>
       )}
     </div>
   )

@@ -315,7 +315,7 @@ function EquipLine({
               {equipment.bonusSkillIds.map((id, i) => (
                 <Fragment key={id}>
                   {(i > 0 || equipment.skills.length > 0) && ' · '}
-                  <span className="text-accent">{skillName(db, id)}</span>
+                  <span className="text-bonus">{skillName(db, id)}</span>
                 </Fragment>
               ))}
             </p>

@@ -398,7 +398,7 @@ function ArmorPieceLine({ piece, skillId }: { piece: ArmorPiece; skillId: number
           <span className="text-muted">스킬 없음</span>
         )}
         {piece.bonusSkillIds.map((id) => (
-          <span key={id} className={cx('text-accent', id === skillId && 'font-medium')}>
+          <span key={id} className={cx('text-bonus', id === skillId && 'font-medium')}>
             {' · '}
             {skillName(db, id)}
           </span>

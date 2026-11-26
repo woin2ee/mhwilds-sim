@@ -95,7 +95,7 @@ export function GameOverlay({
             <ul className="space-y-0.5">
               {bonuses.map((bonus) => (
                 <li key={bonus.skillId} className="flex items-center gap-2">
-                  <span className="min-w-0 flex-1 truncate text-accent">{skillName(db, bonus.skillId)}</span>
+                  <span className="min-w-0 flex-1 truncate text-bonus">{skillName(db, bonus.skillId)}</span>
                   <Badge>{bonus.kind === 'set' ? '시리즈' : '그룹'}</Badge>
                   <span className="w-12 text-right text-xs text-muted tabular-nums">{bonus.level}단계</span>
                 </li>
